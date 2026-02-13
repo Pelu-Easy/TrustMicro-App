@@ -21,6 +21,7 @@
     "axios": "^1.13.4",
     "expo": "~54.0.33",
     "expo-camera": "~17.0.10",
+    "expo-checkbox": "~5.0.8",
     "expo-constants": "~18.0.13",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",

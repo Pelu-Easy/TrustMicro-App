@@ -1,31 +1,31 @@
-import React from 'react';
-import { View, TextInput, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { useLoanStore } from '../../store/loanStore'; 
-import { useRouter } from 'expo-router';
 import * as Print from 'expo-print';
+import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import useUserData from '../../store/userSignUp';
+import React from 'react';
+import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useLoanStore } from '../../store/loanStore';
 import { useStaffStore } from '../../store/staffStore';
+import useUserData from '../../store/userSignUp';
 
 const BRAND = { 
   primary: "#003366", 
   accent: "#2E7D32", 
-  border: "#E2E8F0" 
+  border: "#E2E8F0",
+  supervisor: "#10B981", // Green for Supervisor
+  officer: "#64748B"      // Grey for Officer
 };
 
 export default function Profile() {
   const { disbursementTarget, setDisbursementTarget } = useStaffStore();
   const router = useRouter();
   
-  // Data from useUserData (Registration Info)
-  const { branch, setBranch, funame: fullName } = useUserData();
+  // Destructured correctly from Zustand
+  const { branch, updateUserData, funame: fullName, isSupervisor, role } = useUserData();
   
-  // Data from LoanStore (Targets and Loan Records)
   const loans = useLoanStore((state) => state.loans);
   const staff = useLoanStore((state) => state.staffProfile);
-  const setTarget = useLoanStore((state) => state.setTarget);
 
   // --- PERFORMANCE CALCULATIONS ---
   const disbursedLoans = loans.filter(l => l.status === 'Disbursed');
@@ -35,10 +35,9 @@ export default function Profile() {
     return acc + num;
   }, 0);
 
-  const progressPercentage = (totalDisbursedAmount / staff.monthlyTarget) * 100;
+  const progressPercentage = staff.monthlyTarget > 0 ? (totalDisbursedAmount / staff.monthlyTarget) * 100 : 0;
   const recentDisbursements = disbursedLoans.slice(0, 5);
 
-  // Officer performance tracker
   const downloadPerformanceReport = async () => {
     const htmlContent = `
       <html>
@@ -50,6 +49,7 @@ export default function Profile() {
           <div style="margin-top: 30px;">
             <p><strong>Officer Name:</strong> ${fullName}</p>
             <p><strong>Branch:</strong> ${branch}</p>
+            <p><strong>Role:</strong> ${isSupervisor ? 'Supervisor' : 'Field Officer'}</p>
             <p><strong>Report Date:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
           <div style="background-color: #F5F7FA; padding: 20px; border-radius: 10px; margin-top: 30px;">
@@ -104,21 +104,37 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         
-        {/* --- HEADER --- */}
+        {/* --- HEADER WITH ROLE BADGE --- */}
         <View style={styles.header}>
           <View style={styles.avatarLarge}>
             <Text style={styles.avatarText}>{fullName ? fullName.charAt(0) : 'U'}</Text>
           </View>
           <Text style={styles.staffName}>{fullName || "Staff Member"}</Text>
-          <Text style={styles.staffRole}>Field Credit Officer</Text>
+          
+          <View style={[
+            styles.badge, 
+            isSupervisor ? styles.supervisorBadge : styles.officerBadge
+          ]}>
+            <Ionicons 
+              name={isSupervisor ? "shield-checkmark" : "person"} 
+              size={14} 
+              color="#fff" 
+            />
+            <Text style={styles.badgeText}>
+              {isSupervisor ? "Supervisor" : "Field Officer"}
+            </Text>
+          </View>
+
+          <Text style={styles.staffRole}>{branch}</Text>
         </View>
 
         {/* --- PERFORMANCE TARGET CARD --- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Monthly Disbursement Target</Text>
           <View style={{ marginVertical: 10 }}>
+            {/* FIXED: Changed <div> to <View> */}
             <View style={styles.targetRow}>
                 <Text style={styles.targetValue}>₦{totalDisbursedAmount.toLocaleString()}</Text>
                 <Text style={styles.targetGoal}>/ ₦{(staff.monthlyTarget / 1000000).toFixed(1)}M</Text>
@@ -150,7 +166,7 @@ export default function Profile() {
                   onSubmitEditing={(e) => {
                     const newTarget = parseInt(e.nativeEvent.text);
                     if (newTarget > 0) {
-                      setDisbursementTarget(newTarget); // This saves it dynamically
+                      setDisbursementTarget(newTarget);
                       Alert.alert("Success", "Target updated for this profile.");
                     }
                   }}
@@ -167,7 +183,7 @@ export default function Profile() {
             <Picker
                 selectedValue={branch}
                 style={styles.picker}
-                onValueChange={(itemValue) => setBranch(itemValue)}
+                onValueChange={(itemValue) => updateUserData({ branch: itemValue })}
               >
               <Picker.Item label="Lagos - Main Island" value="Lagos - Main Island" />
               <Picker.Item label="Abuja - Garki" value="Abuja - Garki" />
@@ -177,18 +193,18 @@ export default function Profile() {
           </View>
         </View>
 
-        {/* --- APP INFO & LOGOUT --- */}
+        {/* --- LOGOUT --- */}
         <View style={styles.section}>
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomWidth: 0 }]}
-            onPress={() => useUserData.getState().updateUserData({ isLoggedIn: false })}
+            onPress={() => updateUserData({ isLoggedIn: false })}
           >
             <Ionicons name="log-out-outline" size={22} color="#C62828" />
             <Text style={[styles.menuText, { color: '#C62828' }]}>Logout</Text>
           </TouchableOpacity>
         </View>
 
-        {/* --- LOAN HISTORY SECTION --- */}
+        {/* --- LOAN HISTORY --- */}
         <View style={styles.historySection}>
           <View style={styles.historyHeader}>
             <Text style={styles.sectionLabel}>Recent Disbursements</Text>
@@ -204,12 +220,12 @@ export default function Profile() {
                   <Text style={styles.historyName}>{loan.customerName}</Text>
                   <Text style={styles.historyDate}>{loan.activeDate || 'Recently Disbursed'}</Text>
                 </View>
-                <View style={styles.historyRight}>
+                <div style={styles.historyRight}>
                   <Text style={styles.historyAmount}>₦{Number(loan.amount.replace(/[^0-9]/g, '')).toLocaleString()}</Text>
                   <TouchableOpacity onPress={() => handleShareReceipt(loan)} style={styles.shareIconButton}>
                     <Ionicons name="share-outline" size={18} color={BRAND.primary} />
                   </TouchableOpacity>
-                </View>
+                </div>
               </View>
             ))
           ) : (
@@ -248,7 +264,11 @@ const styles = StyleSheet.create({
   avatarLarge: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#003366', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
   avatarText: { color: '#FFF', fontSize: 36, fontWeight: 'bold' },
   staffName: { fontSize: 22, fontWeight: 'bold', color: '#333' },
-  staffRole: { fontSize: 14, color: '#999', marginTop: 4 },
+  staffRole: { fontSize: 14, color: '#999', marginTop: 8 },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginTop: 8 },
+  supervisorBadge: { backgroundColor: BRAND.supervisor },
+  officerBadge: { backgroundColor: BRAND.officer },
+  badgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold', marginLeft: 5, textTransform: 'uppercase' },
   card: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, marginBottom: 25 },
   cardTitle: { fontSize: 13, color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 },
   targetRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 15, marginBottom: 15 },
@@ -280,13 +300,5 @@ const styles = StyleSheet.create({
   emptyHistory: { alignItems: 'center', padding: 20, backgroundColor: '#F5F5F5', borderRadius: 10 },
   emptyHistoryText: { color: '#999', fontSize: 13 },
   adminRow: { flexDirection: 'row', alignItems: 'center', padding: 15 },
-  targetInput: { 
-    fontSize: 16, 
-    fontWeight: 'bold', 
-    color: '#003366',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingVertical: 5,
-    flex: 1
-  },
+  targetInput: { fontSize: 16, fontWeight: 'bold', color: '#003366', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 5, flex: 1 },
 });

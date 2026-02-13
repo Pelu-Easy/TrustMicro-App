@@ -1,19 +1,25 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  ScrollView, Alert, ActivityIndicator, Modal 
-} from 'react-native';
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera'; 
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
+import { useRouter } from 'expo-router'; // Added this
 import LottieView from 'lottie-react-native';
-import axios from 'axios';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput, TouchableOpacity,
+  View
+} from 'react-native';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // --- INTEGRATION WITH YOUR STORES ---
-import { useLoanStore, Loan } from '../../store/loanStore'; 
-import useUserData from '../../store/userSignUp'; 
+import api from '../../services/api';
+import { Loan, useLoanStore } from '../../store/loanStore';
+import useUserData from '../../store/userSignUp';
 
 const BRAND = { 
   primary: "#003366", 
@@ -30,6 +36,7 @@ interface LoanFormProps {
 }
 
 export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormProps) {
+  const router = useRouter(); // Initialize router inside component
   const [step, setStep] = useState(1);
   const [isScanning, setIsScanning] = useState(false);
   const [scanTarget, setScanTarget] = useState<'bvn' | 'nin' | null>(null);
@@ -45,42 +52,48 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
   const addLoan = useLoanStore((state) => state.addLoan);
   const allLoans = useLoanStore((state) => state.loans);
   const currentUserEmail = useUserData((state) => state.email);
+  const { isSupervisor, token } = useUserData(); // Destructure hooks inside component
 
-// 1. Move initialFormState outside the component or use useMemo (as shown here)
-const initialFormState = useMemo(() => ({
-  customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
-  loanAmount: '', bankName: '', accountNumber: '',
-  employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-  idUploaded: false, utilityUploaded: false, statementUploaded: false, selfieUploaded: false
-}), []);
+  // --- MANAGER PROTECTION LOGIC ---
+  useEffect(() => {
+    if (isSupervisor) {
+      Alert.alert("Access Denied", "Only Loan Officers can create new applications.");
+      router.replace('/(tabs)');
+    }
+  }, [isSupervisor]);
+
+  const initialFormState = useMemo(() => ({
+    customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
+    loanAmount: '', bankName: '', accountNumber: '',
+    employerName: '', jobTitle: '', nokName: '', nokPhone: '',
+    idUploaded: false, utilityUploaded: false, statementUploaded: false, selfieUploaded: false
+  }), []);
 
   const [formData, setFormData] = useState(initialFormState);
 
-  // Sync with initialDraft if editing
-useEffect(() => {
-  if (initialDraft) {
-    setFormData(prev => ({
-      ...prev, // Use 'prev' instead of the external object to avoid dependency issues
-      customerName: initialDraft.customerName || '',
-      bvn: initialDraft.bvn || '',
-      nin: initialDraft.nin || '',
-      phone: initialDraft.phone || '',
-      address: initialDraft.address || '',
-      loanAmount: initialDraft.loanAmount || '',
-      bankName: initialDraft.bankName || '',
-      accountNumber: initialDraft.accountNumber || '',
-      employerName: initialDraft.employerName || '',
-      jobTitle: initialDraft.jobTitle || '',
-      nokName: initialDraft.nokName || '',
-      nokPhone: initialDraft.nokPhone || '',
-    }));
+  useEffect(() => {
+    if (initialDraft) {
+      setFormData(prev => ({
+        ...prev,
+        customerName: initialDraft.customerName || '',
+        bvn: initialDraft.bvn || '',
+        nin: initialDraft.nin || '',
+        phone: initialDraft.phone || '',
+        address: initialDraft.address || '',
+        loanAmount: initialDraft.loanAmount || '',
+        bankName: initialDraft.bankName || '',
+        accountNumber: initialDraft.accountNumber || '',
+        employerName: initialDraft.employerName || '',
+        jobTitle: initialDraft.jobTitle || '',
+        nokName: initialDraft.nokName || '',
+        nokPhone: initialDraft.nokPhone || '',
+      }));
 
-    // Logic for jumping steps
-    if (initialDraft.loanAmount) setStep(4);
-    else if (initialDraft.employerName) setStep(3);
-    else if (initialDraft.bvn) setStep(2);
-  }
-}, [initialDraft]); // Removed initialFormState from here to stop the red underline loop
+      if (initialDraft.loanAmount) setStep(4);
+      else if (initialDraft.employerName) setStep(3);
+      else if (initialDraft.bvn) setStep(2);
+    }
+  }, [initialDraft]);
 
   const updateData = (key: string, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
 
@@ -95,45 +108,43 @@ useEffect(() => {
   }, [formData.bvn, allLoans, initialDraft]);
 
   const createLoanObject = (status: Loan['status']): Loan => {
-  const loanObject: Loan = {
-    id: `loan_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-    //id: initialDraft?.id || Math.random().toString(36).substring(2, 11),
-    createdByEmail: currentUserEmail || 'system',
-    loanType: 'Personal Loan',
-    title: 'Loan Application',
-    customerName: formData.customerName || 'Unnamed Draft',
-    bvn: formData.bvn,
-    nin: formData.nin,
-    phone: formData.phone || '', // Check if these are missing
-    address: formData.address || '',
-    gender: '', 
-    dob: formData.dob || '',
-    submittedDate: initialDraft?.submittedDate || new Date().toLocaleDateString(),
-    activeDate: '',
-    employerName: formData.employerName || '',
-    jobTitle: formData.jobTitle || '',
-    monthlyIncome: '',
-    loanAmount: formData.loanAmount || '',
-    amount: `₦${Number(formData.loanAmount || 0).toLocaleString()}`,
-    repaymentCycle: 'Monthly',
-    nokName: formData.nokName || '',
-    nokPhone: formData.nokPhone || '',
-    bankName: formData.bankName || '',
-    accountNumber: formData.accountNumber || '',
-    status: status,
-    idCard: null,
-    ninHardCopy: null,
-    bvnHardCopy: null,
-    employmentLetter: null,
-    passportPhoto: null,
-    tenure: '12',
-    interestRate: '5',
-    monthlyRepayment: '', 
-    totalRepayment: '',
-    repaymentEndDate: ''
+    return {
+      id: `loan_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      createdByEmail: currentUserEmail || 'system',
+      loanType: 'Personal Loan',
+      title: 'Loan Application',
+      customerName: formData.customerName || 'Unnamed Draft',
+      bvn: formData.bvn,
+      nin: formData.nin,
+      phone: formData.phone || '',
+      address: formData.address || '',
+      gender: '', 
+      dob: formData.dob || '',
+      submittedDate: initialDraft?.submittedDate || new Date().toLocaleDateString(),
+      activeDate: '',
+      employerName: formData.employerName || '',
+      jobTitle: formData.jobTitle || '',
+      monthlyIncome: '',
+      loanAmount: formData.loanAmount || '',
+      amount: `₦${Number(formData.loanAmount || 0).toLocaleString()}`,
+      repaymentCycle: 'Monthly',
+      nokName: formData.nokName || '',
+      nokPhone: formData.nokPhone || '',
+      bankName: formData.bankName || '',
+      accountNumber: formData.accountNumber || '',
+      status: status,
+      idCard: null,
+      ninHardCopy: null,
+      bvnHardCopy: null,
+      employmentLetter: null,
+      passportPhoto: null,
+      tenure: '12',
+      interestRate: '5',
+      monthlyRepayment: '', 
+      totalRepayment: '',
+      repaymentEndDate: ''
+    };
   };
-  return loanObject;
-};
 
   const handleSaveDraft = () => {
     const draftRecord = createLoanObject('Draft');
@@ -141,8 +152,6 @@ useEffect(() => {
     Alert.alert("Draft Updated", "Your progress has been saved.");
     if (onComplete) onComplete(); 
   };
-
-  const API_URL = 'http://192.168.100.120:5000/api/v1'; 
 
   const handleFinalSubmit = async () => {
     if (!formData.loanAmount || !formData.bvn) {
@@ -152,11 +161,10 @@ useEffect(() => {
 
     setIsSubmitting(true);
     const newLoanRecord = createLoanObject('Pending');
-    // FIXED: Correct way to access store values outside of hooks
-    const token = useUserData.getState().token; 
 
     try {
-        await axios.post(`${API_URL}/loans`, newLoanRecord, {
+        // Integrated the central 'api' utility
+        await api.post('/loans', newLoanRecord, {
             headers: { 
               Authorization: `Bearer ${token}`, 
               'Content-Type': 'application/json'
@@ -166,10 +174,10 @@ useEffect(() => {
         addLoan(newLoanRecord, currentUserEmail); 
         setIsSubmitting(false);
         setShowSuccess(true);
+        
     } catch (error: any) {
         setIsSubmitting(false);
-        const msg = error.response?.data?.error || "Submission failed. Check your network.";
-        Alert.alert("Submission Error", msg);
+        console.error("Loan Submission Failed:", error.message);
     }
   };
 
@@ -362,7 +370,6 @@ useEffect(() => {
   );
 }
 
-// ... Styles remain the same as your input ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 15 },

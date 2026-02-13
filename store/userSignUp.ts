@@ -1,93 +1,134 @@
-// userSignUp.ts
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
-interface UserData {
-  funame: string;      // Changed to match ProfileSummary
-  phone_no: string;    // Added for ProfileSummary
+// 1. Define the Interface (Added 'role' so Layout can check it)
+interface UserState {
+  funame: string;
   email: string;
-  branch: string;
   isLoggedIn: boolean;
-  token: string | null; // <--- ADD THIS LINE
-  role: 'Officer' | 'Manager' | 'Admin';
-  updateUserData: (data: Partial<UserData>) => void;
-  // Added this function specifically for your ProfileSummary file
-  setUserData: (name: string, phone: string, email: string) => void;
-  setBranch: (branch: string) => void;
-  clearUser: () => void;
+  phone: string;
+  branch: string;
+  department: string;
+  unit: string;
+  supervisor: string;
+  role: string | null; // Added this
+  token: string | null;
+  isLoanOfficer: boolean;
+  isSupervisor: boolean;
+  
+  // Actions
+  updateUserData: (data: Partial<UserState>) => void;
+  logout: () => void;
 }
 
-const useUserData = create<UserData>()(
+// 2. Create the store using the Interface
+const useUserData = create<UserState>()(
   persist(
     (set) => ({
+      // Initial State
       funame: '',
-      phone_no: '',
       email: '',
-      role: 'Officer',
-      branch: 'Main Headquarters',
-      token: null, // <--- ADD THIS LINE
       isLoggedIn: false,
+      phone: '',
+      branch: '',
+      department: '',
+      unit: '',
+      supervisor: '',
+      role: null, // Initial role
+      token: null,
+      isLoanOfficer: false,
+      isSupervisor: false,
 
-      updateUserData: (data) => set((state) => ({ ...state, ...data })),
-      
-      setUserData: (name, phone, email) => 
-        set({ funame: name, phone_no: phone, email: email }),
+      // Function to update user data
+      updateUserData: (data) => set((state) => ({
+        ...state,
+        ...data,
+      })),
 
-      setBranch: (newBranch) => set({ branch: newBranch }),
-      
-      clearUser: () => set({ 
-        funame: '', 
-        phone_no: '', 
-        email: '', 
-        branch: '', 
-        isLoggedIn: false 
+      // Function to clear data on logout
+      logout: () => set({
+        funame: '',
+        email: '',
+        isLoggedIn: false, // Ensure this resets to false
+        phone: '',
+        branch: '',
+        department: '',
+        unit: '',
+        supervisor: '',
+        role: null,
+        token: null,
+        isLoanOfficer: false,
+        isSupervisor: false,
       }),
     }),
     {
-      name: 'user-storage',
+      name: 'trust-micro-storage',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )
-  
 );
 
 export default useUserData;
 
 
-// import { create } from 'zustand';
-// import { persist, createJSONStorage } from 'zustand/middleware';
+// // userSignUp.ts
 // import AsyncStorage from '@react-native-async-storage/async-storage';
+// import { create } from 'zustand';
+// import { createJSONStorage, persist } from 'zustand/middleware';
 
 // interface UserData {
-//   fullName: string;
+//   funame: string;      // Changed to match ProfileSummary
+//   phone_no: string;    // Added for ProfileSummary
 //   email: string;
 //   branch: string;
 //   isLoggedIn: boolean;
+//   token: string | null; // <--- ADD THIS LINE
+//   role: 'Officer' | 'Manager' | 'Admin';
 //   updateUserData: (data: Partial<UserData>) => void;
-//   setBranch: (branch: string) => void; // ADDED THIS
+//   // Added this function specifically for your ProfileSummary file
+//   setUserData: (name: string, phone: string, email: string) => void;
+//   setBranch: (branch: string) => void;
 //   clearUser: () => void;
+//   isLoanOfficer: boolean;
+//   isSupervisor: boolean;
+//   supervisorName: string;
+//   department: string;
+//   unit: string;
 // }
 
 // const useUserData = create<UserData>()(
-// persist(
+//   persist(
 //     (set) => ({
-//       fullName: '',
+//       funame: '',
+//       phone_no: '',
 //       email: '',
-//       branch: 'Lagos - Main Island', // Default branch
+//       role: 'Officer',
+//       branch: 'Main Headquarters',
+//       token: null, // <--- ADD THIS LINE
 //       isLoggedIn: false,
 
 //       updateUserData: (data) => set((state) => ({ ...state, ...data })),
       
-//       // New action to update branch specifically
+//       setUserData: (name, phone, email) => 
+//         set({ funame: name, phone_no: phone, email: email }),
+
 //       setBranch: (newBranch) => set({ branch: newBranch }),
-//       clearUser: () => set({ fullName: '', email: '', branch: '', isLoggedIn: false }),
+      
+//       clearUser: () => set({ 
+//         funame: '', 
+//         phone_no: '', 
+//         email: '', 
+//         branch: '', 
+//         isLoggedIn: false 
+//       }),
 //     }),
 //     {
 //       name: 'user-storage',
 //       storage: createJSONStorage(() => AsyncStorage),
 //     }
 //   )
+  
 // );
 
 // export default useUserData;

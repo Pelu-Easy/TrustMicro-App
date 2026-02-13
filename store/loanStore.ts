@@ -1,9 +1,9 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
-const API_URL = 'http://192.168.100.120'; // FIX: Ensure Port is here
+const API_URL = 'http://192.168.88.38:5000/api/v1'; // FIX: Ensure Port is here
 
 export interface Loan {
   id: string;

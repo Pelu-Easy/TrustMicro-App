@@ -1,25 +1,27 @@
-import React, { useState } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import axios from 'axios'; // FIXED: Added missing import
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Zustand State Imports
+// --- UTILITY & STATE IMPORTS ---
+import api from '../services/api'; // Integrated central API utility
 import { useLoanStore } from '../store/loanStore';
-import useUserData from '../store/userSignUp'; 
-
-
-// Machine's local IP address
-const API_URL = 'http://192.168.100.120:5000/api/v1'; 
+import useUserData from '../store/userSignUp';
 
 export default function LoginScreen() {
   const router = useRouter();
-  
-  // FIXED: Destructure updateUserData to avoid red underlines
   const { updateUserData } = useUserData();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +29,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // FIXED: Added 'async' so 'await' can work
   const handleSignIn = async () => {
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
@@ -40,8 +41,8 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      // 1. Backend Authentication Request
-      const response = await axios.post(`${API_URL}/auth/login`, { 
+      // 1. Backend Authentication Request via central utility
+      const response = await api.post('/auth/login', { 
         email: trimmedEmail, 
         password: trimmedPassword 
       });
@@ -55,7 +56,18 @@ export default function LoginScreen() {
         role: user.role,
         funame: user.funame,
         email: user.email,
-        branch: user.branch
+        phone: user.phone,
+        branch: user.branch,
+        department: user.department,
+        unit: user.unit,
+        supervisor: user.supervisor,
+        isSupervisor: 
+          user.is_supervisor === 1 || 
+          user.role?.toLowerCase() === 'supervisor' || 
+          user.role?.toLowerCase() === 'manager',
+        isLoanOfficer: 
+          user.role?.toLowerCase() === 'officer' || 
+          user.role?.toLowerCase() === 'loan_officer',
       });
 
       // 3. Sync name to Loan Store profile
@@ -73,6 +85,7 @@ export default function LoginScreen() {
 
     } catch (error: any) {
       setIsLoading(false);
+      // If the error isn't caught by the global interceptor (like a 401)
       const errorMsg = error.response?.data?.error || "Connection to server failed.";
       Alert.alert("Access Denied", errorMsg);
     }
@@ -130,7 +143,7 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity 
-              onPress={() => router.push('/forgot_password')} 
+              onPress={() => router.push('/forgot_password' as any)} 
               style={{ alignSelf: 'flex-end', marginBottom: 20 }}
             >
               <Text style={{ color: '#003366', fontWeight: '600' }}>Forgot Password?</Text>
