@@ -1,40 +1,30 @@
 {
-  "name": "trust-micro-backend",
+  "name": "trust-micro-frontend",
   "version": "1.0.0",
-  "description": "Backend for TrustMicro Bank Sales Tracker",
-  "main": "server.js",
+  "main": "expo-router/entry",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
   },
   "dependencies": {
-    "@expo/vector-icons": "^15.0.3",
-    "@react-native-community/datetimepicker": "^8.6.0",
-    "@react-native-picker/picker": "^2.11.4",
-    "axios": "^1.13.4",
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
-    "expo-camera": "~17.0.10",
-    "expo-document-picker": "~14.0.8",
-    "expo-print": "~15.0.8",
-    "expo-router": "^6.0.23",
-    "expo-sharing": "~14.0.8",
-    "expo-status-bar": "~3.0.9",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "lottie-react-native": "^7.3.6",
-    "pg": "^8.18.0",
-    "react-native-safe-area-context": "^5.6.2",
-    "react-native-screens": "^4.23.0",
-    "sqlite3": "^5.0.2"
+    "expo": "~52.0.0",
+    "expo-router": "~4.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.1.0",
+    "@expo/vector-icons": "^14.0.0",
+    "axios": "^1.6.0",
+    "zustand": "^4.5.0",
+    "lottie-react-native": "7.1.0"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "license": "ISC",
   "devDependencies": {
-    "@types/react": "^19.2.14",
-    "@types/react-native": "^0.72.8"
-  }
+    "@babel/core": "^7.25.2",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3"
+  },
+  "private": true
 }
