@@ -16,9 +16,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // --- UTILITY & STATE IMPORTS ---
-import api from '../services/api'; // Integrated central API utility
-import { useLoanStore } from '../store/loanStore';
-import useUserData from '../store/userSignUp';
+import api from '/../services/api'; // Integrated central API utility
+import { useLoanStore } from '/../store/loanStore';
+import useUserData from '/../store/userSignUp';
 
 export default function LoginScreen() {
   const router = useRouter();

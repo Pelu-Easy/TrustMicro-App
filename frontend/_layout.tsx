@@ -8,9 +8,9 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 // Import your user store
-import useUserData from '../store/userSignUp'; 
+import useUserData from '/../store/userSignUp'; 
 // Import your color scheme hook
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '/../hooks/use-color-scheme';
 
 export const unstable_settings = {
   // Ensure that reloading on `/login` keeps a back button to index if needed
