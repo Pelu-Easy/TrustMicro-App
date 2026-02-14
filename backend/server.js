@@ -1,7 +1,7 @@
 require('dotenv').config(); 
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg'); // Switched from sqlite3 to pg
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 
@@ -10,62 +10,44 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
 // --- 1. MIDDLEWARE SETUP ---
-// FIXED: Combined into one powerful CORS setting
 app.use(cors({
-  origin: '*', 
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// Logger: This will now show every single attempt from your phone
+// Logger for debugging connection attempts
 app.use((req, res, next) => {
-  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
-  next();
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+    next();
 });
 
-// --- 2. DATABASE INITIALIZATION ---
-const db = new sqlite3.Database('./trustmicro.db', (err) => {
-    if (err) console.error('Database connection error:', err);
-    else console.log('✅ Connected to TrustMicro SQLite Database.');
+// --- 2. DATABASE INITIALIZATION (SUPABASE / POSTGRES) ---
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false // Required for Supabase + Render connection
+    }
 });
 
-// Export db for managerRoutes
+db.on('connect', () => {
+    console.log('✅ Connected to TrustMicro Supabase Database.');
+});
+
+db.on('error', (err) => {
+    console.error('❌ Unexpected database error:', err);
+});
+
+// Export db for use in other routes (like managerRoutes)
 module.exports.db = db; 
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS staff_users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        full_name TEXT,
-        email TEXT UNIQUE,
-        password_hash TEXT,
-        phone_no TEXT,
-        role TEXT DEFAULT 'Officer',
-        branch TEXT
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS loans (
-        id TEXT PRIMARY KEY,
-        createdByEmail TEXT,
-        customerName TEXT,
-        amount TEXT,
-        loanAmount TEXT,
-        status TEXT DEFAULT 'Pending',
-        loanType TEXT,
-        bvn TEXT,
-        nin TEXT,
-        phone TEXT,
-        bankName TEXT,
-        accountNumber TEXT,
-        submittedDate TEXT
-    )`);
-});
+// Note: Table creation (CREATE TABLE) should be done via Supabase SQL Editor for production.
 
 // --- 3. AUTHENTICATION MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    // FIXED: More robust token extraction
     const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
 
     if (!token) return res.status(401).json({ error: "Unauthorized: Token missing" });
@@ -78,56 +60,70 @@ const authenticateToken = (req, res, next) => {
 };
 
 app.get('/', (req, res) => {
-    res.send("🚀 TrustMicro Secure API is Live and Listening!");
+    res.send("🚀 TrustMicro Secure API is Live on Render!");
 });
 
 // --- 4. ROUTES ---
 const managerRoutes = require('./routes/managerRoutes');
 app.use('/api/v1/manager', managerRoutes);
 
-// SIGN-UP
+// SIGN-UP (Postgres version)
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { fullName, email, phone, branch, password, role } = req.body;
     try {
-        db.get("SELECT email FROM staff_users WHERE email = ?", [email], async (err, row) => {
-            if (row) return res.status(400).json({ error: "Email already registered." });
+        const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [email]);
+        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
 
-            const hashedPassword = await bcrypt.hash(password, 10);
-            const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch) VALUES (?, ?, ?, ?, ?, ?)`;
-            db.run(query, [fullName, email, phone, hashedPassword, role || 'Officer', branch], function(err) {
-                if (err) return res.status(500).json({ error: "Database insert error." });
-                res.status(201).json({ message: "Staff account created successfully!" });
-            });
-        });
-    } catch (error) { res.status(500).json({ error: "Internal Server Error" }); }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch) 
+                       VALUES ($1, $2, $3, $4, $5, $6)`;
+        
+        await db.query(query, [fullName, email, phone, hashedPassword, role || 'Officer', branch]);
+        res.status(201).json({ message: "Staff account created successfully!" });
+    } catch (error) { 
+        console.error(error);
+        res.status(500).json({ error: "Internal Server Error" }); 
+    }
 });
 
-// LOGIN
-app.post('/api/v1/auth/login', (req, res) => {
+// LOGIN (Postgres version)
+app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
-    db.get("SELECT * FROM staff_users WHERE email = ?", [email], async (err, user) => {
-        if (err || !user) return res.status(401).json({ error: "Invalid email or password" });
+    try {
+        const result = await db.query("SELECT * FROM staff_users WHERE email = $1", [email]);
+        const user = result.rows[0];
+
+        if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
+        
         res.json({
             token,
-            user: { funame: user.full_name, email: user.email, role: user.role, branch: user.branch }
+            user: { 
+                funame: user.full_name, 
+                email: user.email, 
+                role: user.role, 
+                branch: user.branch 
+            }
         });
-    });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Server Error" });
+    }
 });
 
-// SECURE LOAN SUBMISSION
-app.post('/api/v1/loans', authenticateToken, (req, res) => {
+// SECURE LOAN SUBMISSION (Postgres version)
+app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const loan = req.body;
     const officerEmail = req.user.email; 
 
     const query = `INSERT INTO loans (
-        id, createdByEmail, customerName, amount, loanAmount, status, loanType, bvn, nin,
-        phone, bankName, accountNumber, submittedDate
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
+        phone, "bankName", "accountNumber", "submittedDate"
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
 
     const params = [
         loan.id, officerEmail, loan.customerName, loan.amount, loan.loanAmount,
@@ -135,36 +131,45 @@ app.post('/api/v1/loans', authenticateToken, (req, res) => {
         loan.phone, loan.bankName, loan.accountNumber, loan.submittedDate
     ];
 
-    db.run(query, params, function(err) {
-        if (err) return res.status(500).json({ error: "Failed to save loan." });
+    try {
+        await db.query(query, params);
         res.status(201).json({ message: "Loan submitted successfully!" });
-    });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to save loan." });
+    }
 });
 
-// LOANS FETCH (Isolated)
-app.get('/api/v1/loans', authenticateToken, (req, res) => {
+// LOANS FETCH (Postgres version)
+app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     const email = req.user.email; 
-    db.all("SELECT * FROM loans WHERE createdByEmail = ?", [email], (err, rows) => {
-        if (err) return res.status(500).json({ error: "Database error." });
-        res.json(rows);
-    });
+    try {
+        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [email]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Database error." });
+    }
 });
 
-// PROFILE UPDATE
-app.patch('/api/v1/users/update-profile', authenticateToken, (req, res) => {
+// PROFILE UPDATE (Postgres version)
+app.patch('/api/v1/users/update-profile', authenticateToken, async (req, res) => {
     const { funame, phone_no, email } = req.body;
     const userId = req.user.id;
-    const query = `UPDATE staff_users SET full_name = ?, phone_no = ?, email = ? WHERE id = ?`;
-    db.run(query, [funame, phone_no, email, userId], function(err) {
-        if (err) return res.status(500).json({ error: "Update failed." });
+    const query = `UPDATE staff_users SET full_name = $1, phone_no = $2, email = $3 WHERE id = $4`;
+    
+    try {
+        await db.query(query, [funame, phone_no, email, userId]);
         res.json({ message: "Profile updated!" });
-    });
+    } catch (err) {
+        res.status(500).json({ error: "Update failed." });
+    }
 });
 
 // --- 5. START SERVER ---
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 TrustMicro Server live at http://192.168.100.120:${PORT}`);
+    console.log(`🚀 Server live and listening on Port ${PORT}`);
 });
+
 
 
 // require('dotenv').config(); // Load .env variables at the very top

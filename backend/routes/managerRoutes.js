@@ -1,67 +1,50 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken, isSupervisor } = require('../middleware/auth');
+const { db } = require('../server'); // Import the PG pool from your server.js
 
-// Using a safer way to access the DB
-const db = require('../server').db; 
-
-/**
- * @route   GET /api/v1/manager/supervisors
- */
-router.get('/supervisors', (req, res) => {
-    const query = "SELECT fullName, email FROM users WHERE role = 'supervisor' OR role = 'manager' OR isSupervisor = 1";
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error("DB Error (supervisors):", err);
-            return res.status(500).json({ error: "Database error" });
-        }
-        res.json(rows);
-    });
-});
-
-/**
- * @route   GET /api/v1/manager/pending
- */
-router.get('/pending', authenticateToken, isSupervisor, (req, res) => {
-    // Note: Ensure your status column uses 'Pending' with a capital P if that's what you saved
-    const query = "SELECT * FROM loans WHERE status = 'Pending' OR status = 'pending' ORDER BY id DESC";
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error("DB Error (pending):", err);
-            return res.status(500).json({ error: "Database error" });
-        }
-        res.json(rows || []); // Return empty array if no loans found
-    });
-});
-
-/**
- * @route   PATCH /api/v1/manager/approve/:id
- */
-router.patch('/approve/:id', authenticateToken, isSupervisor, (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body; 
-
-    if (!['Approved', 'Rejected'].includes(status)) {
-        return res.status(400).json({ error: "Invalid status. Use 'Approved' or 'Rejected'" });
-    }
-
-    const query = "UPDATE loans SET status = ? WHERE id = ?";
-    db.run(query, [status, id], function(err) {
-        if (err) {
-            console.error("DB Error (approve):", err);
-            return res.status(500).json({ error: err.message });
-        }
+// --- 1. GET ALL LOANS (Manager View) ---
+router.get('/all-loans', async (req, res) => {
+    try {
+        // PostgreSQL uses "quotes" for camelCase column names
+        const query = 'SELECT * FROM loans ORDER BY "submittedDate" DESC';
+        const result = await db.query(query);
         
-        if (this.changes === 0) {
-            return res.status(404).json({ error: "Loan application not found" });
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching all loans:', error);
+        res.status(500).json({ error: 'Failed to fetch loans from Supabase.' });
+    }
+});
+
+// --- 2. UPDATE LOAN STATUS (Approve/Reject) ---
+router.patch('/update-status/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    try {
+        // $1 and $2 are used for Postgres placeholders
+        const query = 'UPDATE loans SET status = $1 WHERE id = $2 RETURNING *';
+        const result = await db.query(query, [status, id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Loan not found.' });
         }
 
-        res.json({ 
-            message: `Loan application ${id} has been ${status.toLowerCase()} successfully`,
-            loanId: id,
-            newStatus: status
-        });
-    });
+        res.json({ message: `Loan status updated to ${status}`, loan: result.rows[0] });
+    } catch (error) {
+        console.error('Error updating status:', error);
+        res.status(500).json({ error: 'Database update failed.' });
+    }
+});
+
+// --- 3. GET STAFF LIST ---
+router.get('/staff-list', async (req, res) => {
+    try {
+        const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users');
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch staff list.' });
+    }
 });
 
 module.exports = router;
