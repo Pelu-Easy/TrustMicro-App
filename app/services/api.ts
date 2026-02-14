@@ -1,20 +1,21 @@
 import axios from 'axios';
 import { Alert } from 'react-native';
-import useUserData from '../store/userSignUp'; // Import your store
+import useUserData from '../store/userSignUp'; // Ensure this path is correct
 
-// 1. Centralized IP Address
-export const API_URL = 'https://trustmicro-app.onrender.com';
+// 1. Centralized Production URL
+// Note: Ensure the /api/v1 prefix is handled here if your backend uses it
+export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // 10 seconds timeout
+  timeout: 15000, // Increased to 15s to give Render time to "wake up"
 });
 
-// --- NEW: REQUEST INTERCEPTOR ---
-// This automatically adds the token to every outgoing request
+// --- REQUEST INTERCEPTOR ---
 api.interceptors.request.use(
   (config) => {
-    const token = useUserData.getState().token; // Get token from Zustand
+    // Get token from Zustand store
+    const token = useUserData.getState().token; 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -25,38 +26,33 @@ api.interceptors.request.use(
   }
 );
 
-// 2. RESPONSE INTERCEPTOR logic
+// --- RESPONSE INTERCEPTOR ---
 api.interceptors.response.use(
-  (response) => response, // Do nothing if the request is successful
+  (response) => response, 
   (error) => {
     const originalRequest = error.config;
     
-    // Log the details to your console for debugging
     console.group('🚨 TrustMicro API Error');
     console.log('URL:', originalRequest?.url);
-    console.log('Method:', originalRequest?.method?.toUpperCase());
-    console.log('Message:', error.message);
-    if (error.response) {
-      console.log('Status:', error.response.status);
-      console.log('Data:', error.response.data);
-    }
+    console.log('Status:', error.response?.status);
     console.groupEnd();
 
-    // 3. Show a smart alert to the user/developer
-    let errorMessage = "Network Error: Check your IP or Server.";
+    let errorMessage = "Network Error: Please check your internet connection.";
     
     if (error.code === 'ECONNABORTED') {
-      errorMessage = "Request timed out. Is the server running?";
+      errorMessage = "The server is taking too long to respond. (Render might be waking up)";
     } else if (error.response) {
-      // Logic for different status codes
       if (error.response.status === 401) {
         errorMessage = "Your session has expired. Please log in again.";
+      } else if (error.response.status === 404) {
+        errorMessage = "Endpoint not found on server.";
       } else {
-        errorMessage = `Server Error (${error.response.status}): ${error.response.data.error || 'Something went wrong'}`;
+        errorMessage = error.response.data.error || "A server error occurred.";
       }
     }
 
-    Alert.alert("Connection Issue", `${errorMessage}\n\nTarget: ${originalRequest?.url}`);
+    // Show Alert on the mobile screen
+    Alert.alert("Connection Issue", errorMessage);
 
     return Promise.reject(error);
   }

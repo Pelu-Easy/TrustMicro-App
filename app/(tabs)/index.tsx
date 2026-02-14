@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -21,6 +21,14 @@ import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
 
+// Define Types for the StatCard props
+interface StatCardProps {
+  title: string;
+  value: string;
+  icon: keyof typeof Ionicons.prototype.props.name; // Validates icon names
+  color: string;
+}
+
 export default function Dashboard() {
   const router = useRouter();
 
@@ -35,26 +43,16 @@ export default function Dashboard() {
 
   // --- LOGIC: FETCH FROM DATABASE ---
   const fetchAllLoans = useCallback(async () => {
-    if (!token) {
-    console.log("No token found in store, skipping fetch.");
-    return;
-  }
+    if (!token) return;
     
     try {
-      // The 'api' utility now handles the base URL and the Auth Token via interceptors
-      const response = await api.get('/loans',{
-      headers: { 
-        // Force the header manually to be 100% sure
-        Authorization: `Bearer ${token}` 
-      }
-    });
-      
+      // api utility handles the baseURL and Authorization automatically now
+      const response = await api.get('/loans');
       if (response.data) {
         setLoans(response.data);
       }
     } catch (error: any) {
       console.log("Dashboard sync stopped or failed.");
-      // Error is likely handled by your global interceptor alert
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -77,11 +75,11 @@ export default function Dashboard() {
     fetchAllLoans();
   };
 
-  // Helper component for Stat Cards
-  const StatCard = ({ title, value, icon, color }: { title: string; value: string; icon: any; color: string }) => (
+  // Typed StatCard Component
+  const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>
       <View style={[styles.iconCircleStat, { backgroundColor: color + '20' }]}>
-        <Ionicons name={icon} size={22} color={color} />
+        <Ionicons name={icon as any} size={22} color={color} />
       </View>
       <View>
         <Text style={styles.statValue}>{value}</Text>
@@ -98,7 +96,6 @@ export default function Dashboard() {
     );
   }
 
-  // Normalize check for supervisor access
   const hasManagerAccess = isSupervisor || role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor';
 
   return (
@@ -124,17 +121,15 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* QUICK ACTIONS GRID */}
+        {/* QUICK ACTIONS */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
         {!hasManagerAccess && (
-          <TouchableOpacity style={styles.actionBtn} 
-              onPress={() => router.push('/(tabs)/loanForm' as any)}
-            >
+          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm' as any)}>
             <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
             <Text style={styles.actionBtnText}>New Loan</Text>
           </TouchableOpacity>
-          )}
+        )}
           
           {hasManagerAccess && (
             <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/(tabs)/managerDashboard' as any)}>
@@ -149,7 +144,7 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* PERFORMANCE TRACKER (Progress Bar) */}
+        {/* PERFORMANCE TRACKER */}
         <Text style={styles.sectionTitle}>Target Tracking</Text>
         <View style={styles.targetCard}>
           <View style={styles.cardHeader}>
@@ -157,9 +152,9 @@ export default function Dashboard() {
             <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
           </View>
           <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
-          <View style={styles.progressContainer}>
+          <div style={styles.progressContainer}>
             <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
-          </View>
+          </div>
           <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
         </View>
 
