@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
 import { router } from 'expo-router';
-import { View, Animated, StyleSheet, Dimensions, Image, Easing } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
 
 // Replace this with your actual logo image source
 const logoSource = require('../assets/images/LiquidCrest_Logo.png');

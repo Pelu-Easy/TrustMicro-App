@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
+// @ts-ignore
+import axios from 'axios/dist/browser/axios.cjs';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {

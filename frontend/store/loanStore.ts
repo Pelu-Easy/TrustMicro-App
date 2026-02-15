@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+// @ts-ignore
+import axios from 'axios/dist/browser/axios.cjs';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 

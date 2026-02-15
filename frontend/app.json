@@ -4,6 +4,7 @@
     "slug": "trustmicro-bank",
     "version": "1.0.0",
     "orientation": "portrait",
+    "backgroundColor": "#ffffff",
     "icon": "./assets/images/icon.png",
     "scheme": "trustmicro",
     "userInterfaceStyle": "automatic",
@@ -24,7 +25,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

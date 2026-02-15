@@ -8,9 +8,9 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 // Import your user store
-import useUserData from '/../store/userSignUp'; 
+import useUserData from '@/store/userSignUp';
 // Import your color scheme hook
-import { useColorScheme } from '/../hooks/use-color-scheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
   // Ensure that reloading on `/login` keeps a back button to index if needed
@@ -26,11 +26,11 @@ export default function RootLayout() {
   useEffect(() => {
     // Determine which "group" the user is currently in
     const inTabsGroup = segments[0] === '(tabs)';
-    const isAuthPage = segments[0] === 'login' || segments[0] === 'sign_up';
+    const isAuthPage = (segments[0] as any) === 'login' || (segments[0] as any) === 'sign_up';
 
     // 1. PROTECTION LOGIC: Not logged in? Go to Login.
     if (!isLoggedIn && inTabsGroup) {
-      router.replace('/login');
+      router.replace('/login' as any);
     } 
     // 2. REDIRECT LOGIC: Already logged in? Skip Login/SignUp.
     else if (isLoggedIn && isAuthPage) {

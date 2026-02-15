@@ -1,34 +1,25 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import useUserData from '../../store/userSignUp';
 
 export default function TabLayout() {
-  const { isLoggedIn, role, isSupervisor } = useUserData();
-  const [isReady, setIsReady] = useState(false);
+  const { isLoggedIn, role, isSupervisor, _hasHydrated } = useUserData();
 
-  // Check if the store has finished loading from AsyncStorage
-  useEffect(() => {
-    const checkHydration = async () => {
-      // Give the store a moment to initialize
-      setIsReady(true);
-    };
-    checkHydration();
-  }, []);
-
-  // Show a loader while the app "remembers" who is logged in
-  if (!isReady) {
+  // 1. HYDRATION GUARD: Wait for AsyncStorage to finish loading the store
+  if (!_hasHydrated) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
         <ActivityIndicator size="large" color="#003366" />
       </View>
     );
   }
 
-  // AUTH GUARD: Now we can safely check the state
+  // 2. AUTH GUARD: Data is now loaded. If not logged in, redirect to login.
+  // Using "as any" to bypass the SDK 54 TypeScript Route warning.
   if (!isLoggedIn) {
-    return <Redirect href="/login" />;
+    return <Redirect href={"/login" as any} />;
   }
 
   return (
@@ -57,13 +48,11 @@ export default function TabLayout() {
       />
 
       {/* Access Right: Shows for Manager or Supervisor */}
-
       <Tabs.Screen
         name="managerDashboard"
         options={{
           title: 'Approvals',
-          // FIXED: If not a supervisor, we set href to null so the tab disappears 
-          // but the component structure stays valid.
+          // If the user doesn't have the right role, we hide the tab by setting href to null
           href: (role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor' || isSupervisor) 
                 ? '/(tabs)/managerDashboard' 
                 : null,
@@ -72,21 +61,6 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* {(role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor' || isSupervisor) && (
-        <Tabs.Screen
-          name="managerDashboard"
-          options={{
-            title: 'Approvals',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons
-                name={focused ? 'shield-checkmark' : 'shield-checkmark-outline'}
-                size={24}
-                color={color}
-              />
-            ),
-          }}
-        />
-      )} */}
 
       <Tabs.Screen
         name="loanForm"

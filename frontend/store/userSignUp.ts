@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-// 1. Define the Interface (Added 'role' so Layout can check it)
+// 1. Define the Interface
 interface UserState {
   funame: string;
   email: string;
@@ -12,17 +12,21 @@ interface UserState {
   department: string;
   unit: string;
   supervisor: string;
-  role: string | null; // Added this
+  role: string | null;
   token: string | null;
   isLoanOfficer: boolean;
   isSupervisor: boolean;
   
+  // --- NEW HYDRATION FIELDS ---
+  _hasHydrated: boolean; 
+  setHasHydrated: (state: boolean) => void;
+
   // Actions
   updateUserData: (data: Partial<UserState>) => void;
   logout: () => void;
 }
 
-// 2. Create the store using the Interface
+// 2. Create the store
 const useUserData = create<UserState>()(
   persist(
     (set) => ({
@@ -35,22 +39,24 @@ const useUserData = create<UserState>()(
       department: '',
       unit: '',
       supervisor: '',
-      role: null, // Initial role
+      role: null,
       token: null,
       isLoanOfficer: false,
       isSupervisor: false,
+      
+      // --- INITIAL HYDRATION STATE ---
+      _hasHydrated: false,
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
 
-      // Function to update user data
       updateUserData: (data) => set((state) => ({
         ...state,
         ...data,
       })),
 
-      // Function to clear data on logout
       logout: () => set({
         funame: '',
         email: '',
-        isLoggedIn: false, // Ensure this resets to false
+        isLoggedIn: false,
         phone: '',
         branch: '',
         department: '',
@@ -65,6 +71,10 @@ const useUserData = create<UserState>()(
     {
       name: 'trust-micro-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // --- THIS TELLS ZUSTAND THE DATA IS LOADED FROM PHONE MEMORY ---
+      onRehydrateStorage: (state) => {
+        return () => state?.setHasHydrated(true);
+      },
     }
   )
 );

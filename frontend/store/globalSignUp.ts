@@ -18,7 +18,7 @@ const useSignUpStore = create<SignUpState>((set) => ({
         
         // FIX: Use absolute path '/' to ensure Expo Router finds the screen 
         // regardless of where this store file is located.
-        router.push('/profilesumary');
+        router.push('/profilesumary' as any);
     },
     
     signedUp: () => set({ isSignUp: false }),

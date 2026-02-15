@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import useUserData from '../store/userSignUp';
+
+import useUserData from '@/store/userSignUp';
 
 export default function ProfileSummary() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function ProfileSummary() {
           style: "destructive",
           onPress: () => {
             logout();
-            router.replace('/login');
+            router.replace('/login' as any);
           } 
         }
       ]

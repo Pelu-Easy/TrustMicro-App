@@ -4,22 +4,22 @@ import Checkbox from 'expo-checkbox';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // --- INTEGRATION WITH YOUR UTILITY ---
-import api from '../services/api'; // Integrated your new central api utility
-import useUserData from "../store/userSignUp";
+import api from '@/services/api'; // Integrated your new central api utility
+import useUserData from "@/store/userSignUp";
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -95,7 +95,7 @@ export default function SignUpScreen() {
       setIsLoading(false);
 
       Alert.alert("Success", "Staff Account Created Successfully!", [
-        { text: "Go to Login", onPress: () => router.replace('/login') }
+        { text: "Go to Login", onPress: () => router.replace('/login' as any) }
       ]);
 
     } catch (error: any) {
