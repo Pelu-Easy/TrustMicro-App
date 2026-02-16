@@ -1,12 +1,28 @@
 import { router } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
+// Adjust the path '../services/api' to match where your api.ts is located
+import api from '../services/api';
 
 // Replace this with your actual logo image source
 const logoSource = require('../assets/images/LiquidCrest_Logo.png');
 
+
+
 const SplashScreen = () => {
   const scaleAnim = useRef(new Animated.Value(0.92)).current;
+
+  useEffect(() => {
+  const checkLogin = async () => {
+    try {
+      const res = await api.get('/users/me');
+      // If successful, update your Zustand/Redux store with the user data
+    } catch (err) {
+      // If it fails, token is old -> redirect to Login
+    }
+  };
+  checkLogin();
+}, []);
 
   useEffect(() => {
     // We remove Animated.loop() to make the animation play only once

@@ -3,13 +3,14 @@ const router = express.Router();
 const { db } = require('../server'); // Import the PG pool from your server.js
 
 // --- 1. GET MANAGER DASHBOARD STATS ---
-router.get('/stats', async (req, res) => {
+// Using '/loan-stats' as requested, but keeping logic robust
+router.get('/loan-stats', async (req, res) => {
     try {
         const statsQuery = `
             SELECT 
                 COUNT(*) as "totalLoans",
                 COUNT(*) FILTER (WHERE status = 'Pending') as "pendingLoans",
-                COUNT(*) FILTER (WHERE status = 'Approved') as "approvedLoans",
+                COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed') as "disbursedLoans",
                 SUM(CAST(amount AS NUMERIC)) as "totalVolume"
             FROM loans
         `;
@@ -19,16 +20,69 @@ router.get('/stats', async (req, res) => {
         res.json({
             totalLoans: parseInt(stats.totalLoans) || 0,
             pendingLoans: parseInt(stats.pendingLoans) || 0,
-            approvedLoans: parseInt(stats.approvedLoans) || 0,
+            disbursedLoans: parseInt(stats.disbursedLoans) || 0,
             totalVolume: parseFloat(stats.totalVolume) || 0
         });
     } catch (error) {
-        console.error('Error fetching stats:', error);
+        console.error('Error fetching loan-stats:', error);
         res.status(500).json({ error: 'Failed to fetch dashboard statistics.' });
     }
 });
 
-// --- 2. GET ALL LOANS (Full Manager View) ---
+// Alias for 'stats' to ensure backward compatibility
+router.get('/stats', async (req, res) => {
+    res.redirect(301, '/api/v1/manager/loan-stats');
+});
+
+// --- 2. BRANCH PERFORMANCE SUMMARY ---
+router.get('/branch-summary', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                COALESCE(branch, 'Unknown') as branch, 
+                COUNT(*) as "loanCount", 
+                SUM(CAST(amount AS NUMERIC)) as "totalAmount"
+            FROM staff_users
+            JOIN loans ON staff_users.email = loans."createdByEmail"
+            GROUP BY branch
+            ORDER BY "totalAmount" DESC
+        `;
+        const result = await db.query(query);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching branch summary:', error);
+        res.status(500).json({ error: 'Failed to fetch branch summary.' });
+    }
+});
+
+// --- 1. DEACTIVATE STAFF (Manager/Admin Power) ---
+// This doesn't delete them; it just stops them from logging in.
+router.patch('/deactivate-staff/:id', async (req, res) => {
+    const { id } = req.params;
+    const { isActive } = req.body; // Pass false to deactivate, true to reactivate
+    try {
+        const query = 'UPDATE staff_users SET is_active = $1 WHERE id = $2 RETURNING *';
+        const result = await db.query(query, [isActive, id]);
+        
+        const statusText = isActive ? "activated" : "deactivated";
+        res.json({ message: `Staff account ${statusText} successfully.` });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update staff status.' });
+    }
+});
+
+// --- 2. DELETE STAFF (Super Admin Power ONLY) ---
+router.delete('/delete-staff/:id', async (req, res) => {
+    const { id } = req.params;
+    // Security Check: In a real app, you'd check req.user.role here
+    try {
+        await db.query('DELETE FROM staff_users WHERE id = $1', [id]);
+        res.json({ message: "Staff account permanently deleted." });
+    } catch (error) {
+        res.status(500).json({ error: 'Hard delete failed.' });
+    }
+});
+// --- 4. GET ALL LOANS (Full Manager View) ---
 router.get('/all-loans', async (req, res) => {
     try {
         const query = 'SELECT * FROM loans ORDER BY "submittedDate" DESC';
@@ -40,10 +94,9 @@ router.get('/all-loans', async (req, res) => {
     }
 });
 
-// --- 3. GET SUPERVISORS LIST ---
+// --- 5. GET SUPERVISORS LIST ---
 router.get('/supervisors', async (req, res) => {
     try {
-        // Querying based on your staff_users table roles
         const query = `
             SELECT full_name, email, role, branch 
             FROM staff_users 
@@ -57,7 +110,7 @@ router.get('/supervisors', async (req, res) => {
     }
 });
 
-// --- 4. GET ALL STAFF (Staff Management) ---
+// --- 6. GET ALL STAFF (Staff Management) ---
 router.get('/staff-list', async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users');
@@ -67,7 +120,7 @@ router.get('/staff-list', async (req, res) => {
     }
 });
 
-// --- 5. UPDATE LOAN STATUS (Approve/Reject) ---
+// --- 7. UPDATE LOAN STATUS (Approve/Reject) ---
 router.patch('/update-status/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;

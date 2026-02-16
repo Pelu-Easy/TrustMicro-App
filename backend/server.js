@@ -85,7 +85,41 @@ app.post('/api/v1/auth/signup', async (req, res) => {
         res.status(500).json({ error: "Internal Server Error" }); 
     }
 });
+// --- GET SINGLE LOAN DETAIL ---
+app.get('/api/v1/loans/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await db.query('SELECT * FROM loans WHERE id = $1', [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: "Loan not found" });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
 
+// --- RE-AUTHENTICATE USER (GET /me) ---
+app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: "Auth sync failed" });
+    }
+});
+
+// --- LOAN RE-SUBMISSION (PATCH) ---
+app.patch('/api/v1/loans/:id/re-upload', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const updateData = req.body; // Expecting updated loan fields
+    try {
+        // Simple example: updating amount and resetting status to Pending
+        const query = `UPDATE loans SET amount = $1, status = 'Pending' WHERE id = $2 AND "createdByEmail" = $3`;
+        await db.query(query, [updateData.amount, id, req.user.email]);
+        res.json({ message: "Loan resubmitted for approval." });
+    } catch (err) {
+        res.status(500).json({ error: "Re-upload failed" });
+    }
+});
 // LOGIN (Postgres version)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
@@ -94,7 +128,10 @@ app.post('/api/v1/auth/login', async (req, res) => {
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
-
+        // CHECK IF ACCOUNT IS ACTIVE
+        if (user.is_active === false) {
+            return res.status(403).json({ error: "Your account has been deactivated. Contact The IT." });
+        }
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
 

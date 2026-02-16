@@ -15,9 +15,8 @@ import {
 } from 'react-native';
 import useUserData from '../../store/userSignUp';
 
-const API_URL = 'http://192.168.88.38:5000/api/v1'; 
+const API_URL = 'https://trustmicro-app.onrender.com/api/v1'; 
 
-// Interface to fix VS Code red underlines
 interface LoanItem {
   id: string;
   customerName: string;
@@ -28,117 +27,158 @@ interface LoanItem {
   status: string;
 }
 
+interface StaffItem {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+}
+
 export default function ManagerDashboard() {
   const router = useRouter();
   const [pendingLoans, setPendingLoans] = useState<LoanItem[]>([]);
+  const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const [activeTab, setActiveTab] = useState<'loans' | 'staff'>('loans');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Get user details from Zustand store
-  const { token, funame, department } = useUserData();
+  const { token, funame, department, role } = useUserData();
 
-  const fetchAllPending = useCallback(async () => {
-    if (!token) {
-      Alert.alert("Session Expired", "Please login again.");
-      return;
-    }
-
+  const fetchData = useCallback(async () => {
+    if (!token) return;
     try {
-      const response = await axios.get(`${API_URL}/manager/pending`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setPendingLoans(response.data);
+      if (activeTab === 'loans') {
+        const res = await axios.get(`${API_URL}/manager/all-loans`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setPendingLoans(res.data.filter((l: LoanItem) => l.status === 'Pending'));
+      } else {
+        const res = await axios.get(`${API_URL}/manager/staff-list`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setStaffList(res.data);
+      }
     } catch (error: any) {
-      console.error("Manager Fetch Error:", error.response?.data || error.message);
-      Alert.alert("Access Denied", "Only Supervisors/Managers can view this page.");
-      router.back();
+      console.error("Fetch Error:", error.message);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [token, router]);
+  }, [token, activeTab]);
 
   useEffect(() => {
-    fetchAllPending();
-  }, [fetchAllPending]);
+    fetchData();
+  }, [fetchData]);
 
   const handleDecision = async (loanId: string, status: 'Approved' | 'Rejected') => {
-    Alert.alert(
-      "Confirm Action",
-      `Are you sure you want to ${status.toLowerCase()} this loan?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Yes, Proceed", 
-          onPress: async () => {
-            try {
-              await axios.patch(`${API_URL}/manager/approve/${loanId}`, 
-                { status },
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              Alert.alert("Success", `Loan application ${status}`);
-              fetchAllPending(); 
-            } catch (error: any) {
-              Alert.alert("Error", error.response?.data?.error || "Action failed");
-            }
-          }
-        }
-      ]
-    );
+    Alert.alert("Confirm", `Set loan to ${status}?`, [
+      { text: "Cancel" },
+      { text: "Yes", onPress: async () => {
+          try {
+            await axios.patch(`${API_URL}/manager/update-status/${loanId}`, { status }, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchData();
+          } catch (e) { Alert.alert("Error", "Update failed"); }
+      }}
+    ]);
+  };
+
+  const handleDeactivate = async (staffId: string, currentStatus: boolean) => {
+    try {
+      await axios.patch(`${API_URL}/manager/deactivate-staff/${staffId}`, 
+        { isActive: !currentStatus },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert("Success", `Staff ${!currentStatus ? 'Activated' : 'Deactivated'}`);
+      fetchData();
+    } catch (e) { Alert.alert("Error", "Action failed"); }
+  };
+
+  const handleDelete = async (staffId: string) => {
+    Alert.alert("HARD DELETE", "This permanently removes the staff account. Proceed?", [
+      { text: "Cancel" },
+      { text: "Delete", style: 'destructive', onPress: async () => {
+          try {
+            await axios.delete(`${API_URL}/manager/delete-staff/${staffId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchData();
+          } catch (e) { Alert.alert("Error", "Delete failed"); }
+      }}
+    ]);
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#003366" />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" color="#003366" /></View>;
   }
 
   return (
     <View style={styles.container}>
-      {/* Header Section */}
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#003366" />
         </TouchableOpacity>
         <View>
-          <Text style={styles.header}>Supervisor Portal</Text>
-          <Text style={styles.subHeader}>{funame} • {department || 'Management'}</Text>
+          <Text style={styles.header}>Admin Panel</Text>
+          <Text style={styles.subHeader}>{funame} • {role}</Text>
         </View>
+      </View>
+
+      {/* Tab Switcher */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
+          onPress={() => setActiveTab('loans')}
+        >
+          <Text style={[styles.tabText, activeTab === 'loans' && styles.activeTabText]}>Loans</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'staff' && styles.activeTab]} 
+          onPress={() => setActiveTab('staff')}
+        >
+          <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
+        </TouchableOpacity>
       </View>
       
       <FlatList
-        data={pendingLoans}
+        data={activeTab === 'loans' ? pendingLoans : staffList}
         keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={fetchAllPending} tintColor="#003366" />
-        }
-        renderItem={({ item }) => (
-          <View style={styles.loanCard}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.customerName}</Text>
-              <Text style={styles.details}>
-                {item.loanType} • ₦{Number(item.loanAmount || item.amount || 0).toLocaleString()}
-              </Text>
-              <Text style={styles.officer}>Officer: {item.createdByEmail}</Text>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} />}
+        renderItem={({ item }: { item: any }) => (
+          activeTab === 'loans' ? (
+            <View style={styles.card}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.customerName}</Text>
+                <Text style={styles.details}>₦{Number(item.amount || 0).toLocaleString()} • {item.loanType}</Text>
+              </View>
+              <View style={styles.actions}>
+                <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}><Ionicons name="checkmark-circle" size={40} color="#2E7D32" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}><Ionicons name="close-circle" size={40} color="#C62828" /></TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
-                <Ionicons name="checkmark-circle" size={44} color="#2E7D32" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
-                <Ionicons name="close-circle" size={44} color="#C62828" />
-              </TouchableOpacity>
+          ) : (
+            <View style={styles.card}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.full_name}</Text>
+                <Text style={styles.officer}>{item.role} • {item.email}</Text>
+              </View>
+              <View style={styles.actions}>
+                <TouchableOpacity onPress={() => handleDeactivate(item.id, item.is_active)}>
+                  <Text style={{ color: item.is_active ? 'orange' : 'green', fontWeight: 'bold' }}>
+                    {item.is_active ? 'Deactivate' : 'Activate'}
+                  </Text>
+                </TouchableOpacity>
+                {role === 'Super Admin' && (
+                  <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                    <Ionicons name="trash" size={24} color="red" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          </View>
+          )
         )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="shield-checkmark-outline" size={80} color="#CBD5E1" />
-            <Text style={styles.emptyText}>No pending applications for review.</Text>
-          </View>
-        }
       />
     </View>
   );
@@ -147,27 +187,18 @@ export default function ManagerDashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC', paddingHorizontal: 20, paddingTop: 50 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
-  backBtn: { marginRight: 15, padding: 5 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  backBtn: { marginRight: 15 },
   header: { fontSize: 24, fontWeight: 'bold', color: '#003366' },
-  subHeader: { fontSize: 13, color: '#64748B', textTransform: 'capitalize' },
-  loanCard: { 
-    backgroundColor: '#fff', 
-    padding: 18, 
-    borderRadius: 16, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center',
-    marginBottom: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10
-  },
-  name: { fontSize: 17, fontWeight: 'bold', color: '#1E293B' },
-  details: { color: '#003366', fontSize: 14, fontWeight: '700', marginTop: 3 },
-  officer: { fontSize: 11, color: '#94A3B8', marginTop: 8 },
-  actions: { flexDirection: 'row', gap: 12 },
-  emptyContainer: { alignItems: 'center', marginTop: 100 },
-  emptyText: { color: '#94A3B8', marginTop: 15, fontSize: 16 }
+  subHeader: { fontSize: 13, color: '#64748B' },
+  tabBar: { flexDirection: 'row', backgroundColor: '#E2E8F0', borderRadius: 10, marginBottom: 20, padding: 4 },
+  tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
+  activeTab: { backgroundColor: '#fff' },
+  tabText: { color: '#64748B', fontWeight: '600' },
+  activeTabText: { color: '#003366' },
+  card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 2 },
+  name: { fontSize: 16, fontWeight: 'bold' },
+  details: { color: '#003366', fontSize: 14, marginTop: 2 },
+  officer: { fontSize: 12, color: '#94A3B8' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 15 }
 });

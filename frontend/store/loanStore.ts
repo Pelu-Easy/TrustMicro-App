@@ -4,7 +4,7 @@ import axios from 'axios/dist/browser/axios.cjs';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-const API_URL = 'http://192.168.88.38:5000/api/v1'; // FIX: Ensure Port is here
+const API_URL = 'https://trustmicro-app.onrender.com/api/v1'; // FIX: Ensure Port is here
 
 export interface Loan {
   id: string;
