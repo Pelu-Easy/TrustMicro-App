@@ -8,7 +8,7 @@ import useUserData from '../store/userSignUp'; // Ensure this path is correct
 const axios = axiosImport as AxiosStatic;
 // 1. Centralized Production URL
 // Note: Ensure the /api/v1 prefix is handled here if your backend uses it
-export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
+export const API_URL = 'https://trustmicro-app.onrender.com/api/v1/manager/supervisors';
 
 const api = axios.create({
   baseURL: API_URL,

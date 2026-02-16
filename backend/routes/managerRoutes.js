@@ -46,5 +46,22 @@ router.get('/staff-list', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch staff list.' });
     }
 });
+// --- 4. GET SUPERVISORS LIST ---
+router.get('/supervisors', async (req, res) => {
+    try {
+        // We look for users who have the role 'Supervisor' or 'Manager'
+        const query = `
+            SELECT full_name, email, role, branch 
+            FROM staff_users 
+            WHERE role = $1 OR role = $2
+        `;
+        const result = await db.query(query, ['Supervisor', 'Manager']);
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching supervisors:', error);
+        res.status(500).json({ error: 'Failed to fetch supervisors list.' });
+    }
+});
 
 module.exports = router;
