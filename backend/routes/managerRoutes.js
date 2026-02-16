@@ -3,7 +3,6 @@ const router = express.Router();
 const { db } = require('../server'); // Import the PG pool from your server.js
 
 // --- 1. GET MANAGER DASHBOARD STATS ---
-// Using '/loan-stats' as requested, but keeping logic robust
 router.get('/loan-stats', async (req, res) => {
     try {
         const statsQuery = `
@@ -11,7 +10,7 @@ router.get('/loan-stats', async (req, res) => {
                 COUNT(*) as "totalLoans",
                 COUNT(*) FILTER (WHERE status = 'Pending') as "pendingLoans",
                 COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed') as "disbursedLoans",
-                SUM(CAST(amount AS NUMERIC)) as "totalVolume"
+                SUM(CAST(COALESCE(amount, '0') AS NUMERIC)) as "totalVolume"
             FROM loans
         `;
         const result = await db.query(statsQuery);
@@ -41,7 +40,7 @@ router.get('/branch-summary', async (req, res) => {
             SELECT 
                 COALESCE(branch, 'Unknown') as branch, 
                 COUNT(*) as "loanCount", 
-                SUM(CAST(amount AS NUMERIC)) as "totalAmount"
+                SUM(CAST(COALESCE(amount, '0') AS NUMERIC)) as "totalAmount"
             FROM staff_users
             JOIN loans ON staff_users.email = loans."createdByEmail"
             GROUP BY branch
@@ -55,14 +54,13 @@ router.get('/branch-summary', async (req, res) => {
     }
 });
 
-// --- 1. DEACTIVATE STAFF (Manager/Admin Power) ---
-// This doesn't delete them; it just stops them from logging in.
+// --- 3. DEACTIVATE STAFF (Manager/Admin Power) ---
 router.patch('/deactivate-staff/:id', async (req, res) => {
     const { id } = req.params;
-    const { isActive } = req.body; // Pass false to deactivate, true to reactivate
+    const { isActive } = req.body; 
     try {
         const query = 'UPDATE staff_users SET is_active = $1 WHERE id = $2 RETURNING *';
-        const result = await db.query(query, [isActive, id]);
+        await db.query(query, [isActive, id]);
         
         const statusText = isActive ? "activated" : "deactivated";
         res.json({ message: `Staff account ${statusText} successfully.` });
@@ -71,10 +69,9 @@ router.patch('/deactivate-staff/:id', async (req, res) => {
     }
 });
 
-// --- 2. DELETE STAFF (Super Admin Power ONLY) ---
+// --- 4. DELETE STAFF (Super Admin Power ONLY) ---
 router.delete('/delete-staff/:id', async (req, res) => {
     const { id } = req.params;
-    // Security Check: In a real app, you'd check req.user.role here
     try {
         await db.query('DELETE FROM staff_users WHERE id = $1', [id]);
         res.json({ message: "Staff account permanently deleted." });
@@ -82,7 +79,8 @@ router.delete('/delete-staff/:id', async (req, res) => {
         res.status(500).json({ error: 'Hard delete failed.' });
     }
 });
-// --- 4. GET ALL LOANS (Full Manager View) ---
+
+// --- 5. GET ALL LOANS (Full Manager View) ---
 router.get('/all-loans', async (req, res) => {
     try {
         const query = 'SELECT * FROM loans ORDER BY "submittedDate" DESC';
@@ -94,15 +92,15 @@ router.get('/all-loans', async (req, res) => {
     }
 });
 
-// --- 5. GET SUPERVISORS LIST ---
+// --- 6. GET SUPERVISORS LIST (Expanded Roles) ---
 router.get('/supervisors', async (req, res) => {
     try {
         const query = `
             SELECT full_name, email, role, branch 
             FROM staff_users 
-            WHERE role = $1 OR role = $2
+            WHERE role IN ('Supervisor', 'Manager', 'Admin', 'Super Admin')
         `;
-        const result = await db.query(query, ['Supervisor', 'Manager']);
+        const result = await db.query(query);
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching supervisors:', error);
@@ -110,17 +108,17 @@ router.get('/supervisors', async (req, res) => {
     }
 });
 
-// --- 6. GET ALL STAFF (Staff Management) ---
+// --- 7. GET ALL STAFF (Including active status) ---
 router.get('/staff-list', async (req, res) => {
     try {
-        const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users');
+        const result = await db.query('SELECT id, full_name, email, role, branch, is_active FROM staff_users');
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch staff list.' });
     }
 });
 
-// --- 7. UPDATE LOAN STATUS (Approve/Reject) ---
+// --- 8. UPDATE LOAN STATUS (Approve/Reject) ---
 router.patch('/update-status/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
