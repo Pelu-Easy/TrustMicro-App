@@ -4,27 +4,24 @@ import Checkbox from 'expo-checkbox';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// --- INTEGRATION WITH YOUR UTILITY ---
-import api from '@/services/api'; // Integrated your new central api utility
-import useUserData from "@/store/userSignUp";
+// --- FIXED IMPORTS ---
+import api from '@/services/api';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const updateUserData = useUserData((state: any) => state.updateUserData);
-
   const [isLoading, setIsLoading] = useState(false);
   const [supervisors, setSupervisors] = useState<any[]>([]);
   const [formData, setFormData] = useState({
@@ -45,7 +42,6 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        // No longer using full URL, just the endpoint
         const response = await api.get('/manager/supervisors');
         setSupervisors(response.data); 
       } catch (error) {
@@ -78,33 +74,30 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      // Integrated modification: Using api.post instead of axios.post
+      // Adjusted fields to match PostgreSQL schema exactly
       await api.post('/auth/signup', {
-        fullName: fullName.trim(),
+        full_name: fullName.trim(), // Matches DB column 'full_name'
         email: email.trim().toLowerCase(),
-        phone: phone.trim(),
+        phone_no: phone.trim(),    // Matches DB column 'phone_no'
         branch: branch,
         password: password,
-        department,
-        unit,
-        supervisor,
-        is_supervisor: isSupervisor ? 1 : 0,
-        role: isSupervisor ? 'Manager' : 'Officer'
+        department: department,
+        unit: unit,
+        supervisor_name: supervisor,
+        role: isSupervisor ? 'Manager' : 'Officer',
+        is_active: true // New staff starts as active
       });
       
       setIsLoading(false);
 
       Alert.alert("Success", "Staff Account Created Successfully!", [
-        { text: "Go to Login", onPress: () => router.replace('/login' as any) }
+        { text: "Go to Login", onPress: () => router.replace('/login') }
       ]);
 
     } catch (error: any) {
       setIsLoading(false);
-      // Detailed error handling is now partially managed by the Interceptor, 
-      // but we keep local logic for specific auth errors.
-      if (error.response) {
-        Alert.alert("Registration Failed", error.response.data.error || "Server error.");
-      }
+      const errorMsg = error.response?.data?.error || "Connection to server failed. Please try again.";
+      Alert.alert("Registration Failed", errorMsg);
     }
   };
 
@@ -163,9 +156,9 @@ export default function SignUpScreen() {
                 onValueChange={(itemValue) => updateField('department', itemValue)}
               >
                 <Picker.Item label="Select Department" value="" />
-                <Picker.Item label="Operations" value="operations" />
-                <Picker.Item label="Sales/Marketing" value="sales" />
-                <Picker.Item label="Risk Management" value="risk" />
+                <Picker.Item label="Operations" value="Operations" />
+                <Picker.Item label="Sales/Marketing" value="Sales" />
+                <Picker.Item label="Risk Management" value="Risk" />
               </Picker>
             </View>
 
@@ -178,8 +171,8 @@ export default function SignUpScreen() {
                     onValueChange={(v) => updateField('supervisor', v)}
                   >
                     <Picker.Item label="Select..." value="" />
-                    {supervisors.map((sup: any) => (
-                      <Picker.Item key={sup.email} label={sup.funame} value={sup.funame} />
+                    {supervisors.map((sup: any, index: number) => (
+                      <Picker.Item key={index} label={sup.full_name} value={sup.full_name} />
                     ))}
                   </Picker>
                 </View>
@@ -193,12 +186,9 @@ export default function SignUpScreen() {
                     onValueChange={(v) => updateField('unit', v)}
                   >
                     <Picker.Item label="Select..." value="" />
-                    <Picker.Item label="Cashier" value="cashier" />
-                    <Picker.Item label="IT" value="it" />
-                    <Picker.Item label="Admin" value="admin" />
-                    <Picker.Item label="Audit" value="audit" />
-                    <Picker.Item label="Account" value="account" />
-                    <Picker.Item label="Operation" value="operation" />
+                    <Picker.Item label="Cashier" value="Cashier" />
+                    <Picker.Item label="IT" value="IT" />
+                    <Picker.Item label="Admin" value="Admin" />
                   </Picker>
                 </View>
               </View>
