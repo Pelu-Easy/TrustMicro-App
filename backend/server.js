@@ -67,21 +67,27 @@ app.get('/', (req, res) => {
 const managerRoutes = require('./routes/managerRoutes');
 app.use('/api/v1/manager', managerRoutes);
 
-// SIGN-UP (Postgres version)
+// SIGN-UP (Postgres version) - UPDATED
 app.post('/api/v1/auth/signup', async (req, res) => {
-    const { fullName, email, phone, branch, password, role } = req.body;
+    // 1. Extract using the names the frontend is ACTUALLY sending
+    const { full_name, email, phone_no, branch, password, role } = req.body; 
+    
     try {
         const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [email]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        
+        // 2. Map the correct variables to the query
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch) 
                        VALUES ($1, $2, $3, $4, $5, $6)`;
         
-        await db.query(query, [fullName, email, phone, hashedPassword, role || 'Officer', branch]);
+        // Use full_name and phone_no here
+        await db.query(query, [full_name, email, phone_no, hashedPassword, role || 'Officer', branch]);
+        
         res.status(201).json({ message: "Staff account created successfully!" });
     } catch (error) { 
-        console.error(error);
+        console.error("Signup Error:", error.message);
         res.status(500).json({ error: "Internal Server Error" }); 
     }
 });
