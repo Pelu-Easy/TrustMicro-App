@@ -164,8 +164,8 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email; 
 
     const query = `INSERT INTO loans (
-        id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
-        phone, "bankName", "accountNumber", "submittedDate"
+        id, "createdByEmail", "customername", amount, "loanAmount", status, "loantype", bvn, nin,
+        phone, "bankname", "accountnumber", "submitteddate"
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
 
     const params = [
