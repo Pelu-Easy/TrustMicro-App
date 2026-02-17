@@ -76,7 +76,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
         const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [email]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcryptjs.hash(password, 10);
         
         // 2. Map the correct variables to the query
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch) 
@@ -146,7 +146,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
         res.json({
             token,
             user: { 
-                funame: user.full_name, 
+                full_name: user.full_name, 
                 email: user.email, 
                 role: user.role, 
                 branch: user.branch 
