@@ -1,7 +1,7 @@
 require('dotenv').config(); 
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg'); // Switched from sqlite3 to pg
+const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
@@ -18,32 +18,21 @@ app.use(cors({
 
 app.use(express.json());
 
-// Logger for debugging connection attempts
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     next();
 });
 
-// --- 2. DATABASE INITIALIZATION (SUPABASE / POSTGRES) ---
+// --- 2. DATABASE INITIALIZATION ---
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false // Required for Supabase + Render connection
-    }
+    ssl: { rejectUnauthorized: false }
 });
 
-db.on('connect', () => {
-    console.log('✅ Connected to TrustMicro Supabase Database.');
-});
+db.on('connect', () => console.log('✅ Connected to TrustMicro Supabase Database.'));
+db.on('error', (err) => console.error('❌ Unexpected database error:', err));
 
-db.on('error', (err) => {
-    console.error('❌ Unexpected database error:', err);
-});
-
-// Export db for use in other routes (like managerRoutes)
 module.exports.db = db; 
-
-// Note: Table creation (CREATE TABLE) should be done via Supabase SQL Editor for production.
 
 // --- 3. AUTHENTICATION MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -59,17 +48,14 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-app.get('/', (req, res) => {
-    res.send("🚀 TrustMicro Secure API is Live on Render!");
-});
+app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Render!"));
 
 // --- 4. ROUTES ---
 const managerRoutes = require('./routes/managerRoutes');
 app.use('/api/v1/manager', managerRoutes);
 
-// SIGN-UP (Postgres version) - UPDATED
+// SIGN-UP
 app.post('/api/v1/auth/signup', async (req, res) => {
-    // 1. Extract using the names the frontend is ACTUALLY sending
     const { full_name, email, phone_no, branch, password, role } = req.body; 
     
     try {
@@ -78,20 +64,18 @@ app.post('/api/v1/auth/signup', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // 2. Map the correct variables to the query
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch) 
                        VALUES ($1, $2, $3, $4, $5, $6)`;
         
-        // Use full_name and phone_no here
         await db.query(query, [full_name, email, phone_no, hashedPassword, role || 'Officer', branch]);
-        
         res.status(201).json({ message: "Staff account created successfully!" });
     } catch (error) { 
         console.error("Signup Error:", error.message);
         res.status(500).json({ error: "Internal Server Error" }); 
     }
 });
-// --- GET SINGLE LOAN DETAIL ---
+
+// GET SINGLE LOAN DETAIL
 app.get('/api/v1/loans/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -103,7 +87,7 @@ app.get('/api/v1/loans/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// --- RE-AUTHENTICATE USER (GET /me) ---
+// RE-AUTHENTICATE USER
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
@@ -113,20 +97,7 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// --- LOAN RE-SUBMISSION (PATCH) ---
-app.patch('/api/v1/loans/:id/re-upload', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const updateData = req.body; // Expecting updated loan fields
-    try {
-        // Simple example: updating amount and resetting status to Pending
-        const query = `UPDATE loans SET amount = $1, status = 'Pending' WHERE id = $2 AND "createdByEmail" = $3`;
-        await db.query(query, [updateData.amount, id, req.user.email]);
-        res.json({ message: "Loan resubmitted for approval." });
-    } catch (err) {
-        res.status(500).json({ error: "Re-upload failed" });
-    }
-});
-// LOGIN (Postgres version)
+// LOGIN
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -134,10 +105,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
-        // CHECK IF ACCOUNT IS ACTIVE
-        if (user.is_active === false) {
-            return res.status(403).json({ error: "Your account has been deactivated. Contact The IT." });
-        }
+        if (user.is_active === false) return res.status(403).json({ error: "Account deactivated." });
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
 
@@ -153,19 +122,18 @@ app.post('/api/v1/auth/login', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ error: "Server Error" });
     }
 });
 
-// SECURE LOAN SUBMISSION (Postgres version)
+// SECURE LOAN SUBMISSION (Updated Column Names to match SELECT aliases)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const loan = req.body;
     const officerEmail = req.user.email; 
 
     const query = `INSERT INTO loans (
-        id, "createdByEmail", "customername", amount, "loanAmount", status, "loantype", bvn, nin,
-        phone, "bankname", "accountnumber", "submitteddate"
+        id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
+        phone, "bankName", "accountNumber", "submittedDate"
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
 
     const params = [
@@ -178,12 +146,12 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         await db.query(query, params);
         res.status(201).json({ message: "Loan submitted successfully!" });
     } catch (err) {
-        console.error(err);
+        console.error("Loan Submission Error:", err.message);
         res.status(500).json({ error: "Failed to save loan." });
     }
 });
 
-// LOANS FETCH (Postgres version)
+// LOANS FETCH
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     const email = req.user.email; 
     try {
@@ -194,26 +162,23 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
-// PROFILE UPDATE (Postgres version)
+// PROFILE UPDATE
 app.patch('/api/v1/users/update-profile', authenticateToken, async (req, res) => {
-    const { funame, phone_no, email } = req.body;
+    const { full_name, phone_no, email } = req.body; // Changed 'funame' to 'full_name'
     const userId = req.user.id;
     const query = `UPDATE staff_users SET full_name = $1, phone_no = $2, email = $3 WHERE id = $4`;
     
     try {
-        await db.query(query, [funame, phone_no, email, userId]);
+        await db.query(query, [full_name, phone_no, email, userId]);
         res.json({ message: "Profile updated!" });
     } catch (err) {
         res.status(500).json({ error: "Update failed." });
     }
 });
 
-// --- 5. START SERVER ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server live and listening on Port ${PORT}`);
 });
-
-
 
 // require('dotenv').config(); // Load .env variables at the very top
 // const express = require('express');

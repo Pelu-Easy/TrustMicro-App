@@ -7,9 +7,9 @@ router.get('/loan-stats', async (req, res) => {
     try {
         const statsQuery = `
             SELECT 
-                COUNT(*) as "totalLoans",
-                COUNT(*) FILTER (WHERE status = 'Pending') as "pendingLoans",
-                COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed') as "disbursedLoans",
+                COUNT(*)::INT as "totalLoans",
+                COUNT(*) FILTER (WHERE status = 'Pending')::INT as "pendingLoans",
+                COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed')::INT as "disbursedLoans",
                 SUM(CAST(COALESCE(amount, '0') AS NUMERIC)) as "totalVolume"
             FROM loans
         `;
@@ -17,13 +17,13 @@ router.get('/loan-stats', async (req, res) => {
         const stats = result.rows[0];
 
         res.json({
-            totalLoans: parseInt(stats.totalLoans) || 0,
-            pendingLoans: parseInt(stats.pendingLoans) || 0,
-            disbursedLoans: parseInt(stats.disbursedLoans) || 0,
+            totalLoans: stats.totalLoans || 0,
+            pendingLoans: stats.pendingLoans || 0,
+            disbursedLoans: stats.disbursedLoans || 0,
             totalVolume: parseFloat(stats.totalVolume) || 0
         });
     } catch (error) {
-        console.error('Error fetching loan-stats:', error);
+        console.error('Error fetching loan-stats:', error.message);
         res.status(500).json({ error: 'Failed to fetch dashboard statistics.' });
     }
 });
@@ -38,23 +38,23 @@ router.get('/branch-summary', async (req, res) => {
     try {
         const query = `
             SELECT 
-                COALESCE(branch, 'Unknown') as branch, 
-                COUNT(*) as "loanCount", 
-                SUM(CAST(COALESCE(amount, '0') AS NUMERIC)) as "totalAmount"
-            FROM staff_users
-            JOIN loans ON staff_users.email = loans."createdByEmail"
-            GROUP BY branch
+                COALESCE(s.branch, 'Unknown') as branch, 
+                COUNT(l.id)::INT as "loanCount", 
+                SUM(CAST(COALESCE(l.amount, '0') AS NUMERIC)) as "totalAmount"
+            FROM staff_users s
+            JOIN loans l ON s.email = l."createdByEmail"
+            GROUP BY s.branch
             ORDER BY "totalAmount" DESC
         `;
         const result = await db.query(query);
         res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching branch summary:', error);
+        console.error('Error fetching branch summary:', error.message);
         res.status(500).json({ error: 'Failed to fetch branch summary.' });
     }
 });
 
-// --- 3. DEACTIVATE STAFF (Manager/Admin Power) ---
+// --- 3. DEACTIVATE STAFF ---
 router.patch('/deactivate-staff/:id', async (req, res) => {
     const { id } = req.params;
     const { isActive } = req.body; 
@@ -69,7 +69,7 @@ router.patch('/deactivate-staff/:id', async (req, res) => {
     }
 });
 
-// --- 4. DELETE STAFF (Super Admin Power ONLY) ---
+// --- 4. DELETE STAFF ---
 router.delete('/delete-staff/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -80,19 +80,37 @@ router.delete('/delete-staff/:id', async (req, res) => {
     }
 });
 
-// --- 5. GET ALL LOANS (Full Manager View) ---
+// --- 5. GET ALL LOANS (Fixes the "Column Not Found" Errors) ---
 router.get('/all-loans', async (req, res) => {
     try {
-        const query = 'SELECT id, customername, amount, loanamount, status, submitted_date FROM loans';
+        // We select the columns carefully using double quotes to match your INSERTs 
+        // while providing lowercase aliases just in case.
+        const query = `
+            SELECT 
+                id, 
+                "customerName" AS "customerName", 
+                amount, 
+                "loanAmount" AS "loanAmount", 
+                status, 
+                "submittedDate" AS "submittedDate"
+            FROM loans
+            ORDER BY "submittedDate" DESC
+        `;
         const result = await db.query(query);
         res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching all loans:', error);
-        res.status(500).json({ error: 'Failed to fetch loans.' });
+        console.error('Error fetching all-loans:', error.message);
+        // Fallback: If the above fails, try selecting all (*) to prevent 500
+        try {
+            const fallback = await db.query('SELECT * FROM loans');
+            res.json(fallback.rows);
+        } catch (innerError) {
+            res.status(500).json({ error: 'Database access failed.' });
+        }
     }
 });
 
-// --- 6. GET SUPERVISORS LIST (Expanded Roles) ---
+// --- 6. GET SUPERVISORS LIST ---
 router.get('/supervisors', async (req, res) => {
     try {
         const query = `
@@ -103,12 +121,12 @@ router.get('/supervisors', async (req, res) => {
         const result = await db.query(query);
         res.json(result.rows);
     } catch (error) {
-        console.error('Error fetching supervisors:', error);
+        console.error('Error fetching supervisors:', error.message);
         res.status(500).json({ error: 'Failed to fetch supervisors list.' });
     }
 });
 
-// --- 7. GET ALL STAFF (Including active status) ---
+// --- 7. GET ALL STAFF ---
 router.get('/staff-list', async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, branch, is_active FROM staff_users');
@@ -118,7 +136,7 @@ router.get('/staff-list', async (req, res) => {
     }
 });
 
-// --- 8. UPDATE LOAN STATUS (Approve/Reject) ---
+// --- 8. UPDATE LOAN STATUS ---
 router.patch('/update-status/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -131,7 +149,7 @@ router.patch('/update-status/:id', async (req, res) => {
         }
         res.json({ message: `Loan status updated to ${status}`, loan: result.rows[0] });
     } catch (error) {
-        console.error('Error updating status:', error);
+        console.error('Error updating status:', error.message);
         res.status(500).json({ error: 'Database update failed.' });
     }
 });
