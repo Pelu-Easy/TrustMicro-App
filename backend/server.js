@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg'); // Switched from sqlite3 to pg
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -214,7 +214,7 @@ app.listen(PORT, '0.0.0.0', () => {
 // const cors = require('cors');
 // const sqlite3 = require('sqlite3').verbose();
 // const jwt = require('jsonwebtoken');
-// const bcrypt = require('bcrypt');
+// const bcrypt = require('bcryptjs');
 
 
 // // --- 1. MIDDLEWARE (Must be before routes) ---
