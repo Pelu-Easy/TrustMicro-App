@@ -83,7 +83,7 @@ router.delete('/delete-staff/:id', async (req, res) => {
 // --- 5. GET ALL LOANS (Full Manager View) ---
 router.get('/all-loans', async (req, res) => {
     try {
-        const query = 'SELECT * FROM loans ORDER BY "submittedDate" DESC';
+        const query = 'SELECT id, "customerName", amount, status, submitted_date FROM loans';
         const result = await db.query(query);
         res.json(result.rows);
     } catch (error) {
