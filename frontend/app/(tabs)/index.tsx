@@ -95,7 +95,6 @@ export default function Dashboard() {
   const hasManagerAccess = isSupervisor || role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor';
 
   return (
-    // Removed edges=['top'] so it protects both Top and Bottom
     <SafeAreaView style={styles.container}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
@@ -175,18 +174,41 @@ export default function Dashboard() {
           </View>
         ) : (
           loans.slice(0, 5).map((loan, index) => (
-            <View key={`${loan.id}-${index}`} style={styles.loanItem}>
+            <TouchableOpacity 
+              key={`${loan.id}-${index}`} 
+              style={styles.loanItem}
+              onPress={() => {
+                if (loan.status === 'Draft') {
+                  // If it's a draft, go back to form and pass the ID
+                  router.push({
+                    pathname: '/(tabs)/loanForm',
+                    params: { draftId: loan.id }
+                  } as any);
+                } else {
+                  // For submitted loans, perhaps view details (future implementation)
+                  console.log("Loan already submitted for review");
+                }
+              }}
+            >
               <View style={styles.loanInfo}>
-                <Text style={styles.customerName}>{loan.customerName}</Text>
+                <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                 <Text style={styles.loanDate}>{loan.submittedDate}</Text>
               </View>
               <View style={styles.loanStatusArea}>
                 <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: loan.status === 'Approved' ? '#DCFCE7' : '#F1F5F9' }]}>
-                  <Text style={[styles.statusText, { color: loan.status === 'Approved' ? '#166534' : '#475569' }]}>{loan.status}</Text>
+                <View style={[
+                    styles.statusBadge, 
+                    { backgroundColor: loan.status === 'Approved' ? '#DCFCE7' : loan.status === 'Draft' ? '#FEF9C3' : '#F1F5F9' }
+                ]}>
+                  <Text style={[
+                    styles.statusText, 
+                    { color: loan.status === 'Approved' ? '#166534' : loan.status === 'Draft' ? '#854D0E' : '#475569' }
+                  ]}>
+                    {loan.status}
+                  </Text>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -197,7 +219,6 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  // Added paddingBottom: 100 to push content above navigation bar
   scrollContent: { padding: 20, paddingBottom: 100 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   welcomeLabel: { fontSize: 14, color: '#64748B' },
@@ -208,16 +229,16 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#011F3D', marginTop: 10, marginBottom: 15 },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   actionBtn: { 
-     width: (width - 64) / 3, 
-     minWidth: 100,
-     backgroundColor: '#003366', 
-     borderRadius: 16, 
-     padding: 15, 
-     alignItems: 'center', 
-     elevation: 4, 
-     shadowColor: '#000', 
-     shadowOpacity: 0.1, 
-     shadowRadius: 4 
+      width: (width - 64) / 3, 
+      minWidth: 100,
+      backgroundColor: '#003366', 
+      borderRadius: 16, 
+      padding: 15, 
+      alignItems: 'center', 
+      elevation: 4, 
+      shadowColor: '#000', 
+      shadowOpacity: 0.1, 
+      shadowRadius: 4 
     },
   actionIconBg: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderRadius: 10 },
   actionBtnText: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 8 },
