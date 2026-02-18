@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Added useLocalSearchParams
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -31,12 +31,13 @@ const BRAND = {
 };
 
 interface LoanFormProps {
-  initialDraft?: Loan | null; 
   onComplete?: () => void;
 }
 
-export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormProps) {
+export default function CompleteLoanForm({ onComplete }: LoanFormProps) {
   const router = useRouter();
+  const params = useLocalSearchParams(); // Capture draftId from Dashboard
+  
   const [step, setStep] = useState(1);
   const [isScanning, setIsScanning] = useState(false);
   const [scanTarget, setScanTarget] = useState<'bvn' | 'nin' | null>(null);
@@ -49,52 +50,61 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateValue, setDateValue] = useState(new Date(1995, 0, 1));
 
+  // State to hold the persistent ID for this specific session
+  const [currentLoanId, setCurrentLoanId] = useState<string>('');
+
   const addLoan = useLoanStore((state) => state.addLoan);
   const allLoans = useLoanStore((state) => state.loans);
-  
-  // --- STAFF IDENTITY FROM STORE ---
   const { isSupervisor, token, email: currentUserEmail, funame: staffFullName, branch: staffBranch } = useUserData();
 
-  // --- MANAGER PROTECTION LOGIC ---
-  useEffect(() => {
-    if (isSupervisor) {
-      Alert.alert("Access Denied", "Managers/Supervisors cannot create new applications. Please use the Approval Dashboard.");
-      router.replace('/(tabs)');
-    }
-  }, [isSupervisor]);
-
-  const initialFormState = useMemo(() => ({
+  // --- INITIAL FORM STATE ---
+  const [formData, setFormData] = useState({
     customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
     loanAmount: '', bankName: '', accountNumber: '',
     employerName: '', jobTitle: '', nokName: '', nokPhone: '',
     idUploaded: false, utilityUploaded: false, statementUploaded: false, selfieUploaded: false
-  }), []);
+  });
 
-  const [formData, setFormData] = useState(initialFormState);
-
+  // --- LOAD DRAFT OR GENERATE NEW ID ---
   useEffect(() => {
-    if (initialDraft) {
-      setFormData(prev => ({
-        ...prev,
-        customerName: initialDraft.customerName || '',
-        bvn: initialDraft.bvn || '',
-        nin: initialDraft.nin || '',
-        phone: initialDraft.phone || '',
-        address: initialDraft.address || '',
-        loanAmount: initialDraft.loanAmount || '',
-        bankName: initialDraft.bankName || '',
-        accountNumber: initialDraft.accountNumber || '',
-        employerName: initialDraft.employerName || '',
-        jobTitle: initialDraft.jobTitle || '',
-        nokName: initialDraft.nokName || '',
-        nokPhone: initialDraft.nokPhone || '',
-      }));
-
-      if (initialDraft.loanAmount) setStep(4);
-      else if (initialDraft.employerName) setStep(3);
-      else if (initialDraft.bvn) setStep(2);
+    if (params.draftId) {
+      // 1. Resume existing draft
+      const existingLoan = allLoans.find(l => l.id === params.draftId);
+      if (existingLoan) {
+        setCurrentLoanId(existingLoan.id);
+        setFormData({
+          customerName: existingLoan.customerName || '',
+          bvn: existingLoan.bvn || '',
+          nin: existingLoan.nin || '',
+          phone: existingLoan.phone || '',
+          address: existingLoan.address || '',
+          dob: existingLoan.dob || '',
+          loanAmount: existingLoan.loanAmount || '',
+          bankName: existingLoan.bankName || '',
+          accountNumber: existingLoan.accountNumber || '',
+          employerName: existingLoan.employerName || '',
+          jobTitle: existingLoan.jobTitle || '',
+          nokName: existingLoan.nokName || '',
+          nokPhone: existingLoan.nokPhone || '',
+          idUploaded: !!existingLoan.idCard,
+          utilityUploaded: !!existingLoan.ninHardCopy, // mapped to existing fields
+          statementUploaded: !!existingLoan.employmentLetter,
+          selfieUploaded: !!existingLoan.passportPhoto
+        });
+      }
+    } else {
+      // 2. Fresh application - Generate ID only ONCE
+      setCurrentLoanId(`loan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
     }
-  }, [initialDraft]);
+  }, [params.draftId]);
+
+  // --- MANAGER PROTECTION ---
+  useEffect(() => {
+    if (isSupervisor) {
+      Alert.alert("Access Denied", "Managers cannot create applications.");
+      router.replace('/(tabs)');
+    }
+  }, [isSupervisor]);
 
   const updateData = (key: string, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
 
@@ -104,19 +114,16 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
         loan.bvn === formData.bvn && 
         loan.status !== 'Rejected' && 
         loan.status !== 'Draft' &&
-        loan.id !== initialDraft?.id
+        loan.id !== currentLoanId // Don't flag itself as a duplicate
     );
-  }, [formData.bvn, allLoans, initialDraft]);
+  }, [formData.bvn, allLoans, currentLoanId]);
 
   const createLoanObject = (status: Loan['status']): Loan => {
     return {
-      id: `loan_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      id: currentLoanId, // Use the persistent ID
       createdByEmail: currentUserEmail || 'system',
-      
-      // --- ACCOUNTABILITY TAGS ---
       staffName: staffFullName || 'Unknown Staff', 
       branchName: staffBranch || 'Main Branch',
-
       loanType: 'Personal Loan',
       title: 'Loan Application',
       customerName: formData.customerName || 'Unnamed Draft',
@@ -161,7 +168,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
 
   const handleFinalSubmit = async () => {
     if (!formData.loanAmount || !formData.bvn) {
-      Alert.alert("Error", "Loan Amount and BVN are required for submission.");
+      Alert.alert("Error", "Loan Amount and BVN are required.");
       return;
     }
 
@@ -169,7 +176,6 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
     const newLoanRecord = createLoanObject('Pending');
 
     try {
-        // Post with staffName included in the object
         await api.post('/loans', newLoanRecord, {
             headers: { 
               Authorization: `Bearer ${token}`, 
@@ -180,7 +186,6 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
         addLoan(newLoanRecord, currentUserEmail); 
         setIsSubmitting(false);
         setShowSuccess(true);
-        
     } catch (error: any) {
         setIsSubmitting(false);
         const errorMsg = error.response?.data?.error || "Connection to server failed.";
@@ -191,7 +196,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
   const handleStartScan = async (target: 'bvn' | 'nin') => {
     if (!permission?.granted) {
       const request = await requestPermission();
-      if (!request.granted) return Alert.alert("Permission Required", "Camera access is needed.");
+      if (!request.granted) return Alert.alert("Permission Required", "Camera access needed.");
     }
     setScanTarget(target);
     setIsScanning(true);
@@ -237,7 +242,6 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* SUCCESS MODAL */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.successOverlay}>
             <View style={styles.successCard}>
@@ -249,14 +253,13 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
                 />
                 <Text style={styles.successTitle}>Application Submitted</Text>
                 <Text style={styles.successSubtitle}>Submitted by: {staffFullName}</Text>
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => {setShowSuccess(false); if(onComplete) onComplete();}}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => {setShowSuccess(false); if(onComplete) onComplete(); router.replace('/(tabs)');}}>
                     <Text style={styles.btnText}>Return to Dashboard</Text>
                 </TouchableOpacity>
             </View>
         </View>
       </Modal>
 
-      {/* SCANNER MODAL */}
       <Modal visible={isScanning}>
         <CameraView style={StyleSheet.absoluteFill} onBarcodeScanned={isScanning ? onBarcodeScanned : undefined}>
             <TouchableOpacity onPress={() => setIsScanning(false)} style={styles.closeBtn}><Ionicons name="close" size={35} color="#FFF" /></TouchableOpacity>
@@ -267,7 +270,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
       <ScrollView contentContainerStyle={{ padding: 24 }}>
         <View style={styles.headerRow}>
             <View style={{flex: 1}}>
-                <Text style={styles.stepText}>{initialDraft ? 'RESUMING DRAFT' : `STEP ${step} OF 5`}</Text>
+                <Text style={styles.stepText}>{params.draftId ? 'RESUMING DRAFT' : `STEP ${step} OF 5`}</Text>
                 <View style={styles.barBg}><View style={[styles.barFill, {width: `${(step/5)*100}%`}]} /></View>
             </View>
             <TouchableOpacity style={styles.draftBtnHeader} onPress={handleSaveDraft}>
@@ -302,7 +305,6 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
           </View>
         )}
 
-        {/* ... steps 2, 3, 4 remain structurally similar ... */}
         {step === 2 && (
           <View>
             <Text style={styles.title}>Employment & References</Text>

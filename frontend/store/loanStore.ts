@@ -83,10 +83,7 @@ export const useLoanStore = create<LoanState>()(
       },
 
       addLoan: async (loan, currentUserEmail) => {
-        // 1. Get additional staff info from userSignUp store
         const userData = useUserData.getState();
-        
-        // 2. Sanitize email to prevent Foreign Key violations (lowercase/trim)
         const sanitizedEmail = currentUserEmail.toLowerCase().trim();
 
         const ownedLoan: Loan = { 
@@ -96,23 +93,29 @@ export const useLoanStore = create<LoanState>()(
           branchName: userData.branch || 'Main Branch'
         };
         
-        // 3. Update local state immediately for responsiveness
         set((state) => {
-            const exists = state.loans.some((l) => l.id === loan.id);
-            if (exists) {
-                return { loans: state.loans.map((l) => (l.id === loan.id ? ownedLoan : l)) };
+            // CHECK: Does this loan ID already exist in our local list?
+            const loanIndex = state.loans.findIndex((l) => l.id === loan.id);
+            
+            if (loanIndex !== -1) {
+                // UPDATE: Replace the old version with the new one
+                const updatedLoans = [...state.loans];
+                updatedLoans[loanIndex] = ownedLoan;
+                return { loans: updatedLoans };
+            } else {
+                // INSERT: It's brand new, add it to the top
+                return { loans: [ownedLoan, ...state.loans] };
             }
-            return { loans: [ownedLoan, ...state.loans] };
         });
 
-        // 4. Sync with Backend
+        // 4. Sync with Backend (using PUT/PATCH for updates if your API supports it)
         try {
+          // If your backend handles upserts at /loans, this is fine.
+          // Otherwise, you might need a check: if (isUpdate) axios.put else axios.post
           await axios.post(`${API_URL}/loans`, ownedLoan);
-          console.log("Loan successfully synced to cloud.");
+          console.log("Loan successfully synced.");
         } catch (error: any) {
           console.log("Cloud Sync Failed:", error.response?.data?.message || error.message);
-          // If the error is still a 500 or FK error, it means the user's email 
-          // in the app doesn't exist in the database 'users' table.
         }
       },
 
