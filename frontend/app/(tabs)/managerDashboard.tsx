@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import useUserData from '../../store/userSignUp';
 
+// Standardized API URL to match server.js
 const API_URL = 'https://trustmicro-app.onrender.com/api/v1'; 
 
 interface LoanItem {
@@ -43,7 +44,7 @@ export default function ManagerDashboard() {
   const router = useRouter();
   const { token, funame, role, isSupervisor } = useUserData();
 
-  // Unified permission check
+  // Permission Logic
   const canManage = role === 'Super Admin' || isSupervisor === true;
 
   const [pendingLoans, setPendingLoans] = useState<LoanItem[]>([]);
@@ -59,8 +60,9 @@ export default function ManagerDashboard() {
         const res = await axios.get(`${API_URL}/manager/all-loans`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        // Only show Pending loans for the review list
         setPendingLoans(res.data.filter((l: LoanItem) => l.status === 'Pending'));
-      } else if (canManage) {
+      } else if (canManage && activeTab === 'staff') {
         const res = await axios.get(`${API_URL}/manager/staff-list`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -68,6 +70,10 @@ export default function ManagerDashboard() {
       }
     } catch (error: any) {
       console.error("Fetch Error:", error.message);
+      // If unauthorized, could be an expired token
+      if (error.response?.status === 401) {
+        Alert.alert("Session Expired", "Please login again.");
+      }
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -80,7 +86,7 @@ export default function ManagerDashboard() {
 
   const handleDecision = async (loanId: string, status: 'Approved' | 'Rejected') => {
     if (!canManage) {
-      Alert.alert("Denied", "You do not have permission to approve/reject loans.");
+      Alert.alert("Denied", "Officers cannot approve/reject loans.");
       return;
     }
     Alert.alert("Confirm", `Set loan to ${status}?`, [
@@ -139,7 +145,7 @@ export default function ManagerDashboard() {
         </View>
       </View>
 
-      {/* TABS: Only visible if user has management rights */}
+      {/* TABS: Hidden for Field Officers */}
       {canManage && (
         <View style={styles.tabBar}>
           <TouchableOpacity 
@@ -163,7 +169,6 @@ export default function ManagerDashboard() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} />}
         renderItem={({ item }: { item: LoanItem | StaffItem }) => {
           
-          // --- LOAN ITEM RENDER ---
           if ('customerName' in item) {
             return (
               <View style={styles.card}>
@@ -177,8 +182,8 @@ export default function ManagerDashboard() {
                       amount: item.amount,
                       loanType: item.loanType,
                       staffName: item.staffName || 'Field Officer',
-                      ninImage: item.ninImageUrl || '', 
-                      idImage: item.idImageUrl || '' 
+                      ninImageUrl: item.ninImageUrl || '', 
+                      idImageUrl: item.idImageUrl || '' 
                     }
                   })}
                 >
@@ -209,7 +214,6 @@ export default function ManagerDashboard() {
             );
           }
 
-          // --- STAFF ITEM RENDER (ONLY REACHABLE BY MANAGERS) ---
           return (
             <View style={styles.card}>
               <View style={{ flex: 1 }}>
@@ -218,13 +222,13 @@ export default function ManagerDashboard() {
               </View>
               <View style={styles.actions}>
                 <TouchableOpacity onPress={() => handleDeactivate(item.id, item.is_active)}>
-                  <Text style={{ color: item.is_active ? 'orange' : 'green', fontWeight: 'bold' }}>
+                  <Text style={{ color: item.is_active ? '#E67E22' : '#27AE60', fontWeight: 'bold' }}>
                     {item.is_active ? 'Deactivate' : 'Activate'}
                   </Text>
                 </TouchableOpacity>
                 {role === 'Super Admin' && (
                   <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                    <Ionicons name="trash" size={24} color="red" />
+                    <Ionicons name="trash" size={24} color="#C0392B" />
                   </TouchableOpacity>
                 )}
               </View>

@@ -8,16 +8,27 @@ const { db } = require('../server');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key';
 
 // --- CHECK PHONE UNIQUE ROUTE ---
-// Used by the frontend during signup to prevent duplicate staff numbers
+// FIX: Added explicit handling to ensure it catches the phone parameter correctly
 router.get('/check-phone/:phone', async (req, res) => {
     try {
-        const { phone } = req.params;
-        const query = "SELECT id FROM staff_users WHERE phone_no = $1";
-        const result = await db.query(query, [phone.trim()]);
+        const phone = req.params.phone ? req.params.phone.trim() : null;
+        
+        if (!phone) {
+            return res.status(400).json({ error: "Phone number is required" });
+        }
+
+        const query = "SELECT id, full_name, is_active FROM staff_users WHERE phone_no = $1";
+        const result = await db.query(query, [phone]);
 
         if (result.rows.length > 0) {
-            return res.status(200).json({ exists: true });
+            // We return the user data needed for auto-login verification
+            return res.status(200).json({ 
+                exists: true, 
+                isActive: result.rows[0].is_active,
+                name: result.rows[0].full_name 
+            });
         }
+        
         res.status(200).json({ exists: false });
     } catch (error) {
         console.error("Phone Check Error:", error);
@@ -35,6 +46,7 @@ router.post('/login', async (req, res) => {
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
+        if (!user.is_active) return res.status(403).json({ error: "Account is deactivated. Contact Admin." });
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
@@ -68,16 +80,15 @@ router.post('/login', async (req, res) => {
 
 // --- STAFF SIGN UP ROUTE ---
 router.post('/signup', async (req, res) => {
-    // These keys now match the 'api.post' body from your TrustMicro frontend
     const { 
         full_name, email, phone_no, branch, password,
         department, unit, supervisor_name, is_loan_officer, role 
     } = req.body;
 
     try {
-        // 1. Double check phone uniqueness at the database level
+        // 1. Double check phone uniqueness
         const checkQuery = "SELECT id FROM staff_users WHERE phone_no = $1";
-        const checkResult = await db.query(checkQuery, [phone_no]);
+        const checkResult = await db.query(checkQuery, [phone_no.trim()]);
         if (checkResult.rows.length > 0) {
             return res.status(400).json({ error: "Phone number already registered" });
         }
@@ -98,7 +109,7 @@ router.post('/signup', async (req, res) => {
         const params = [
             full_name, 
             email.trim().toLowerCase(), 
-            phone_no, 
+            phone_no.trim(), 
             hashedPassword, 
             branch, 
             role || 'Officer', 
