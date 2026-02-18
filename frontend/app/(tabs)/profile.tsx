@@ -13,16 +13,15 @@ const BRAND = {
   primary: "#003366", 
   accent: "#2E7D32", 
   border: "#E2E8F0",
-  supervisor: "#10B981", // Green for Supervisor
-  officer: "#64748B"      // Grey for Officer
+  supervisor: "#10B981", 
+  officer: "#64748B"      
 };
 
 export default function Profile() {
   const { disbursementTarget, setDisbursementTarget } = useStaffStore();
   const router = useRouter();
   
-  // Destructured correctly from Zustand
-  const { branch, updateUserData, funame: fullName, isSupervisor, role } = useUserData();
+  const { branch, updateUserData, funame: fullName, isSupervisor } = useUserData();
   
   const loans = useLoanStore((state) => state.loans);
   const staff = useLoanStore((state) => state.staffProfile);
@@ -31,7 +30,7 @@ export default function Profile() {
   const disbursedLoans = loans.filter(l => l.status === 'Disbursed');
   
   const totalDisbursedAmount = disbursedLoans.reduce((acc, curr) => {
-    const num = parseInt(curr.amount.replace(/[^0-9]/g, '')) || 0;
+    const num = parseInt(curr.amount?.toString().replace(/[^0-9]/g, '') || '0') || 0;
     return acc + num;
   }, 0);
 
@@ -82,12 +81,13 @@ export default function Profile() {
   };
 
   const handleShareReceipt = async (loan: any) => {
+    const amountVal = loan.amount?.toString().replace(/[^0-9]/g, '') || '0';
     const htmlContent = `
       <html>
         <body style="font-family: Helvetica; padding: 20px;">
           <h2 style="color: #003366;">TrustMicro Receipt</h2>
           <p><strong>Customer:</strong> ${loan.customerName}</p>
-          <p><strong>Amount:</strong> ₦${Number(loan.amount.replace(/[^0-9]/g, '')).toLocaleString()}</p>
+          <p><strong>Amount:</strong> ₦${Number(amountVal).toLocaleString()}</p>
           <p><strong>Officer:</strong> ${fullName}</p>
           <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
         </body>
@@ -106,7 +106,7 @@ export default function Profile() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         
-        {/* --- HEADER WITH ROLE BADGE --- */}
+        {/* --- HEADER --- */}
         <View style={styles.header}>
           <View style={styles.avatarLarge}>
             <Text style={styles.avatarText}>{fullName ? fullName.charAt(0) : 'U'}</Text>
@@ -126,25 +126,21 @@ export default function Profile() {
               {isSupervisor ? "Supervisor" : "Field Officer"}
             </Text>
           </View>
-
           <Text style={styles.staffRole}>{branch}</Text>
         </View>
 
-        {/* --- PERFORMANCE TARGET CARD --- */}
+        {/* --- PERFORMANCE CARD --- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Monthly Disbursement Target</Text>
-          <View style={{ marginVertical: 10 }}>
-            {/* FIXED: Changed <div> to <View> */}
-            <View style={styles.targetRow}>
-                <Text style={styles.targetValue}>₦{totalDisbursedAmount.toLocaleString()}</Text>
-                <Text style={styles.targetGoal}>/ ₦{(staff.monthlyTarget / 1000000).toFixed(1)}M</Text>
-            </View>
+          <View style={styles.targetRow}>
+              <Text style={styles.targetValue}>₦{totalDisbursedAmount.toLocaleString()}</Text>
+              <Text style={styles.targetGoal}>/ ₦{(staff.monthlyTarget / 1000000).toFixed(1)}M</Text>
           </View>
 
           <View style={styles.progressBarBg}>
             <View style={[styles.progressBarFill, { width: `${Math.min(progressPercentage, 100)}%` }]} />
           </View>
-          <Text style={styles.progressText}>{progressPercentage.toFixed(1)}% of monthly goal reached</Text>
+          <Text style={styles.progressText}>{progressPercentage.toFixed(1)}% reached</Text>
         </View>
 
         <TouchableOpacity style={styles.downloadBtn} onPress={downloadPerformanceReport}>
@@ -162,12 +158,13 @@ export default function Profile() {
                 <TextInput
                   style={styles.targetInput}
                   keyboardType="numeric"
+                  placeholder="Enter amount"
                   defaultValue={disbursementTarget.toString()}
                   onSubmitEditing={(e) => {
                     const newTarget = parseInt(e.nativeEvent.text);
                     if (newTarget > 0) {
                       setDisbursementTarget(newTarget);
-                      Alert.alert("Success", "Target updated for this profile.");
+                      Alert.alert("Success", "Target updated locally.");
                     }
                   }}
                 />
@@ -220,12 +217,14 @@ export default function Profile() {
                   <Text style={styles.historyName}>{loan.customerName}</Text>
                   <Text style={styles.historyDate}>{loan.activeDate || 'Recently Disbursed'}</Text>
                 </View>
-                <div style={styles.historyRight}>
-                  <Text style={styles.historyAmount}>₦{Number(loan.amount.replace(/[^0-9]/g, '')).toLocaleString()}</Text>
+                <View style={styles.historyRight}>
+                  <Text style={styles.historyAmount}>
+                    ₦{Number(loan.amount?.toString().replace(/[^0-9]/g, '') || 0).toLocaleString()}
+                  </Text>
                   <TouchableOpacity onPress={() => handleShareReceipt(loan)} style={styles.shareIconButton}>
                     <Ionicons name="share-outline" size={18} color={BRAND.primary} />
                   </TouchableOpacity>
-                </div>
+                </View>
               </View>
             ))
           ) : (

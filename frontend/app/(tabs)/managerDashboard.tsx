@@ -22,9 +22,13 @@ interface LoanItem {
   customerName: string;
   loanType: string;
   loanAmount?: number;
-  amount?: number;
+  amount?: string | number;
   createdByEmail: string;
   status: string;
+  staffName?: string;
+  branchName?: string;
+  ninImageUrl?: string; // Added for navigation
+  idImageUrl?: string;  // Added for navigation
 }
 
 interface StaffItem {
@@ -43,7 +47,7 @@ export default function ManagerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const { token, funame, department, role } = useUserData();
+  const { token, funame, role } = useUserData();
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -126,7 +130,6 @@ export default function ManagerDashboard() {
         </View>
       </View>
 
-      {/* Tab Switcher */}
       <View style={styles.tabBar}>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
@@ -146,19 +149,54 @@ export default function ManagerDashboard() {
         data={activeTab === 'loans' ? pendingLoans : staffList}
         keyExtractor={(item) => item.id.toString()}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} />}
-        renderItem={({ item }: { item: any }) => (
-          activeTab === 'loans' ? (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.customerName}</Text>
-                <Text style={styles.details}>₦{Number(item.amount || 0).toLocaleString()} • {item.loanType}</Text>
+        renderItem={({ item }: { item: LoanItem | StaffItem }) => {
+          // --- TYPE GUARD FOR LOANS ---
+          if ('customerName' in item) {
+            return (
+              <View style={styles.card}>
+                {/* Wrap the info section with Navigation to Details */}
+                <TouchableOpacity 
+                  style={{ flex: 1 }}
+                  onPress={() => router.push({
+                    pathname: "/loanDetails" as any,
+                    params: { 
+                      id: item.id, 
+                      customerName: item.customerName,
+                      amount: item.amount,
+                      loanType: item.loanType,
+                      staffName: item.staffName || 'Field Officer',
+                      ninImage: item.ninImageUrl || '', 
+                      idImage: item.idImageUrl || '' 
+                    }
+                  })}
+                >
+                  <Text style={styles.name}>{item.customerName}</Text>
+                  <Text style={styles.details}>
+                      {typeof item.amount === 'string' ? item.amount : `₦${Number(item.amount || 0).toLocaleString()}`} • {item.loanType}
+                  </Text>
+                  
+                  <View style={styles.staffTag}>
+                    <Ionicons name="person-outline" size={12} color="#64748B" />
+                    <Text style={styles.staffNameText}>
+                      Officer: {item.staffName || 'System'} {item.branchName ? `(${item.branchName})` : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
+                    <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
+                    <Ionicons name="close-circle" size={40} color="#C62828" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}><Ionicons name="checkmark-circle" size={40} color="#2E7D32" /></TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}><Ionicons name="close-circle" size={40} color="#C62828" /></TouchableOpacity>
-              </View>
-            </View>
-          ) : (
+            );
+          }
+
+          // --- TYPE GUARD FOR STAFF ---
+          return (
             <View style={styles.card}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{item.full_name}</Text>
@@ -177,8 +215,8 @@ export default function ManagerDashboard() {
                 )}
               </View>
             </View>
-          )
-        )}
+          );
+        }}
       />
     </View>
   );
@@ -199,6 +237,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 2 },
   name: { fontSize: 16, fontWeight: 'bold' },
   details: { color: '#003366', fontSize: 14, marginTop: 2 },
+  staffTag: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 4 },
+  staffNameText: { fontSize: 11, color: '#64748B', fontStyle: 'italic' },
   officer: { fontSize: 12, color: '#94A3B8' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 15 }
 });

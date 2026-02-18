@@ -21,11 +21,10 @@ import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
 
-// Define Types for the StatCard props
 interface StatCardProps {
   title: string;
   value: string;
-  icon: keyof typeof Ionicons.prototype.props.name; // Validates icon names
+  icon: keyof typeof Ionicons.prototype.props.name;
   color: string;
 }
 
@@ -46,7 +45,6 @@ export default function Dashboard() {
     if (!token) return;
     
     try {
-      // api utility handles the baseURL and Authorization automatically now
       const response = await api.get('/loans');
       if (response.data) {
         setLoans(response.data);
@@ -63,7 +61,6 @@ export default function Dashboard() {
     fetchAllLoans();
   }, [fetchAllLoans]);
 
-  // --- CALCULATIONS ---
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
     .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
@@ -75,7 +72,6 @@ export default function Dashboard() {
     fetchAllLoans();
   };
 
-  // Typed StatCard Component
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>
       <View style={[styles.iconCircleStat, { backgroundColor: color + '20' }]}>
@@ -99,7 +95,8 @@ export default function Dashboard() {
   const hasManagerAccess = isSupervisor || role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor';
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    // Removed edges=['top'] so it protects both Top and Bottom
+    <SafeAreaView style={styles.container}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -200,7 +197,8 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 20 },
+  // Added paddingBottom: 100 to push content above navigation bar
+  scrollContent: { padding: 20, paddingBottom: 100 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   welcomeLabel: { fontSize: 14, color: '#64748B' },
   userName: { fontSize: 24, fontWeight: 'bold', color: '#011F3D' },

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router'; // Added this
+import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -36,7 +36,7 @@ interface LoanFormProps {
 }
 
 export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormProps) {
-  const router = useRouter(); // Initialize router inside component
+  const router = useRouter();
   const [step, setStep] = useState(1);
   const [isScanning, setIsScanning] = useState(false);
   const [scanTarget, setScanTarget] = useState<'bvn' | 'nin' | null>(null);
@@ -51,13 +51,14 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
 
   const addLoan = useLoanStore((state) => state.addLoan);
   const allLoans = useLoanStore((state) => state.loans);
-  const currentUserEmail = useUserData((state) => state.email);
-  const { isSupervisor, token } = useUserData(); // Destructure hooks inside component
+  
+  // --- STAFF IDENTITY FROM STORE ---
+  const { isSupervisor, token, email: currentUserEmail, funame: staffFullName, branch: staffBranch } = useUserData();
 
   // --- MANAGER PROTECTION LOGIC ---
   useEffect(() => {
     if (isSupervisor) {
-      Alert.alert("Access Denied", "Only Loan Officers can create new applications.");
+      Alert.alert("Access Denied", "Managers/Supervisors cannot create new applications. Please use the Approval Dashboard.");
       router.replace('/(tabs)');
     }
   }, [isSupervisor]);
@@ -111,6 +112,11 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
     return {
       id: `loan_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       createdByEmail: currentUserEmail || 'system',
+      
+      // --- ACCOUNTABILITY TAGS ---
+      staffName: staffFullName || 'Unknown Staff', 
+      branchName: staffBranch || 'Main Branch',
+
       loanType: 'Personal Loan',
       title: 'Loan Application',
       customerName: formData.customerName || 'Unnamed Draft',
@@ -120,7 +126,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
       address: formData.address || '',
       gender: '', 
       dob: formData.dob || '',
-      submittedDate: initialDraft?.submittedDate || new Date().toLocaleDateString(),
+      submittedDate: new Date().toLocaleDateString(),
       activeDate: '',
       employerName: formData.employerName || '',
       jobTitle: formData.jobTitle || '',
@@ -163,7 +169,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
     const newLoanRecord = createLoanObject('Pending');
 
     try {
-        // Integrated the central 'api' utility
+        // Post with staffName included in the object
         await api.post('/loans', newLoanRecord, {
             headers: { 
               Authorization: `Bearer ${token}`, 
@@ -177,7 +183,8 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
         
     } catch (error: any) {
         setIsSubmitting(false);
-        console.error("Loan Submission Failed:", error.message);
+        const errorMsg = error.response?.data?.error || "Connection to server failed.";
+        Alert.alert("Submission Failed", errorMsg);
     }
   };
 
@@ -230,6 +237,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* SUCCESS MODAL */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.successOverlay}>
             <View style={styles.successCard}>
@@ -240,6 +248,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
                   style={{ width: 120, height: 120 }} 
                 />
                 <Text style={styles.successTitle}>Application Submitted</Text>
+                <Text style={styles.successSubtitle}>Submitted by: {staffFullName}</Text>
                 <TouchableOpacity style={styles.primaryBtn} onPress={() => {setShowSuccess(false); if(onComplete) onComplete();}}>
                     <Text style={styles.btnText}>Return to Dashboard</Text>
                 </TouchableOpacity>
@@ -247,6 +256,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
         </View>
       </Modal>
 
+      {/* SCANNER MODAL */}
       <Modal visible={isScanning}>
         <CameraView style={StyleSheet.absoluteFill} onBarcodeScanned={isScanning ? onBarcodeScanned : undefined}>
             <TouchableOpacity onPress={() => setIsScanning(false)} style={styles.closeBtn}><Ionicons name="close" size={35} color="#FFF" /></TouchableOpacity>
@@ -292,6 +302,7 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
           </View>
         )}
 
+        {/* ... steps 2, 3, 4 remain structurally similar ... */}
         {step === 2 && (
           <View>
             <Text style={styles.title}>Employment & References</Text>
@@ -356,9 +367,13 @@ export default function CompleteLoanForm({ initialDraft, onComplete }: LoanFormP
             <View style={styles.reviewCard}>
                 <Text style={styles.revLabel}>Customer: <Text style={styles.revVal}>{formData.customerName}</Text></Text>
                 <Text style={styles.revLabel}>BVN: <Text style={styles.revVal}>{formData.bvn}</Text></Text>
-                <Text style={styles.revLabel}>Employer: <Text style={styles.revVal}>{formData.employerName}</Text></Text>
                 <Text style={styles.revLabel}>Amount: <Text style={styles.revVal}>₦{formData.loanAmount}</Text></Text>
+                <View style={styles.staffTag}>
+                   <Ionicons name="person-circle" size={14} color={BRAND.primary} />
+                   <Text style={styles.staffTagText}>Created by: {staffFullName}</Text>
+                </View>
             </View>
+
             <TouchableOpacity disabled={isDuplicate || isSubmitting} style={[styles.primaryBtn, {backgroundColor: isDuplicate ? '#CBD5E1' : BRAND.accent}]} onPress={handleFinalSubmit}>
                 {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>{isDuplicate ? "Cannot Submit Duplicate" : "Push to Dashboard"}</Text>}
             </TouchableOpacity>
@@ -393,11 +408,14 @@ const styles = StyleSheet.create({
   reviewCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border },
   revLabel: { fontSize: 13, color: '#64748b', marginBottom: 5 },
   revVal: { color: BRAND.primary, fontWeight: 'bold' },
+  staffTag: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 },
+  staffTagText: { fontSize: 12, color: '#64748b', fontWeight: '600' },
   warningBox: { backgroundColor: BRAND.warning, padding: 15, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 15 },
   warningText: { color: '#FFF', fontWeight: 'bold', fontSize: 12, flex: 1 },
   successOverlay: { flex: 1, backgroundColor: 'rgba(0,51,102,0.9)', justifyContent: 'center', alignItems: 'center', padding: 25 },
   successCard: { backgroundColor: '#FFF', padding: 30, borderRadius: 20, alignItems: 'center', width: '100%' },
-  successTitle: { fontSize: 20, fontWeight: 'bold', color: BRAND.primary, marginVertical: 15 },
+  successTitle: { fontSize: 20, fontWeight: 'bold', color: BRAND.primary, marginVertical: 10 },
+  successSubtitle: { fontSize: 14, color: '#64748b', marginBottom: 20 },
   scannerOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
   scanWindow: { width: 250, height: 250, borderWidth: 2, borderColor: BRAND.accent, borderRadius: 20 },
   closeBtn: { position: 'absolute', top: 40, right: 20, zIndex: 10 }
