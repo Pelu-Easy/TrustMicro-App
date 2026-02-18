@@ -148,45 +148,57 @@ export default function Profile() {
           <Text style={styles.downloadBtnText}>Download Performance Report</Text>
         </TouchableOpacity>
 
-        {/* --- TARGET MANAGEMENT --- */}
+        {/* --- TARGET MANAGEMENT (RESTRICTED) --- */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Target Management</Text>
           <View style={styles.adminRow}>
-            <Ionicons name="trending-up-outline" size={20} color={BRAND.primary} />
+            <Ionicons name="trending-up-outline" size={20} color={isSupervisor ? BRAND.primary : BRAND.officer} />
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={{ fontSize: 12, color: '#64748b' }}>Set Monthly Target (₦)</Text>
-                <TextInput
-                  style={styles.targetInput}
-                  keyboardType="numeric"
-                  placeholder="Enter amount"
-                  defaultValue={disbursementTarget.toString()}
-                  onSubmitEditing={(e) => {
-                    const newTarget = parseInt(e.nativeEvent.text);
-                    if (newTarget > 0) {
-                      setDisbursementTarget(newTarget);
-                      Alert.alert("Success", "Target updated locally.");
-                    }
-                  }}
-                />
+              <Text style={{ fontSize: 12, color: '#64748b' }}>Monthly Target (₦)</Text>
+                {isSupervisor ? (
+                  <TextInput
+                    style={styles.targetInput}
+                    keyboardType="numeric"
+                    placeholder="Enter amount"
+                    defaultValue={disbursementTarget.toString()}
+                    onSubmitEditing={(e) => {
+                      const newTarget = parseInt(e.nativeEvent.text);
+                      if (newTarget > 0) {
+                        setDisbursementTarget(newTarget);
+                        Alert.alert("Success", "Target updated locally.");
+                      }
+                    }}
+                  />
+                ) : (
+                  <Text style={[styles.targetInput, { borderBottomWidth: 0, color: BRAND.officer }]}>
+                    ₦{disbursementTarget.toLocaleString()} (Locked)
+                  </Text>
+                )}
             </View>
           </View>
         </View>
 
-        {/* --- BRANCH SETTINGS --- */}
+        {/* --- BRANCH SETTINGS (RESTRICTED) --- */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Operating Branch</Text>
           <View style={styles.pickerContainer}>
-            <Ionicons name="business-outline" size={20} color={BRAND.primary} style={styles.pickerIcon} />
-            <Picker
+            <Ionicons name="business-outline" size={20} color={isSupervisor ? BRAND.primary : BRAND.officer} style={styles.pickerIcon} />
+            {isSupervisor ? (
+              <Picker
                 selectedValue={branch}
                 style={styles.picker}
                 onValueChange={(itemValue) => updateUserData({ branch: itemValue })}
               >
-              <Picker.Item label="Lagos - Main Island" value="Lagos - Main Island" />
-              <Picker.Item label="Abuja - Garki" value="Abuja - Garki" />
-              <Picker.Item label="Port Harcourt" value="Port Harcourt" />
-              <Picker.Item label="Ibadan - Ring Road" value="Ibadan - Ring Road" />
-            </Picker>
+                <Picker.Item label="Lagos - Main Island" value="Lagos - Main Island" />
+                <Picker.Item label="Abuja - Garki" value="Abuja - Garki" />
+                <Picker.Item label="Port Harcourt" value="Port Harcourt" />
+                <Picker.Item label="Ibadan - Ring Road" value="Ibadan - Ring Road" />
+              </Picker>
+            ) : (
+              <View style={{ padding: 15, flex: 1 }}>
+                <Text style={{ fontSize: 16, color: BRAND.officer, fontWeight: 'bold' }}>{branch}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -234,28 +246,32 @@ export default function Profile() {
           )}
         </View>
 
-        {/* --- DANGER ZONE --- */}
-        <View style={[styles.section, { marginTop: 20, borderColor: '#FFCDD2', borderWidth: 1 }]}>
-          <Text style={[styles.sectionLabel, { color: '#C62828' }]}>Danger Zone</Text>
-          <TouchableOpacity 
-            style={styles.menuItem} 
-            onPress={() => {
-              Alert.alert("Clear Data", "Delete everything?", [
-                { text: "Cancel" },
-                { text: "Delete", style: "destructive", onPress: () => useLoanStore.getState().clearAllData() }
-              ]);
-            }}
-          >
-            <Ionicons name="trash-outline" size={22} color="#C62828" />
-            <Text style={[styles.menuText, { color: '#C62828' }]}>Reset Application Data</Text>
-          </TouchableOpacity>
-        </View>
+        {/* --- DANGER ZONE (SUPERVISOR ONLY) --- */}
+        {isSupervisor && (
+          <View style={[styles.section, { marginTop: 20, borderColor: '#FFCDD2', borderWidth: 1 }]}>
+            <Text style={[styles.sectionLabel, { color: '#C62828' }]}>Danger Zone</Text>
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              onPress={() => {
+                Alert.alert("Clear Data", "Delete everything?", [
+                  { text: "Cancel" },
+                  { text: "Delete", style: "destructive", onPress: () => useLoanStore.getState().clearAllData() }
+                ]);
+              }}
+            >
+              <Ionicons name="trash-outline" size={22} color="#C62828" />
+              <Text style={[styles.menuText, { color: '#C62828' }]}>Reset Application Data</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
         <Text style={styles.versionText}>TrustMicro Portal v2.0.4</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ... styles remain the same ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   content: { padding: 25 },

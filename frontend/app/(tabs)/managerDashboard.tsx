@@ -27,8 +27,8 @@ interface LoanItem {
   status: string;
   staffName?: string;
   branchName?: string;
-  ninImageUrl?: string; // Added for navigation
-  idImageUrl?: string;  // Added for navigation
+  ninImageUrl?: string; 
+  idImageUrl?: string;  
 }
 
 interface StaffItem {
@@ -41,13 +41,16 @@ interface StaffItem {
 
 export default function ManagerDashboard() {
   const router = useRouter();
+  const { token, funame, role, isSupervisor } = useUserData();
+
+  // Unified permission check
+  const canManage = role === 'Super Admin' || isSupervisor === true;
+
   const [pendingLoans, setPendingLoans] = useState<LoanItem[]>([]);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
   const [activeTab, setActiveTab] = useState<'loans' | 'staff'>('loans');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const { token, funame, role } = useUserData();
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -57,7 +60,7 @@ export default function ManagerDashboard() {
           headers: { Authorization: `Bearer ${token}` }
         });
         setPendingLoans(res.data.filter((l: LoanItem) => l.status === 'Pending'));
-      } else {
+      } else if (canManage) {
         const res = await axios.get(`${API_URL}/manager/staff-list`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -69,13 +72,17 @@ export default function ManagerDashboard() {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [token, activeTab]);
+  }, [token, activeTab, canManage]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleDecision = async (loanId: string, status: 'Approved' | 'Rejected') => {
+    if (!canManage) {
+      Alert.alert("Denied", "You do not have permission to approve/reject loans.");
+      return;
+    }
     Alert.alert("Confirm", `Set loan to ${status}?`, [
       { text: "Cancel" },
       { text: "Yes", onPress: async () => {
@@ -90,6 +97,7 @@ export default function ManagerDashboard() {
   };
 
   const handleDeactivate = async (staffId: string, currentStatus: boolean) => {
+    if (!canManage) return;
     try {
       await axios.patch(`${API_URL}/manager/deactivate-staff/${staffId}`, 
         { isActive: !currentStatus },
@@ -101,6 +109,7 @@ export default function ManagerDashboard() {
   };
 
   const handleDelete = async (staffId: string) => {
+    if (role !== 'Super Admin') return;
     Alert.alert("HARD DELETE", "This permanently removes the staff account. Proceed?", [
       { text: "Cancel" },
       { text: "Delete", style: 'destructive', onPress: async () => {
@@ -125,36 +134,39 @@ export default function ManagerDashboard() {
           <Ionicons name="arrow-back" size={24} color="#003366" />
         </TouchableOpacity>
         <View>
-          <Text style={styles.header}>Admin Panel</Text>
+          <Text style={styles.header}>{canManage ? "Admin Panel" : "Loan Review"}</Text>
           <Text style={styles.subHeader}>{funame} • {role}</Text>
         </View>
       </View>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
-          onPress={() => setActiveTab('loans')}
-        >
-          <Text style={[styles.tabText, activeTab === 'loans' && styles.activeTabText]}>Loans</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'staff' && styles.activeTab]} 
-          onPress={() => setActiveTab('staff')}
-        >
-          <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
-        </TouchableOpacity>
-      </View>
+      {/* TABS: Only visible if user has management rights */}
+      {canManage && (
+        <View style={styles.tabBar}>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
+            onPress={() => setActiveTab('loans')}
+          >
+            <Text style={[styles.tabText, activeTab === 'loans' && styles.activeTabText]}>Loans</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'staff' && styles.activeTab]} 
+            onPress={() => setActiveTab('staff')}
+          >
+            <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       <FlatList
         data={activeTab === 'loans' ? pendingLoans : staffList}
         keyExtractor={(item) => item.id.toString()}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} />}
         renderItem={({ item }: { item: LoanItem | StaffItem }) => {
-          // --- TYPE GUARD FOR LOANS ---
+          
+          // --- LOAN ITEM RENDER ---
           if ('customerName' in item) {
             return (
               <View style={styles.card}>
-                {/* Wrap the info section with Navigation to Details */}
                 <TouchableOpacity 
                   style={{ flex: 1 }}
                   onPress={() => router.push({
@@ -183,19 +195,21 @@ export default function ManagerDashboard() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
-                    <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
-                    <Ionicons name="close-circle" size={40} color="#C62828" />
-                  </TouchableOpacity>
-                </View>
+                {canManage && (
+                  <View style={styles.actions}>
+                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
+                      <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
+                      <Ionicons name="close-circle" size={40} color="#C62828" />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           }
 
-          // --- TYPE GUARD FOR STAFF ---
+          // --- STAFF ITEM RENDER (ONLY REACHABLE BY MANAGERS) ---
           return (
             <View style={styles.card}>
               <View style={{ flex: 1 }}>
