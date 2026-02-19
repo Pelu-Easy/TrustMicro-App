@@ -28,7 +28,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
-  // New State for Inline Validation
   const [errors, setErrors] = useState<any>({});
 
   const validateEmail = (emailStr: string) => /\S+@\S+\.\S+/.test(emailStr);
@@ -38,7 +37,6 @@ export default function LoginScreen() {
     const trimmedPassword = password.trim();
     let currentErrors: any = {};
 
-    // --- INLINE VALIDATION CHECK ---
     if (!trimmedEmail) {
       currentErrors.email = "Email address is required";
     } else if (!validateEmail(trimmedEmail)) {
@@ -65,22 +63,24 @@ export default function LoginScreen() {
 
       const { token, user } = response.data;
 
+      // Calculate roles immediately for redirection
+      const isUserSupervisor = 
+          user.is_supervisor === true || 
+          ['manager', 'supervisor', 'admin', 'super admin'].includes(user.role?.toLowerCase());
+
       // 2. Save Secure Session to Zustand
       updateUserData({
         token: token,
         isLoggedIn: true,
         role: user.role,
-        funame: user.fullName || user.full_name, // Support both naming conventions
+        funame: user.fullName || user.full_name,
         email: user.email,
         phone: user.phone_no || user.phone,
         branch: user.branch,
         department: user.department,
         unit: user.unit,
         supervisor: user.supervisor_name || user.supervisor,
-        isSupervisor: 
-          user.is_supervisor === true || 
-          user.role?.toLowerCase() === 'manager' || 
-          user.role?.toLowerCase() === 'supervisor',
+        isSupervisor: isUserSupervisor,
         isLoanOfficer: 
           user.is_loan_officer === true || 
           user.role?.toLowerCase() === 'officer'
@@ -95,10 +95,18 @@ export default function LoginScreen() {
       }));
 
       setIsLoading(false);
-      router.replace('/(tabs)'); 
+
+      // 🛡️ ROLE-BASED REDIRECTION (Directly at Login)
+      if (isUserSupervisor) {
+        // Managers/Admins land on the Admin Panel (root index)
+        router.replace('/');
+      } else {
+        // Sales Officers land on their specific Tabs
+        router.replace('/(tabs)');
+      }
 
     } catch (error: any) {
-      setIsLoading(true); // Small delay for UX
+      setIsLoading(true);
       setTimeout(() => {
         setIsLoading(false);
         const errorMsg = error.response?.data?.error || "Invalid credentials or server error.";
@@ -131,7 +139,6 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.form}>
-            {/* General API Error Message */}
             {errors.general && (
               <View style={styles.generalErrorBox}>
                 <Ionicons name="alert-circle" size={18} color="#C53030" />

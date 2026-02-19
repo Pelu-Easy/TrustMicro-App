@@ -40,6 +40,14 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // --- ROLE CHECK ---
+  // If a user isn't logged in, layout.tsx handles it. 
+  // We just ensure the UI matches the role here.
+  const hasManagerAccess = isSupervisor || 
+                           role?.toLowerCase() === 'manager' || 
+                           role?.toLowerCase() === 'supervisor' || 
+                           role?.toLowerCase() === 'admin';
+
   // --- LOGIC: FETCH FROM DATABASE ---
   const fetchAllLoans = useCallback(async () => {
     if (!token) return;
@@ -92,8 +100,6 @@ export default function Dashboard() {
     );
   }
 
-  const hasManagerAccess = isSupervisor || role?.toLowerCase() === 'manager' || role?.toLowerCase() === 'supervisor';
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
@@ -112,23 +118,26 @@ export default function Dashboard() {
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile' as any)}>
+          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
               <Ionicons name="person-circle-outline" size={45} color="#003366" />
           </TouchableOpacity>
         </View>
 
         {/* QUICK ACTIONS */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionGrid}>
-        {!hasManagerAccess && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm' as any)}>
+        <div style={{ marginBottom: 10 }}>
+          <View style={styles.actionGrid}>
+          {/* New Loan is primarily for Officers, but let Managers see it too if they need to help */}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
             <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
             <Text style={styles.actionBtnText}>New Loan</Text>
           </TouchableOpacity>
-        )}
-          
+            
           {hasManagerAccess && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/(tabs)/managerDashboard' as any)}>
+            <TouchableOpacity 
+              style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
+              onPress={() => router.push('/(tabs)/managerDashboard')}
+            >
               <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Approvals</Text>
             </TouchableOpacity>
@@ -138,7 +147,8 @@ export default function Dashboard() {
             <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
             <Text style={styles.actionBtnText}>Reports</Text>
           </TouchableOpacity>
-        </View>
+          </View>
+        </div>
 
         {/* PERFORMANCE TRACKER */}
         <Text style={styles.sectionTitle}>Target Tracking</Text>
@@ -179,14 +189,12 @@ export default function Dashboard() {
               style={styles.loanItem}
               onPress={() => {
                 if (loan.status === 'Draft') {
-                  // If it's a draft, go back to form and pass the ID
                   router.push({
                     pathname: '/(tabs)/loanForm',
                     params: { draftId: loan.id }
-                  } as any);
+                  });
                 } else {
-                  // For submitted loans, perhaps view details (future implementation)
-                  console.log("Loan already submitted for review");
+                  console.log("Loan is in review:", loan.status);
                 }
               }}
             >

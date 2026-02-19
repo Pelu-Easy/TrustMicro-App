@@ -1,6 +1,3 @@
-// 1. Add this import at the top
-//import { useColorScheme } from 'react-native'; 
-// Use the alias - this points to the root/hooks folder
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -18,35 +15,72 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
-  const { isLoggedIn } = useUserData();
+  const { isLoggedIn, isSupervisor, role } = useUserData();
   const segments = useSegments();
   const router = useRouter();
   const colorScheme = useColorScheme();
 
   useEffect(() => {
-    // Determine which "group" the user is currently in
-    const inTabsGroup = segments[0] === '(tabs)';
-    const isAuthPage = (segments[0] as any) === 'login' || (segments[0] as any) === 'sign_up';
+    // 🔍 TypeScript Fix: Cast segments[0] to satisfy the compiler
+    const firstSegment = segments[0] as string | undefined;
 
-    // 1. PROTECTION LOGIC: Not logged in? Go to Login.
-    if (!isLoggedIn && inTabsGroup) {
-      router.replace('/login' as any);
+    const inTabsGroup = firstSegment === '(tabs)';
+    const isAuthPage = firstSegment === 'login' || firstSegment === 'sign_up';
+    
+    // Check if user is at the root ("/") or the index file
+    const isRootIndex = !firstSegment || firstSegment === 'index' || firstSegment === '';
+
+    // 1. PROTECTION LOGIC: If not logged in and trying to access the app
+    if (!isLoggedIn && (inTabsGroup || isRootIndex)) {
+      // Use replace so they can't go "back" to a blank screen
+      router.replace('/login');
     } 
-    // 2. REDIRECT LOGIC: Already logged in? Skip Login/SignUp.
-    else if (isLoggedIn && isAuthPage) {
-      router.replace('/(tabs)');
+    
+    // 2. ROLE-BASED REDIRECT: If already logged in and hitting Auth pages or Root
+    else if (isLoggedIn && (isAuthPage || isRootIndex)) {
+      // Determine role: Managers/Admins go to Admin Panel, others go to Dashboard
+      const userIsManager = isSupervisor || role === 'Manager' || role === 'Admin';
+
+      if (userIsManager) {
+        // Managers go to the main index (Admin Panel)
+        router.replace('/'); 
+      } else {
+        // Sales Officers go straight to their dashboard tabs
+        // Using replace wipes the history so they can't "back" into the Admin Panel
+        router.replace('/(tabs)');
+      }
     }
-  }, [isLoggedIn, segments]);
+  }, [isLoggedIn, segments, isSupervisor, role]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         {/* The order of screens here defines the stack defaults */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ animation: 'fade' }} />
-        <Stack.Screen name="sign_up" options={{ animation: 'slide_from_right' }} />
-        {/* <Stack.Screen name="(tabs)/loanForm" options={{ presentation: 'modal' }} /> */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        
+        {/* gestureEnabled: false prevents swiping back to these screens */}
+        <Stack.Screen 
+          name="login" 
+          options={{ 
+            animation: 'fade', 
+            gestureEnabled: false 
+          }} 
+        />
+        
+        <Stack.Screen 
+          name="sign_up" 
+          options={{ 
+            animation: 'slide_from_right' 
+          }} 
+        />
+        
+        <Stack.Screen 
+          name="(tabs)" 
+          options={{ 
+            headerShown: false, 
+            gestureEnabled: false 
+          }} 
+        />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>

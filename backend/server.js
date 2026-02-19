@@ -150,54 +150,51 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 });
 
 // SECURE LOAN SUBMISSION (Normalized Email & Foreign Key Check)
-app.post('/api/v1/loans', authenticateToken, async (req, res) => {
-    const loan = req.body;
-    const officerEmail = req.user.email.trim().toLowerCase(); 
-
-    const staffCheck = await pool.query(
-        'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
-        [officerEmail]
-    );
+app.post('/loans', authenticateToken, async (req, res) => {
+    const officerEmail = req.user.email.trim().toLowerCase();
 
     try {
-        // Verify the staff user exists to avoid Foreign Key violations
-        const staffCheck = await db.query("SELECT email FROM staff_users WHERE email = $1", [officerEmail]);
-        
+        // 1. Verify Staff exists (The check we just passed!)
+        const staffCheck = await pool.query(
+            'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
+            [officerEmail]
+        );
+
         if (staffCheck.rows.length === 0) {
-            return res.status(400).json({ 
-                error: `Staff record for ${officerEmail} not found. Please log out and back in.` 
-            });
+            return res.status(400).json({ error: "Staff email not recognized." });
         }
 
-        const query = `INSERT INTO loans (
-            id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
-            phone, "bankName", "accountNumber", "submittedDate"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
+        const loan = req.body;
 
-        const params = [
-            loan.id, 
-            officerEmail, 
-            loan.customerName, 
-            loan.amount, 
-            loan.loanAmount,
-            loan.status || 'Pending', 
-            loan.loanType, 
-            loan.bvn, 
+        // 2. Insert with normalized data
+        const query = `
+            INSERT INTO loans (
+                customer_name, bvn, nin, phone, loan_amount, 
+                status, created_by_email, submitted_date, 
+                bank_name, account_number, employer_name
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING *`;
+
+        const values = [
+            loan.customerName,
+            loan.bvn,
             loan.nin,
-            loan.phone, 
-            loan.bankName, 
-            loan.accountNumber, 
-            loan.submittedDate
+            loan.phone,
+            parseFloat(loan.loanAmount) || 0, // Force to Number
+            loan.status || 'Pending',
+            officerEmail,
+            new Date().toISOString().split('T')[0], // Force YYYY-MM-DD
+            loan.bankName,
+            loan.accountNumber,
+            loan.employerName
         ];
 
-        await db.query(query, params);
-        res.status(201).json({ message: "Loan submitted successfully!" });
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+
     } catch (err) {
-        console.error("Loan Submission Error:", err.message);
-        if (err.code === '23503') {
-            return res.status(400).json({ error: "Auth Error: Staff email not recognized by database." });
-        }
-        res.status(500).json({ error: "Failed to save loan." });
+        console.error("❌ DATABASE CRASH:", err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 

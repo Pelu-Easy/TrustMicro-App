@@ -29,7 +29,7 @@ interface LoanItem {
   staffName?: string;
   branchName?: string;
   ninImageUrl?: string; 
-  idImageUrl?: string;  
+  idImageUrl?: string;   
 }
 
 interface StaffItem {
@@ -44,8 +44,21 @@ export default function ManagerDashboard() {
   const router = useRouter();
   const { token, funame, role, isSupervisor } = useUserData();
 
-  // Permission Logic
-  const canManage = role === 'Super Admin' || isSupervisor === true;
+  // 🛡️ ROLE PROTECTION LOGIC
+  // Standardize "canManage" across all checks
+  const canManage = isSupervisor === true || 
+                    role === 'Super Admin' || 
+                    role === 'Manager' || 
+                    role === 'Admin' || 
+                    role === 'Supervisor';
+
+  useEffect(() => {
+    // SECURITY GUARD: If the user is NOT a manager/supervisor, kick them out immediately
+    if (!canManage) {
+      console.warn("Unauthorized access attempt to Manager Dashboard by:", funame);
+      router.replace('/(tabs)'); // Redirect to the standard Officer Dashboard
+    }
+  }, [canManage]);
 
   const [pendingLoans, setPendingLoans] = useState<LoanItem[]>([]);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
@@ -54,7 +67,8 @@ export default function ManagerDashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!token) return;
+    if (!token || !canManage) return;
+    
     try {
       if (activeTab === 'loans') {
         const res = await axios.get(`${API_URL}/manager/all-loans`, {
@@ -62,7 +76,7 @@ export default function ManagerDashboard() {
         });
         // Only show Pending loans for the review list
         setPendingLoans(res.data.filter((l: LoanItem) => l.status === 'Pending'));
-      } else if (canManage && activeTab === 'staff') {
+      } else if (activeTab === 'staff') {
         const res = await axios.get(`${API_URL}/manager/staff-list`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -70,7 +84,6 @@ export default function ManagerDashboard() {
       }
     } catch (error: any) {
       console.error("Fetch Error:", error.message);
-      // If unauthorized, could be an expired token
       if (error.response?.status === 401) {
         Alert.alert("Session Expired", "Please login again.");
       }
@@ -85,10 +98,8 @@ export default function ManagerDashboard() {
   }, [fetchData]);
 
   const handleDecision = async (loanId: string, status: 'Approved' | 'Rejected') => {
-    if (!canManage) {
-      Alert.alert("Denied", "Officers cannot approve/reject loans.");
-      return;
-    }
+    if (!canManage) return;
+
     Alert.alert("Confirm", `Set loan to ${status}?`, [
       { text: "Cancel" },
       { text: "Yes", onPress: async () => {
@@ -129,6 +140,9 @@ export default function ManagerDashboard() {
     ]);
   };
 
+  // If the user shouldn't be here, show nothing while the useEffect redirects
+  if (!canManage) return null;
+
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator size="large" color="#003366" /></View>;
   }
@@ -140,28 +154,25 @@ export default function ManagerDashboard() {
           <Ionicons name="arrow-back" size={24} color="#003366" />
         </TouchableOpacity>
         <View>
-          <Text style={styles.header}>{canManage ? "Admin Panel" : "Loan Review"}</Text>
+          <Text style={styles.header}>Admin Panel</Text>
           <Text style={styles.subHeader}>{funame} • {role}</Text>
         </View>
       </View>
 
-      {/* TABS: Hidden for Field Officers */}
-      {canManage && (
-        <View style={styles.tabBar}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
-            onPress={() => setActiveTab('loans')}
-          >
-            <Text style={[styles.tabText, activeTab === 'loans' && styles.activeTabText]}>Loans</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'staff' && styles.activeTab]} 
-            onPress={() => setActiveTab('staff')}
-          >
-            <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.tabBar}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'loans' && styles.activeTab]} 
+          onPress={() => setActiveTab('loans')}
+        >
+          <Text style={[styles.tabText, activeTab === 'loans' && styles.activeTabText]}>Loans</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'staff' && styles.activeTab]} 
+          onPress={() => setActiveTab('staff')}
+        >
+          <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
+        </TouchableOpacity>
+      </View>
       
       <FlatList
         data={activeTab === 'loans' ? pendingLoans : staffList}
@@ -200,16 +211,14 @@ export default function ManagerDashboard() {
                   </View>
                 </TouchableOpacity>
 
-                {canManage && (
-                  <View style={styles.actions}>
-                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
-                      <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
-                      <Ionicons name="close-circle" size={40} color="#C62828" />
-                    </TouchableOpacity>
-                  </View>
-                )}
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
+                    <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
+                    <Ionicons name="close-circle" size={40} color="#C62828" />
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           }
