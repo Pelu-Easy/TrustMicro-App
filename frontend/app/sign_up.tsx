@@ -73,7 +73,7 @@ export default function SignUpScreen() {
 
   const handleSignUp = async () => {
     let currentErrors: any = {};
-    if (!formData.fullName) currentErrors.fullName = "Full name is required";
+    if (!formData.fullName.trim()) currentErrors.fullName = "Full name is required";
     if (!validateEmail(formData.email)) currentErrors.email = "Enter a valid corporate email";
     if (formData.phone.length !== 11) currentErrors.phone = "Phone must be 11 digits";
     if (!formData.department) currentErrors.department = "Please select a department";
@@ -87,23 +87,25 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      const checkResponse = await api.get(`/auth/check-phone/${formData.phone}`);
+      // 1. Check if phone is unique
+      const checkResponse = await api.get(`/auth/check-phone/${formData.phone.trim()}`);
       if (checkResponse.data.exists) {
         setIsLoading(false);
         setErrors({ phone: "This phone number is already taken" });
         return;
       }
 
+      // 2. Register Account
       await api.post('/auth/signup', {
         full_name: formData.fullName.trim(),
-        email: formData.email.trim().toLowerCase(),
-        phone_no: formData.phone,
+        email: formData.email.trim().toLowerCase(), // Crucial: Normalize for DB
+        phone_no: formData.phone.trim(),
         branch: formData.branch,
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
         supervisor_name: formData.supervisor,
-        role: formData.isSupervisor ? 'Manager' : 'Officer',
+        role: formData.isSupervisor ? 'Manager' : 'Officer', // Map to DB Role
         is_loan_officer: formData.isLoanOfficer,
         is_active: true 
       });
@@ -112,7 +114,8 @@ export default function SignUpScreen() {
       Alert.alert("Success", "Account created!", [{ text: "Login", onPress: () => router.replace('/login') }]);
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert("Failed", error.response?.data?.error || "Registration failed.");
+      const serverError = error.response?.data?.error || "Registration failed.";
+      Alert.alert("Failed", serverError);
     }
   };
 

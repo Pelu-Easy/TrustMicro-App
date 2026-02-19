@@ -54,7 +54,6 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Rende
 const managerRoutes = require('./routes/managerRoutes');
 app.use('/api/v1/manager', managerRoutes);
 
-// --- MISSING ROUTE ADDED HERE ---
 // CHECK PHONE UNIQUE ROUTE
 app.get('/api/v1/auth/check-phone/:phone', async (req, res) => {
     try {
@@ -75,12 +74,13 @@ app.get('/api/v1/auth/check-phone/:phone', async (req, res) => {
     }
 });
 
-// SIGN-UP
+// SIGN-UP (With Email Normalization)
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
+    const cleanEmail = email.trim().toLowerCase();
     
     try {
-        const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [email]);
+        const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [cleanEmail]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -88,7 +88,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active) 
                        VALUES ($1, $2, $3, $4, $5, $6, $7)`;
         
-        await db.query(query, [full_name, email, phone_no, hashedPassword, role || 'Officer', branch, true]);
+        await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true]);
         res.status(201).json({ message: "Staff account created successfully!" });
     } catch (error) { 
         console.error("Signup Error:", error.message);
@@ -96,11 +96,13 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     }
 });
 
-// LOGIN
+// LOGIN (With Email Normalization)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
+    const cleanEmail = email.trim().toLowerCase();
+    
     try {
-        const result = await db.query("SELECT * FROM staff_users WHERE email = $1", [email]);
+        const result = await db.query("SELECT * FROM staff_users WHERE email = $1", [cleanEmail]);
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
@@ -147,34 +149,56 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// SECURE LOAN SUBMISSION
+// SECURE LOAN SUBMISSION (Normalized Email & Foreign Key Check)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const loan = req.body;
-    const officerEmail = req.user.email; 
-
-    const query = `INSERT INTO loans (
-        id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
-        phone, "bankName", "accountNumber", "submittedDate"
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
-
-    const params = [
-        loan.id, officerEmail, loan.customerName, loan.amount, loan.loanAmount,
-        loan.status || 'Pending', loan.loanType, loan.bvn, loan.nin,
-        loan.phone, loan.bankName, loan.accountNumber, loan.submittedDate
-    ];
+    const officerEmail = req.user.email.trim().toLowerCase(); 
 
     try {
+        // Verify the staff user exists to avoid Foreign Key violations
+        const staffCheck = await db.query("SELECT email FROM staff_users WHERE email = $1", [officerEmail]);
+        
+        if (staffCheck.rows.length === 0) {
+            return res.status(400).json({ 
+                error: `Staff record for ${officerEmail} not found. Please log out and back in.` 
+            });
+        }
+
+        const query = `INSERT INTO loans (
+            id, "createdByEmail", "customerName", amount, "loanAmount", status, "loanType", bvn, nin,
+            phone, "bankName", "accountNumber", "submittedDate"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
+
+        const params = [
+            loan.id, 
+            officerEmail, 
+            loan.customerName, 
+            loan.amount, 
+            loan.loanAmount,
+            loan.status || 'Pending', 
+            loan.loanType, 
+            loan.bvn, 
+            loan.nin,
+            loan.phone, 
+            loan.bankName, 
+            loan.accountNumber, 
+            loan.submittedDate
+        ];
+
         await db.query(query, params);
         res.status(201).json({ message: "Loan submitted successfully!" });
     } catch (err) {
         console.error("Loan Submission Error:", err.message);
+        if (err.code === '23503') {
+            return res.status(400).json({ error: "Auth Error: Staff email not recognized by database." });
+        }
         res.status(500).json({ error: "Failed to save loan." });
     }
 });
 
 // LOANS FETCH
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
-    const email = req.user.email; 
+    const email = req.user.email.trim().toLowerCase(); 
     try {
         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [email]);
         res.json(result.rows);
@@ -187,10 +211,11 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
 app.patch('/api/v1/users/update-profile', authenticateToken, async (req, res) => {
     const { full_name, phone_no, email } = req.body; 
     const userId = req.user.id;
+    const cleanEmail = email.trim().toLowerCase();
     const query = `UPDATE staff_users SET full_name = $1, phone_no = $2, email = $3 WHERE id = $4`;
     
     try {
-        await db.query(query, [full_name, phone_no, email, userId]);
+        await db.query(query, [full_name, phone_no, cleanEmail, userId]);
         res.json({ message: "Profile updated!" });
     } catch (err) {
         res.status(500).json({ error: "Update failed." });
