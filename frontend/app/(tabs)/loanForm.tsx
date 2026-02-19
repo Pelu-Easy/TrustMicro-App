@@ -170,23 +170,37 @@ export default function CompleteLoanForm() {
     router.replace('/(tabs)');
   };
 
-  const handleFinalSubmit = async () => {
+const handleFinalSubmit = async () => {
     if (!formData.loanAmount || !formData.bvn) {
       Alert.alert("Error", "Loan Amount and BVN are required.");
       return;
     }
+
     setIsSubmitting(true);
+
+    // Normalize the email right here to ensure match
+    const normalizedEmail = currentUserEmail?.trim().toLowerCase();
+    
+    // Create the record with the normalized email
     const newLoanRecord = createLoanObject('Pending');
+    newLoanRecord.createdByEmail = normalizedEmail; 
+
+    console.log("🚀 Submitting Loan for:", normalizedEmail);
+
     try {
-        await api.post('/loans', newLoanRecord, {
+        const response = await api.post('/loans', newLoanRecord, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        addLoan(newLoanRecord, currentUserEmail); 
+        
+        addLoan(newLoanRecord, normalizedEmail); 
         setIsSubmitting(false);
         setShowSuccess(true);
     } catch (error: any) {
         setIsSubmitting(false);
-        Alert.alert("Submission Failed", error.response?.data?.error || "Connection error.");
+        console.error("Loan Submission Error Details:", error.response?.data);
+        
+        const serverError = error.response?.data?.error || "Connection error.";
+        Alert.alert("Submission Failed", serverError);
     }
   };
 
