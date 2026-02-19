@@ -40,11 +40,14 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- ROLE CHECK ---
-  const hasManagerAccess = isSupervisor || 
-                           role?.toLowerCase() === 'manager' || 
-                           role?.toLowerCase() === 'supervisor' || 
-                           role?.toLowerCase() === 'admin';
+  // --- ROLE LOGIC ---
+  const userRole = role?.toLowerCase() || '';
+  const isManagerOrSupervisor = 
+    isSupervisor === true || 
+    ['manager', 'supervisor', 'admin'].includes(userRole);
+  
+  // Loan onboarding is strictly for Sales/Loan Officers
+  const canOnboardLoan = !isManagerOrSupervisor && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
   // --- LOGIC: FETCH FROM DATABASE ---
   const fetchAllLoans = useCallback(async () => {
@@ -124,15 +127,18 @@ export default function Dashboard() {
         {/* QUICK ACTIONS */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         
-        {/* ✅ FIXED: Changed <div> to <View> */}
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
-              <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>New Loan</Text>
-            </TouchableOpacity>
+            {/* New Loan: Only for Sales/Officers */}
+            {canOnboardLoan && (
+              <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
+                <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
+                <Text style={styles.actionBtnText}>New Loan</Text>
+              </TouchableOpacity>
+            )}
               
-            {hasManagerAccess && (
+            {/* Approvals: Only for Management */}
+            {isManagerOrSupervisor && (
               <TouchableOpacity 
                 style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
                 onPress={() => router.push('/(tabs)/managerDashboard')}
@@ -164,7 +170,7 @@ export default function Dashboard() {
         </View>
 
         {/* STATS SECTION */}
-        <Text style={styles.sectionTitle}>{hasManagerAccess ? "Portfolio Overview" : "My Statistics"}</Text>
+        <Text style={styles.sectionTitle}>{isManagerOrSupervisor ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
            <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
            <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
@@ -187,19 +193,17 @@ export default function Dashboard() {
               key={`${loan.id}-${index}`} 
               style={styles.loanItem}
               onPress={() => {
-                if (loan.status === 'Draft') {
+                if (loan.status === 'Draft' && canOnboardLoan) {
                   router.push({
                     pathname: '/(tabs)/loanForm',
                     params: { draftId: loan.id }
                   });
-                } else {
-                  console.log("Loan is in review:", loan.status);
                 }
               }}
             >
               <View style={styles.loanInfo}>
                 <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
-                <Text style={styles.loanDate}>{loan.submittedDate}</Text>
+                <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
               </View>
               <View style={styles.loanStatusArea}>
                 <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
