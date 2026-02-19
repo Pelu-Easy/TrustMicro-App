@@ -19,12 +19,12 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   const colorScheme = useColorScheme();
-  
-  // 🛡️ Navigation State Guard
+
+  // 🛡️ NAVIGATION GUARD
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
-    // 🚧 CRITICAL FIX: If the navigation tree isn't ready, do nothing.
+    // 🚧 CRITICAL: If the navigation state is not ready, do nothing!
     // This prevents the "Attempted to navigate before mounting" error.
     if (!navigationState?.key) return;
 
@@ -39,7 +39,6 @@ export default function RootLayout() {
 
     // 1. PROTECTION LOGIC: If not logged in and trying to access the app
     if (!isLoggedIn && (inTabsGroup || isRootIndex)) {
-      // Use replace so they can't go "back" to a blank screen
       router.replace('/login');
     } 
     
@@ -51,11 +50,8 @@ export default function RootLayout() {
         ['manager', 'supervisor', 'admin', 'super admin'].includes(role?.toLowerCase() || '');
 
       if (userIsManager) {
-        // Managers go to the main index (Admin Panel)
         router.replace('/'); 
       } else {
-        // Sales Officers go straight to their dashboard tabs
-        // Using replace wipes the history so they can't "back" into the Admin Panel
         router.replace('/(tabs)');
       }
     }
@@ -64,10 +60,8 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {/* The order of screens here defines the stack defaults */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
         
-        {/* gestureEnabled: false prevents swiping back to these screens */}
         <Stack.Screen 
           name="login" 
           options={{ 
