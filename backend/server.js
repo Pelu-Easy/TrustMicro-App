@@ -154,6 +154,11 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const loan = req.body;
     const officerEmail = req.user.email.trim().toLowerCase(); 
 
+    const staffCheck = await pool.query(
+        'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
+        [officerEmail]
+    );
+
     try {
         // Verify the staff user exists to avoid Foreign Key violations
         const staffCheck = await db.query("SELECT email FROM staff_users WHERE email = $1", [officerEmail]);
