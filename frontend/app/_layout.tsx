@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -19,8 +19,15 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   const colorScheme = useColorScheme();
+  
+  // 🛡️ Navigation State Guard
+  const navigationState = useRootNavigationState();
 
   useEffect(() => {
+    // 🚧 CRITICAL FIX: If the navigation tree isn't ready, do nothing.
+    // This prevents the "Attempted to navigate before mounting" error.
+    if (!navigationState?.key) return;
+
     // 🔍 TypeScript Fix: Cast segments[0] to satisfy the compiler
     const firstSegment = segments[0] as string | undefined;
 
@@ -39,7 +46,9 @@ export default function RootLayout() {
     // 2. ROLE-BASED REDIRECT: If already logged in and hitting Auth pages or Root
     else if (isLoggedIn && (isAuthPage || isRootIndex)) {
       // Determine role: Managers/Admins go to Admin Panel, others go to Dashboard
-      const userIsManager = isSupervisor || role === 'Manager' || role === 'Admin';
+      const userIsManager = 
+        isSupervisor === true || 
+        ['manager', 'supervisor', 'admin', 'super admin'].includes(role?.toLowerCase() || '');
 
       if (userIsManager) {
         // Managers go to the main index (Admin Panel)
@@ -50,7 +59,7 @@ export default function RootLayout() {
         router.replace('/(tabs)');
       }
     }
-  }, [isLoggedIn, segments, isSupervisor, role]);
+  }, [isLoggedIn, segments, isSupervisor, role, navigationState?.key]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
