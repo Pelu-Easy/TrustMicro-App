@@ -41,8 +41,6 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   // --- ROLE CHECK ---
-  // If a user isn't logged in, layout.tsx handles it. 
-  // We just ensure the UI matches the role here.
   const hasManagerAccess = isSupervisor || 
                            role?.toLowerCase() === 'manager' || 
                            role?.toLowerCase() === 'supervisor' || 
@@ -125,30 +123,31 @@ export default function Dashboard() {
 
         {/* QUICK ACTIONS */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <div style={{ marginBottom: 10 }}>
+        
+        {/* ✅ FIXED: Changed <div> to <View> */}
+        <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-          {/* New Loan is primarily for Officers, but let Managers see it too if they need to help */}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
-            <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
-            <Text style={styles.actionBtnText}>New Loan</Text>
-          </TouchableOpacity>
-            
-          {hasManagerAccess && (
-            <TouchableOpacity 
-              style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
-              onPress={() => router.push('/(tabs)/managerDashboard')}
-            >
-              <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>Approvals</Text>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
+              <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>New Loan</Text>
             </TouchableOpacity>
-          )}
+              
+            {hasManagerAccess && (
+              <TouchableOpacity 
+                style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
+                onPress={() => router.push('/(tabs)/managerDashboard')}
+              >
+                <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
+                <Text style={styles.actionBtnText}>Approvals</Text>
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
-            <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
-            <Text style={styles.actionBtnText}>Reports</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
+              <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>Reports</Text>
+            </TouchableOpacity>
           </View>
-        </div>
+        </View>
 
         {/* PERFORMANCE TRACKER */}
         <Text style={styles.sectionTitle}>Target Tracking</Text>

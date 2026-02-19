@@ -16,12 +16,10 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   const colorScheme = useColorScheme();
-  
-  // 🛡️ This is the key fix for the "Attempted to navigate" error
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
-    // 1. If navigation isn't ready yet, wait.
+    // 🛡️ Guard 1: Navigation state must exist
     if (!navigationState?.key) return;
 
     const firstSegment = segments[0] as string | undefined;
@@ -29,58 +27,51 @@ export default function RootLayout() {
     const isAuthPage = firstSegment === 'login' || firstSegment === 'sign_up';
     const isRootIndex = !firstSegment || firstSegment === 'index' || firstSegment === '';
 
-    // 2. Auth Guard: No token/not logged in? Force Login.
-    if (!isLoggedIn || !token) {
-      if (!isAuthPage) {
-        console.log("🛡️ No session found. Redirecting to Login.");
-        router.replace('/login');
+    // 🛡️ Guard 2: The "Mac-Task" Delay
+    // Wrapping the navigation logic in a timeout ensures the layout 
+    // is fully mounted before 'replace' is called.
+    const timeout = setTimeout(() => {
+      
+      // 1. If not logged in, force Login
+      if (!isLoggedIn || !token) {
+        if (!isAuthPage) {
+          router.replace('/login');
+        }
+        return;
       }
-      return;
-    }
 
-    // 3. Redirection Logic for logged-in users
-    if (isLoggedIn && (isAuthPage || isRootIndex)) {
-      const userIsManager = 
-        isSupervisor === true || 
-        ['manager', 'supervisor', 'admin'].includes(role?.toLowerCase() || '');
+      // 2. If logged in and hitting an Auth/Root page, send to correct dashboard
+      if (isLoggedIn && (isAuthPage || isRootIndex)) {
+        const userIsManager = 
+          isSupervisor === true || 
+          ['manager', 'supervisor', 'admin'].includes(role?.toLowerCase() || '');
 
-      if (userIsManager) {
-        console.log("🚀 Manager detected. Redirecting to Admin Panel.");
-        router.replace('/'); 
-      } else {
-        console.log("🚀 Loan Officer detected. Redirecting to Tabs.");
-        router.replace('/(tabs)');
+        if (userIsManager) {
+          router.replace('/'); 
+        } else {
+          router.replace('/(tabs)');
+        }
       }
-    }
+    }, 1); // Tiny delay to allow mounting
+
+    return () => clearTimeout(timeout);
   }, [isLoggedIn, token, segments, navigationState?.key]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {/* We keep index as the primary route for the Manager/Admin dashboard */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        
         <Stack.Screen 
           name="login" 
-          options={{ 
-            animation: 'fade', 
-            gestureEnabled: false 
-          }} 
+          options={{ animation: 'fade', gestureEnabled: false }} 
         />
-        
         <Stack.Screen 
           name="sign_up" 
-          options={{ 
-            animation: 'slide_from_right' 
-          }} 
+          options={{ animation: 'slide_from_right' }} 
         />
-        
         <Stack.Screen 
           name="(tabs)" 
-          options={{ 
-            headerShown: false, 
-            gestureEnabled: false 
-          }} 
+          options={{ headerShown: false, gestureEnabled: false }} 
         />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
