@@ -127,29 +127,28 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 // LOAN SUBMISSION (Generates unique ID to fix NULL constraint error)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
+    
     try {
-        // 1. Fetch the EXACT email string from the staff_users table first
+        // Double check the staff exists
         const staffCheck = await db.query(
             'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
             [officerEmail]
         );
         
         if (staffCheck.rows.length === 0) {
-            return res.status(400).json({ error: "Staff email not found in staff_users table." });
+            return res.status(400).json({ error: "Email not found in staff_users table." });
         }
 
-        // Use the email EXACTLY as it appears in the database to satisfy the Foreign Key
-        const dbEmail = staffCheck.rows[0].email;
-
         const loan = req.body;
-        const uniqueLoanId = `LOAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const uniqueLoanId = `LOAN-${Date.now()}`;
 
+        // Added "amount" to match lt1.PNG and kept "loanAmount" for lt2.PNG
         const query = `
             INSERT INTO loans (
-                "id", "customerName", "bvn", "nin", "phone", "loanAmount", 
-                "status", "createdByEmail", "submittedDate", 
-                "bankName", "accountNumber"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                "id", "customerName", "bvn", "nin", "phone", 
+                "loanAmount", "amount", "status", "createdByEmail", 
+                "submittedDate", "bankName", "accountNumber"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING *`;
 
         const values = [
@@ -159,18 +158,20 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             loan.nin, 
             loan.phone,
             loan.loanAmount, 
+            loan.loanAmount, // Mapping to 'amount' column as well
             loan.status || 'Pending',
-            dbEmail, // Using the verified email from the DB row
+            staffCheck.rows[0].email, 
             new Date().toISOString().split('T')[0],
             loan.bankName, 
             loan.accountNumber
         ];
 
         const result = await db.query(query, values);
-        console.log(`✅ Success! Loan saved with ID: ${uniqueLoanId}`);
+        console.log("🚀 LOAN SUBMITTED SUCCESSFULLY!");
         res.status(201).json(result.rows[0]);
+
     } catch (err) {
-        console.error("DATABASE INSERT ERROR:", err.message);
+        console.error("FINAL ERROR CHECK:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
