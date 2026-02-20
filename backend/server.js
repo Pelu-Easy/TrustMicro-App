@@ -126,52 +126,70 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 // LOAN SUBMISSION (Final Sync with Supabase Schema)
 // LOAN SUBMISSION (Generates unique ID to fix NULL constraint error)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
-    const officerEmail = req.user.email.trim().toLowerCase();
+    // 1. Get the email from the token
+    const tokenEmail = req.user.email.trim().toLowerCase();
     
     try {
-        // Double check the staff exists
+        // 2. Fetch the EXACT user record to ensure we match the Foreign Key exactly
         const staffCheck = await db.query(
-            'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
-            [officerEmail]
+            'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', 
+            [tokenEmail]
         );
         
         if (staffCheck.rows.length === 0) {
-            return res.status(400).json({ error: "Email not found in staff_users table." });
+            console.error(`[AUTH ERROR] ${tokenEmail} not found in staff_users table.`);
+            return res.status(400).json({ error: "Your staff account is not fully registered in the staff_users table." });
         }
+
+        // This is the email EXACTLY as it is stored in the database
+        const verifiedDbEmail = staffCheck.rows[0].email;
+        console.log(`[DEBUG] Attempting insert for verified staff: ${verifiedDbEmail}`);
 
         const loan = req.body;
         const uniqueLoanId = `LOAN-${Date.now()}`;
 
-        // Added "amount" to match lt1.PNG and kept "loanAmount" for lt2.PNG
+        // 3. The Insert Query
+        // We use double quotes for camelCase columns and cast $8 (email) to text
         const query = `
             INSERT INTO loans (
-                "id", "customerName", "bvn", "nin", "phone", 
-                "loanAmount", "amount", "status", "createdByEmail", 
-                "submittedDate", "bankName", "accountNumber"
+                "id", 
+                "customerName", 
+                "bvn", 
+                "nin", 
+                "phone", 
+                "loanAmount", 
+                "amount", 
+                "status", 
+                "createdByEmail", 
+                "submittedDate", 
+                "bankName", 
+                "accountNumber"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING *`;
 
         const values = [
-            uniqueLoanId,
-            loan.customerName, 
-            loan.bvn, 
-            loan.nin, 
-            loan.phone,
-            loan.loanAmount, 
-            loan.loanAmount, // Mapping to 'amount' column as well
-            loan.status || 'Pending',
-            staffCheck.rows[0].email, 
-            new Date().toISOString().split('T')[0],
-            loan.bankName, 
-            loan.accountNumber
+            uniqueLoanId,            // $1
+            loan.customerName,       // $2
+            loan.bvn,                // $3
+            loan.nin,                // $4
+            loan.phone,              // $5
+            loan.loanAmount || 0,    // $6
+            loan.loanAmount || 0,    // $7 (Mapping to 'amount' column)
+            loan.status || 'Pending',// $8
+            verifiedDbEmail,         // $9 (The FK link)
+            new Date().toISOString().split('T')[0], // $10
+            loan.bankName,           // $11
+            loan.accountNumber       // $12
         ];
 
         const result = await db.query(query, values);
-        console.log("🚀 LOAN SUBMITTED SUCCESSFULLY!");
+        console.log(`✅ Success! Loan ${uniqueLoanId} created.`);
         res.status(201).json(result.rows[0]);
 
     } catch (err) {
-        console.error("FINAL ERROR CHECK:", err.message);
+        console.error("❌ DATABASE INSERT ERROR:", err.message);
+        // If it's STILL a FK error, it means the column 'createdByEmail' 
+        // in 'loans' isn't actually linked to the 'email' column in 'staff_users'
         res.status(500).json({ error: err.message });
     }
 });
