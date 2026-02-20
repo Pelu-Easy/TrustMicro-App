@@ -124,6 +124,7 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 });
 
 // LOAN SUBMISSION (Final Sync with Supabase Schema)
+// LOAN SUBMISSION (Generates unique ID to fix NULL constraint error)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
@@ -132,33 +133,33 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         const loan = req.body;
         
-        // Final Query - Using double quotes for camelCase Supabase columns
-        // NOTE: Commented out employerName as it was not visible in screenshots
+        // Fix: Generate a unique ID since the 'id' column is 'text' and has no default value
+        const uniqueLoanId = `LOAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
         const query = `
             INSERT INTO loans (
-                "customerName", "bvn", "nin", "phone", "loanAmount", 
+                "id", "customerName", "bvn", "nin", "phone", "loanAmount", 
                 "status", "createdByEmail", "submittedDate", 
                 "bankName", "accountNumber"
-                /* , "employerName" */ 
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *`;
 
         const values = [
-            loan.customerName, 
-            loan.bvn, 
-            loan.nin, 
-            loan.phone,
-            parseFloat(loan.loanAmount) || 0, 
-            loan.status || 'Pending',
-            officerEmail, 
-            new Date().toISOString().split('T')[0],
-            loan.bankName, 
-            loan.accountNumber
-            // , loan.employerName
+            uniqueLoanId,      // $1: Generated ID
+            loan.customerName, // $2
+            loan.bvn,          // $3
+            loan.nin,          // $4
+            loan.phone,        // $5
+            loan.loanAmount,   // $6
+            loan.status || 'Pending', // $7
+            officerEmail,      // $8
+            new Date().toISOString().split('T')[0], // $9
+            loan.bankName,     // $10
+            loan.accountNumber // $11
         ];
 
         const result = await db.query(query, values);
-        console.log(`✅ Success! Loan saved for ${loan.customerName}`);
+        console.log(`✅ Success! Loan saved with ID: ${uniqueLoanId}`);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error("DATABASE INSERT ERROR:", err.message);
