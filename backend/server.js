@@ -52,7 +52,7 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Rende
 
 // --- 4. PUBLIC AUTH ROUTES ---
 
-// ACCOUNT DEACTIVATION (Used by frontend when 3 strikes are reached)
+// ACCOUNT DEACTIVATION
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email, reason } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
@@ -60,10 +60,11 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
     if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
 
     try {
-        const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE email = $1";
-        await db.query(query, [cleanEmail]);
+        // Use LOWER(TRIM()) to ensure DB match
+        const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1";
+        const result = await db.query(query, [cleanEmail]);
 
-        console.log(`[SECURITY] Account ${cleanEmail} deactivated. Reason: ${reason}`);
+        console.log(`[SECURITY] Account ${cleanEmail} deactivated. Rows affected: ${result.rowCount}`);
         res.status(200).json({ message: "Account locked and Admin notified." });
     } catch (error) {
         console.error("Deactivation Route Error:", error);
@@ -74,33 +75,13 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
 const managerRoutes = require('./routes/managerRoutes');
 app.use('/api/v1/manager', managerRoutes);
 
-// CHECK PHONE UNIQUE ROUTE
-app.get('/api/v1/auth/check-phone/:phone', async (req, res) => {
-    try {
-        const { phone } = req.params;
-        const query = "SELECT id, is_active FROM staff_users WHERE phone_no = $1";
-        const result = await db.query(query, [phone.trim()]);
-
-        if (result.rows.length > 0) {
-            return res.status(200).json({ 
-                exists: true, 
-                isActive: result.rows[0].is_active 
-            });
-        }
-        res.status(200).json({ exists: false });
-    } catch (error) {
-        console.error("Phone Check Error:", error);
-        res.status(500).json({ error: "Database error checking phone number" });
-    }
-});
-
 // SIGN-UP
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
     const cleanEmail = email.trim().toLowerCase();
     
     try {
-        const userExists = await db.query("SELECT email FROM staff_users WHERE email = $1", [cleanEmail]);
+        const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -116,7 +97,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     }
 });
 
-// LOGIN (Strict Enforcement of is_active and failed_attempts)
+// LOGIN (Strict Enforcement with forced DB updates)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
@@ -124,14 +105,19 @@ app.post('/api/v1/auth/login', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     
     try {
-        const result = await db.query("SELECT * FROM staff_users WHERE email = $1", [cleanEmail]);
+        // Fetch user with normalized email
+        const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-        // 1. CRITICAL: Check if account is active BEFORE anything else
-        if (user.is_active === false) {
-            return res.status(403).json({ error: "Account locked or deactivated. Please contact Admin." });
+        // 1. Check if account is active or already locked by attempts
+        if (user.is_active === false || user.failed_attempts >= 3) {
+            // Force sync: if attempts are high but is_active was true, fix it now
+            if (user.is_active === true) {
+                await db.query("UPDATE staff_users SET is_active = false WHERE id = $1", [user.id]);
+            }
+            return res.status(403).json({ error: "Account locked. Please contact Admin for activation." });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
@@ -140,18 +126,24 @@ app.post('/api/v1/auth/login', async (req, res) => {
             const newFailedCount = (user.failed_attempts || 0) + 1;
             
             if (newFailedCount >= 3) {
-                // Lock account in DB
-                await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = false WHERE email = $2", [newFailedCount, cleanEmail]);
+                // LOCK ACCOUNT: Set attempts to 3 and is_active to false
+                await db.query(
+                    "UPDATE staff_users SET failed_attempts = $1, is_active = false WHERE id = $2", 
+                    [newFailedCount, user.id]
+                );
                 return res.status(403).json({ error: "Too many failed attempts. Account locked. Contact Admin." });
             } else {
-                // Increment counter in DB
-                await db.query("UPDATE staff_users SET failed_attempts = $1 WHERE email = $2", [newFailedCount, cleanEmail]);
+                // INCREMENT: Update failed count
+                await db.query(
+                    "UPDATE staff_users SET failed_attempts = $1 WHERE id = $2", 
+                    [newFailedCount, user.id]
+                );
                 return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts remaining.` });
             }
         }
 
-        // 2. SUCCESS: Reset failed attempts on successful login
-        await db.query("UPDATE staff_users SET failed_attempts = 0 WHERE email = $1", [cleanEmail]);
+        // 2. SUCCESS: Reset everything
+        await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
         
@@ -171,17 +163,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
 });
 
 // --- ROUTES REQUIRING TOKEN ---
-
-app.get('/api/v1/loans/:id', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const result = await db.query('SELECT * FROM loans WHERE id = $1', [id]);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Loan not found" });
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: "Database error" });
-    }
-});
 
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
@@ -231,36 +212,21 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
-app.patch('/api/v1/users/update-profile', authenticateToken, async (req, res) => {
-    const { full_name, phone_no, email } = req.body; 
-    const userId = req.user.id;
-    const cleanEmail = email.trim().toLowerCase();
-    const query = `UPDATE staff_users SET full_name = $1, phone_no = $2, email = $3 WHERE id = $4`;
-    try {
-        await db.query(query, [full_name, phone_no, cleanEmail, userId]);
-        res.json({ message: "Profile updated!" });
-    } catch (err) {
-        res.status(500).json({ error: "Update failed." });
-    }
-});
-
-// THE REACTIVATE ROUTE (Already exists in managerRoutes, but including the root-level version here for completeness)
+// ADMIN REACTIVATE
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const adminRole = req.user.role?.toLowerCase();
 
     if (adminRole !== 'admin' && adminRole !== 'super admin' && adminRole !== 'manager') {
-        return res.status(403).json({ error: "Unauthorized: Access Denied." });
+        return res.status(403).json({ error: "Unauthorized access." });
     }
-
-    if (!staffEmail) return res.status(400).json({ error: "Staff email is required." });
 
     try {
         const cleanEmail = staffEmail.trim().toLowerCase();
         const query = `
             UPDATE staff_users 
             SET is_active = true, failed_attempts = 0 
-            WHERE email = $1
+            WHERE LOWER(TRIM(email)) = $1
             RETURNING full_name`;
 
         const result = await db.query(query, [cleanEmail]);
@@ -269,16 +235,13 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
             return res.status(404).json({ error: "Staff user not found." });
         }
 
-        res.status(200).json({ 
-            message: `Account for ${result.rows[0].full_name} has been reactivated.` 
-        });
-
+        res.status(200).json({ message: `Account for ${result.rows[0].full_name} reactivated.` });
     } catch (error) {
         console.error("Reactivation Error:", error);
-        res.status(500).json({ error: "Server error during reactivation." });
+        res.status(500).json({ error: "Server error." });
     }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server live and listening on Port ${PORT}`);
+    console.log(`🚀 Server live on Port ${PORT}`);
 });
