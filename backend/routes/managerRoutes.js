@@ -69,6 +69,32 @@ router.patch('/deactivate-staff/:id', async (req, res) => {
     }
 });
 
+// --- 3.1 REACTIVATE STAFF (RESETS FAILED ATTEMPTS) ---
+router.post('/reactivate-staff', async (req, res) => {
+    const { staffEmail } = req.body;
+    if (!staffEmail) return res.status(400).json({ error: "Staff email is required." });
+
+    try {
+        const cleanEmail = staffEmail.trim().toLowerCase();
+        const query = `
+            UPDATE staff_users 
+            SET is_active = true, failed_attempts = 0 
+            WHERE email = $1 
+            RETURNING full_name`;
+        
+        const result = await db.query(query, [cleanEmail]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Staff user not found." });
+        }
+
+        res.json({ message: `Account for ${result.rows[0].full_name} reactivated and login attempts reset.` });
+    } catch (error) {
+        console.error('Reactivation Error:', error.message);
+        res.status(500).json({ error: 'Failed to reactivate staff.' });
+    }
+});
+
 // --- 4. DELETE STAFF ---
 router.delete('/delete-staff/:id', async (req, res) => {
     const { id } = req.params;
@@ -80,11 +106,9 @@ router.delete('/delete-staff/:id', async (req, res) => {
     }
 });
 
-// --- 5. GET ALL LOANS (Fixes the "Column Not Found" Errors) ---
+// --- 5. GET ALL LOANS ---
 router.get('/all-loans', async (req, res) => {
     try {
-        // We select the columns carefully using double quotes to match your INSERTs 
-        // while providing lowercase aliases just in case.
         const query = `
             SELECT 
                 id, 
@@ -100,7 +124,6 @@ router.get('/all-loans', async (req, res) => {
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching all-loans:', error.message);
-        // Fallback: If the above fails, try selecting all (*) to prevent 500
         try {
             const fallback = await db.query('SELECT * FROM loans');
             res.json(fallback.rows);

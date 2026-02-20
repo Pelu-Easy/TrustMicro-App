@@ -36,7 +36,7 @@ export default function Dashboard() {
   const loans = useLoanStore((state) => state.loans);
   const setLoans = useLoanStore((state) => state.setLoans);
   const { disbursementTarget } = useStaffStore();
-  const { funame, token, branch, isSupervisor, role, setToken } = useUserData(); 
+  const { funame, token, branch, isSupervisor, role, setToken, logout } = useUserData(); 
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,12 +44,15 @@ export default function Dashboard() {
   // --- ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
   
+  // Standardized check for management
   const isManagement = 
     isSupervisor === true || 
     userRole === 'manager' || 
     userRole === 'supervisor' || 
-    userRole === 'admin';
+    userRole === 'admin' ||
+    userRole === 'super admin';
   
+  // Logic to hide loan onboarding for management
   const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
   // --- LOGOUT LOGIC ---
@@ -63,8 +66,9 @@ export default function Dashboard() {
           text: "Logout", 
           style: "destructive",
           onPress: () => {
-            setToken(null); 
-            router.replace('/login'); 
+            setToken(null);
+            if(logout) logout(); 
+            router.replace('/login');
           } 
         }
       ]
@@ -130,7 +134,6 @@ export default function Dashboard() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* HEADER AREA */}
         <View style={styles.header}>
           <View>
             <Text style={styles.welcomeLabel}>Welcome back,</Text>
@@ -139,17 +142,16 @@ export default function Dashboard() {
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('../(tabs)/profilesumary')}>
+          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
               <Ionicons name="person-circle-outline" size={45} color="#003366" />
           </TouchableOpacity>
         </View>
 
-        {/* QUICK ACTIONS */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-            {/* New Loan - Hidden for Management */}
+            {/* HIDDEN FOR SUPERVISORS/MANAGERS: Only shows for field staff */}
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
@@ -157,7 +159,6 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
             
-            {/* Approvals - Visible for Management */}
             {isManagement && (
               <TouchableOpacity 
                 style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
@@ -168,13 +169,11 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
 
-            {/* Reports - Restored for Everyone */}
             <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
               <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Reports</Text>
             </TouchableOpacity>
 
-            {/* Logout */}
             <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}>
               <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Logout</Text>
@@ -182,7 +181,6 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* PERFORMANCE TRACKER - 🚫 Hidden for Managers */}
         {!isManagement && (
           <>
             <Text style={styles.sectionTitle}>Target Tracking</Text>
@@ -200,14 +198,12 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* STATS SECTION */}
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
            <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
            <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
-        {/* RECENT LOANS LIST */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Applications</Text>
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
@@ -271,7 +267,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#011F3D', marginTop: 10, marginBottom: 15 },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   actionBtn: { 
-      width: (width - 64) / 4, // Adjusted for 4 buttons in a row
+      width: (width - 64) / 4, 
       minWidth: 80,
       backgroundColor: '#003366', 
       borderRadius: 16, 

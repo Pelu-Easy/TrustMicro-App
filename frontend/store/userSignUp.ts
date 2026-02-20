@@ -42,7 +42,6 @@ const useUserData = create<UserState>()(
       supervisor: '',
       role: null,
       token: null,
-      setToken: (newToken) => set({ token: newToken }),
       isLoanOfficer: false,
       isSupervisor: false,
       
@@ -50,30 +49,38 @@ const useUserData = create<UserState>()(
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
+      setToken: (newToken) => set({ 
+        token: newToken, 
+        isLoggedIn: !!newToken // Automatically sets isLoggedIn to true if token exists
+      }),
+
       updateUserData: (data) => set((state) => ({
         ...state,
         ...data,
       })),
 
-      logout: () => set({
-        funame: '',
-        email: '',
-        isLoggedIn: false,
-        phone: '',
-        branch: '',
-        department: '',
-        unit: '',
-        supervisor: '',
-        role: null,
-        token: null,
-        isLoanOfficer: false,
-        isSupervisor: false,
-      }),
+      logout: () => {
+        set({
+          funame: '',
+          email: '',
+          isLoggedIn: false,
+          phone: '',
+          branch: '',
+          department: '',
+          unit: '',
+          supervisor: '',
+          role: null,
+          token: null,
+          isLoanOfficer: false,
+          isSupervisor: false,
+        });
+        // Clear storage entirely to be safe
+        AsyncStorage.removeItem('trust-micro-storage');
+      },
     }),
     {
       name: 'trust-micro-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // --- THIS TELLS ZUSTAND THE DATA IS LOADED FROM PHONE MEMORY ---
       onRehydrateStorage: (state) => {
         return () => state?.setHasHydrated(true);
       },

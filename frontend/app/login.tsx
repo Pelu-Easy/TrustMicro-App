@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -28,11 +29,18 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
+  // Strike tracking states
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLockedOut, setIsLockedOut] = useState(false);
+  
   const [errors, setErrors] = useState<any>({});
 
   const validateEmail = (emailStr: string) => /\S+@\S+\.\S+/.test(emailStr);
 
   const handleSignIn = async () => {
+    // Prevent login if locked out
+    if (isLockedOut) return;
+
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
     let currentErrors: any = {};
@@ -62,6 +70,9 @@ export default function LoginScreen() {
       });
 
       const { token, user } = response.data;
+
+      // SUCCESS: Reset failed attempts
+      setFailedAttempts(0);
 
       // Calculate roles immediately for redirection
       const isUserSupervisor = 
@@ -96,22 +107,46 @@ export default function LoginScreen() {
 
       setIsLoading(false);
 
-      // 🛡️ ROLE-BASED REDIRECTION (Directly at Login)
       if (isUserSupervisor) {
-        // Managers/Admins land on the Admin Panel (root index)
         router.replace('/');
       } else {
-        // Sales Officers land on their specific Tabs
         router.replace('/(tabs)');
       }
 
     } catch (error: any) {
-      setIsLoading(true);
-      setTimeout(() => {
+      const nextAttemptCount = failedAttempts + 1;
+      setFailedAttempts(nextAttemptCount);
+
+      // Handle Lockout Trigger
+      if (nextAttemptCount >= 3) {
+        try {
+          // NOTIFY BACKEND OF DEACTIVATION
+          await api.post('/auth/deactivate', { 
+            email: trimmedEmail.toLowerCase(),
+            reason: "Excessive failed login attempts" 
+          });
+        } catch (backendErr) {
+          console.error("Failed to notify admin of lockout", backendErr);
+        }
+        
         setIsLoading(false);
-        const errorMsg = error.response?.data?.error || "Invalid credentials or server error.";
-        setErrors({ general: errorMsg });
-      }, 500);
+        setIsLockedOut(true);
+        setErrors({ 
+          general: "Account Deactivated: Too many failed attempts. Admin has been notified. Please contact System Admin to reactivate." 
+        });
+        Alert.alert(
+          "Security Lockout", 
+          "Your account is now deactivated. Admin has been notified of the unauthorized attempts.",
+          [{ text: "Understood" }]
+        );
+      } else {
+        setTimeout(() => {
+          setIsLoading(false);
+          const remaining = 3 - nextAttemptCount;
+          const errorMsg = `Invalid credentials. ${remaining} attempt(s) remaining before deactivation.`;
+          setErrors({ general: errorMsg });
+        }, 500);
+      }
     }
   };
 
@@ -140,14 +175,20 @@ export default function LoginScreen() {
 
           <View style={styles.form}>
             {errors.general && (
-              <View style={styles.generalErrorBox}>
-                <Ionicons name="alert-circle" size={18} color="#C53030" />
-                <Text style={styles.generalErrorText}>{errors.general}</Text>
+              <View style={[styles.generalErrorBox, isLockedOut && styles.lockoutBox]}>
+                <Ionicons 
+                  name={isLockedOut ? "lock-closed" : "alert-circle"} 
+                  size={18} 
+                  color={isLockedOut ? "#742A2A" : "#C53030"} 
+                />
+                <Text style={[styles.generalErrorText, isLockedOut && styles.lockoutText]}>
+                  {errors.general}
+                </Text>
               </View>
             )}
 
             <Text style={styles.label}>Email Address <Text style={styles.asterisk}>*</Text></Text>
-            <View style={[styles.inputWrapper, errors.email && styles.inputError]}>
+            <View style={[styles.inputWrapper, errors.email && styles.inputError, isLockedOut && styles.disabledInput]}>
               <Ionicons name="mail-outline" size={20} color={errors.email ? "#EF4444" : "#666"} style={styles.icon} />
               <TextInput
                 style={styles.input}
@@ -157,12 +198,13 @@ export default function LoginScreen() {
                 onChangeText={updateEmailField}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                editable={!isLockedOut}
               />
             </View>
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
             <Text style={styles.label}>Password <Text style={styles.asterisk}>*</Text></Text>
-            <View style={[styles.inputWrapper, errors.password && styles.inputError]}>
+            <View style={[styles.inputWrapper, errors.password && styles.inputError, isLockedOut && styles.disabledInput]}>
               <Ionicons name="lock-closed-outline" size={20} color={errors.password ? "#EF4444" : "#666"} style={styles.icon} />
               <TextInput
                 style={styles.input}
@@ -171,8 +213,9 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={updatePasswordField}
                 secureTextEntry={!showPassword}
+                editable={!isLockedOut}
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLockedOut}>
                 <Ionicons 
                   name={showPassword ? "eye-off-outline" : "eye-outline"} 
                   size={20} color="#666" 
@@ -182,28 +225,29 @@ export default function LoginScreen() {
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
             <TouchableOpacity 
-              onPress={() => router.push('/forgot_password' as any)} 
+              onPress={() => !isLockedOut && router.push('/forgot_password' as any)} 
               style={{ alignSelf: 'flex-end', marginBottom: 25 }}
+              disabled={isLockedOut}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              <Text style={[styles.forgotText, isLockedOut && { color: '#CBD5E1' }]}>Forgot Password?</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.signInBtn, isLoading && styles.disabledBtn]} 
+              style={[styles.signInBtn, (isLoading || isLockedOut) && styles.disabledBtn]} 
               onPress={handleSignIn}
-              disabled={isLoading}
+              disabled={isLoading || isLockedOut}
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.signInText}>Sign In</Text>
+                <Text style={styles.signInText}>{isLockedOut ? "Account Deactivated" : "Sign In"}</Text>
               )}
             </TouchableOpacity>
 
             <View style={styles.signupRow}>
               <Text style={styles.noAccountText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/sign_up')}>
-                <Text style={styles.signUpLinkText}>Sign Up here</Text>
+              <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
+                <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
               </TouchableOpacity>
             </View>
 
@@ -234,6 +278,7 @@ const styles = StyleSheet.create({
     height: 55, marginBottom: 5, backgroundColor: '#F8FAFC'
   },
   inputError: { borderColor: '#EF4444', backgroundColor: '#FFF5F5' },
+  disabledInput: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
   errorText: { color: '#EF4444', fontSize: 12, marginBottom: 15, fontWeight: '600' },
   generalErrorBox: { 
     flexDirection: 'row', 
@@ -245,7 +290,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, 
     borderColor: '#FEB2B2' 
   },
-  generalErrorText: { color: '#C53030', marginLeft: 8, fontWeight: '600', fontSize: 13 },
+  lockoutBox: { backgroundColor: '#FFF5F5', borderColor: '#C53030', padding: 16 },
+  generalErrorText: { color: '#C53030', marginLeft: 8, fontWeight: '600', fontSize: 13, flex: 1 },
+  lockoutText: { color: '#742A2A', fontSize: 14 },
   icon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, color: '#0F172A' },
   forgotText: { color: '#003366', fontWeight: '600', fontSize: 14 },

@@ -4,7 +4,8 @@ import * as Print from 'expo-print';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
-import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // Correct import to fix warning
 import { useLoanStore } from '../../store/loanStore';
 import { useStaffStore } from '../../store/staffStore';
 import useUserData from '../../store/userSignUp';
@@ -21,7 +22,7 @@ export default function Profile() {
   const { disbursementTarget, setDisbursementTarget } = useStaffStore();
   const router = useRouter();
   
-  const { branch, updateUserData, funame: fullName, isSupervisor } = useUserData();
+  const { branch, updateUserData, funame: fullName, isSupervisor, logout, setToken } = useUserData();
   
   const loans = useLoanStore((state) => state.loans);
   const staff = useLoanStore((state) => state.staffProfile);
@@ -36,6 +37,26 @@ export default function Profile() {
 
   const progressPercentage = staff.monthlyTarget > 0 ? (totalDisbursedAmount / staff.monthlyTarget) * 100 : 0;
   const recentDisbursements = disbursedLoans.slice(0, 5);
+
+  // --- LOGOUT HANDLER ---
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Logout", 
+          style: "destructive",
+          onPress: () => {
+            setToken(null);
+            if (logout) logout();
+            router.replace('/login');
+          } 
+        }
+      ]
+    );
+  };
 
   const downloadPerformanceReport = async () => {
     const htmlContent = `
@@ -132,6 +153,7 @@ export default function Profile() {
         {/* --- PERFORMANCE CARD --- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Monthly Disbursement Target</Text>
+          {/* FIXED: Changed from <div> to <View> */}
           <View style={styles.targetRow}>
               <Text style={styles.targetValue}>₦{totalDisbursedAmount.toLocaleString()}</Text>
               <Text style={styles.targetGoal}>/ ₦{(staff.monthlyTarget / 1000000).toFixed(1)}M</Text>
@@ -148,7 +170,7 @@ export default function Profile() {
           <Text style={styles.downloadBtnText}>Download Performance Report</Text>
         </TouchableOpacity>
 
-        {/* --- TARGET MANAGEMENT (RESTRICTED) --- */}
+        {/* --- TARGET MANAGEMENT --- */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Target Management</Text>
           <View style={styles.adminRow}>
@@ -178,7 +200,7 @@ export default function Profile() {
           </View>
         </View>
 
-        {/* --- BRANCH SETTINGS (RESTRICTED) --- */}
+        {/* --- BRANCH SETTINGS --- */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Operating Branch</Text>
           <View style={styles.pickerContainer}>
@@ -206,7 +228,7 @@ export default function Profile() {
         <View style={styles.section}>
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomWidth: 0 }]}
-            onPress={() => updateUserData({ isLoggedIn: false })}
+            onPress={handleLogout}
           >
             <Ionicons name="log-out-outline" size={22} color="#C62828" />
             <Text style={[styles.menuText, { color: '#C62828' }]}>Logout</Text>
@@ -246,7 +268,7 @@ export default function Profile() {
           )}
         </View>
 
-        {/* --- DANGER ZONE (SUPERVISOR ONLY) --- */}
+        {/* --- DANGER ZONE --- */}
         {isSupervisor && (
           <View style={[styles.section, { marginTop: 20, borderColor: '#FFCDD2', borderWidth: 1 }]}>
             <Text style={[styles.sectionLabel, { color: '#C62828' }]}>Danger Zone</Text>
@@ -271,7 +293,6 @@ export default function Profile() {
   );
 }
 
-// ... styles remain the same ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   content: { padding: 25 },

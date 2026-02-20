@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import useUserData from '../../store/userSignUp';
 
-// Standardized API URL to match server.js
 const API_URL = 'https://trustmicro-app.onrender.com/api/v1'; 
 
 interface LoanItem {
@@ -42,10 +41,22 @@ interface StaffItem {
 
 export default function ManagerDashboard() {
   const router = useRouter();
-  const { token, funame, role, isSupervisor } = useUserData();
+  const { token, funame, role, isSupervisor, setToken } = useUserData();
 
-  // 🛡️ ROLE PROTECTION LOGIC
-  // Standardize "canManage" across all checks
+  const handleLogout = () => {
+    Alert.alert("Logout", "Sign out of Admin Panel?", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Logout", 
+        style: "destructive", 
+        onPress: () => {
+          setToken(null);
+          router.replace('/login');
+        } 
+      }
+    ]);
+  };
+
   const canManage = isSupervisor === true || 
                     role === 'Super Admin' || 
                     role === 'Manager' || 
@@ -53,10 +64,9 @@ export default function ManagerDashboard() {
                     role === 'Supervisor';
 
   useEffect(() => {
-    // SECURITY GUARD: If the user is NOT a manager/supervisor, kick them out immediately
     if (!canManage) {
-      console.warn("Unauthorized access attempt to Manager Dashboard by:", funame);
-      router.replace('/(tabs)'); // Redirect to the standard Officer Dashboard
+      console.warn("Unauthorized access attempt by:", funame);
+      router.replace('/(tabs)'); 
     }
   }, [canManage]);
 
@@ -74,7 +84,6 @@ export default function ManagerDashboard() {
         const res = await axios.get(`${API_URL}/manager/all-loans`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        // Only show Pending loans for the review list
         setPendingLoans(res.data.filter((l: LoanItem) => l.status === 'Pending'));
       } else if (activeTab === 'staff') {
         const res = await axios.get(`${API_URL}/manager/staff-list`, {
@@ -113,16 +122,36 @@ export default function ManagerDashboard() {
     ]);
   };
 
-  const handleDeactivate = async (staffId: string, currentStatus: boolean) => {
+  // NEW: Reactivate/Deactivate Logic integrated with Security Lockout reset
+  const handleStaffToggle = async (item: StaffItem) => {
     if (!canManage) return;
-    try {
-      await axios.patch(`${API_URL}/manager/deactivate-staff/${staffId}`, 
-        { isActive: !currentStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      Alert.alert("Success", `Staff ${!currentStatus ? 'Activated' : 'Deactivated'}`);
-      fetchData();
-    } catch (e) { Alert.alert("Error", "Action failed"); }
+
+    const action = item.is_active ? 'Deactivate' : 'Reactivate';
+    
+    Alert.alert(`Confirm ${action}`, `Are you sure you want to ${action.toLowerCase()} ${item.full_name}?`, [
+        { text: "Cancel" },
+        { text: "Yes", onPress: async () => {
+            try {
+                if (item.is_active) {
+                    // Standard Deactivation
+                    await axios.patch(`${API_URL}/manager/deactivate-staff/${item.id}`, 
+                        { isActive: false },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                } else {
+                    // SECURE REACTIVATION (Resets failed attempts to 0)
+                    await axios.post(`${API_URL}/manager/reactivate-staff`, 
+                        { staffEmail: item.email },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                }
+                Alert.alert("Success", `Staff ${action}d successfully`);
+                fetchData();
+            } catch (e: any) { 
+                Alert.alert("Error", e.response?.data?.error || "Action failed"); 
+            }
+        }}
+    ]);
   };
 
   const handleDelete = async (staffId: string) => {
@@ -140,7 +169,6 @@ export default function ManagerDashboard() {
     ]);
   };
 
-  // If the user shouldn't be here, show nothing while the useEffect redirects
   if (!canManage) return null;
 
   if (isLoading) {
@@ -230,9 +258,14 @@ export default function ManagerDashboard() {
                 <Text style={styles.officer}>{item.role} • {item.email}</Text>
               </View>
               <View style={styles.actions}>
-                <TouchableOpacity onPress={() => handleDeactivate(item.id, item.is_active)}>
-                  <Text style={{ color: item.is_active ? '#E67E22' : '#27AE60', fontWeight: 'bold' }}>
-                    {item.is_active ? 'Deactivate' : 'Activate'}
+                <TouchableOpacity onPress={() => handleStaffToggle(item)}>
+                  <Text style={{ 
+                    color: item.is_active ? '#E67E22' : '#27AE60', 
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase',
+                    fontSize: 12
+                  }}>
+                    {item.is_active ? 'Deactivate' : 'Reactivate'}
                   </Text>
                 </TouchableOpacity>
                 {role === 'Super Admin' && (
