@@ -1,23 +1,76 @@
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import useUserData from '../store/userSignUp';
 
 const { width, height } = Dimensions.get('window');
 const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "#F8FAFC" };
 
 export default function LoanDetails() {
   const router = useRouter();
+  const { role, isSupervisor, token } = useUserData();
   const { id, customerName, amount, loanType, staffName, ninImage, idImage } = useLocalSearchParams();
   
-  // State for the Image Zoom Modal
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  // --- ROLE PROTECTION ---
+  const userRole = (role || '').toLowerCase();
+  const canManage = isSupervisor === true || 
+                    ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
+
+  useEffect(() => {
+    if (!canManage) {
+      console.warn("Unauthorized access redirected.");
+      router.replace('/(tabs)'); 
+    }
+  }, [canManage]);
 
   const openZoom = (uri: string) => {
     setSelectedImage(uri);
     setModalVisible(true);
   };
+
+  // --- API HANDLER ---
+  const handleAction = (decision: 'Approved' | 'Rejected') => {
+    Alert.alert(
+      "Confirm Decision",
+      `Are you sure you want to set this loan to ${decision}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Confirm", 
+          onPress: async () => {
+            setIsSubmitting(true);
+            try {
+              // Replace with your actual backend URL if different
+              const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
+              
+              await axios.patch(
+                `${API_URL}/manager/update-status/${id}`, 
+                { status: decision },
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+
+              Alert.alert("Success", `Loan has been ${decision.toLowerCase()}.`, [
+                { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
+              ]);
+            } catch (error: any) {
+              const errorMsg = error.response?.data?.message || "Connection error. Try again.";
+              Alert.alert("Update Failed", errorMsg);
+            } finally {
+              setIsSubmitting(false);
+            }
+          } 
+        }
+      ]
+    );
+  };
+
+  if (!canManage) return null;
 
   return (
     <View style={{ flex: 1 }}>
@@ -39,7 +92,7 @@ export default function LoanDetails() {
             <View style={styles.row}>
               <View>
                 <Text style={styles.label}>LOAN AMOUNT</Text>
-                <Text style={styles.amountText}>₦{Number(amount).toLocaleString()}</Text>
+                <Text style={styles.amountText}>₦{Number(amount || 0).toLocaleString()}</Text>
               </View>
               <View>
                 <Text style={styles.label}>TYPE</Text>
@@ -54,7 +107,7 @@ export default function LoanDetails() {
           <Text style={styles.sectionTitle}>Verification Documents</Text>
           <Text style={styles.helperText}>Tap image to view full screen</Text>
           
-          {/* NIN Image */}
+          {/* Documents Section */}
           <View style={styles.docCard}>
             <Text style={styles.docLabel}>National Identity Number (NIN)</Text>
             {ninImage ? (
@@ -62,11 +115,10 @@ export default function LoanDetails() {
                 <Image source={{ uri: ninImage as string }} style={styles.docImage} resizeMode="cover" />
               </TouchableOpacity>
             ) : (
-              <View style={styles.noDoc}><Text>No NIN Image Uploaded</Text></View>
+              <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>No NIN Image Uploaded</Text></View>
             )}
           </View>
 
-          {/* ID Image */}
           <View style={styles.docCard}>
             <Text style={styles.docLabel}>Government Issued ID</Text>
             {idImage ? (
@@ -74,33 +126,43 @@ export default function LoanDetails() {
                 <Image source={{ uri: idImage as string }} style={styles.docImage} resizeMode="cover" />
               </TouchableOpacity>
             ) : (
-              <View style={styles.noDoc}><Text>No ID Image Uploaded</Text></View>
+              <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>No ID Image Uploaded</Text></View>
             )}
           </View>
 
+          {/* Action Buttons */}
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BRAND.danger }]}>
+            <TouchableOpacity 
+              disabled={isSubmitting}
+              style={[styles.actionBtn, { backgroundColor: BRAND.danger, opacity: isSubmitting ? 0.6 : 1 }]}
+              onPress={() => handleAction('Rejected')}
+            >
               <Text style={styles.btnText}>Reject</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BRAND.success }]}>
-              <Text style={styles.btnText}>Approve Loan</Text>
+            
+            <TouchableOpacity 
+              disabled={isSubmitting}
+              style={[styles.actionBtn, { backgroundColor: BRAND.success, opacity: isSubmitting ? 0.6 : 1 }]}
+              onPress={() => handleAction('Approved')}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>Approve Loan</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
 
-      {/* --- ZOOM MODAL --- */}
-      <Modal visible={isModalVisible} transparent={true} animationType="fade">
+      {/* ZOOM MODAL */}
+      <Modal visible={isModalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalContainer}>
           <TouchableOpacity style={styles.closeModal} onPress={() => setModalVisible(false)}>
             <Ionicons name="close-circle" size={40} color="#fff" />
           </TouchableOpacity>
           {selectedImage && (
-            <Image 
-              source={{ uri: selectedImage }} 
-              style={styles.fullImage} 
-              resizeMode="contain" 
-            />
+            <Image source={{ uri: selectedImage }} style={styles.fullImage} resizeMode="contain" />
           )}
         </View>
       </Modal>
@@ -127,10 +189,8 @@ const styles = StyleSheet.create({
   docImage: { width: '100%', height: 200, borderRadius: 8 },
   noDoc: { width: '100%', height: 100, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderRadius: 8 },
   actionRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
-  actionBtn: { flex: 1, padding: 18, borderRadius: 12, alignItems: 'center' },
+  actionBtn: { flex: 1, padding: 18, borderRadius: 12, alignItems: 'center', minHeight: 60, justifyContent: 'center' },
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  
-  // Modal Styles
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeModal: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
   fullImage: { width: width, height: height * 0.8 },
