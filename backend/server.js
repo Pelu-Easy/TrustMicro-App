@@ -128,12 +128,20 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
-        const staffCheck = await db.query('SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))', [officerEmail]);
-        if (staffCheck.rows.length === 0) return res.status(400).json({ error: "Staff email not recognized." });
+        // 1. Fetch the EXACT email string from the staff_users table first
+        const staffCheck = await db.query(
+            'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
+            [officerEmail]
+        );
+        
+        if (staffCheck.rows.length === 0) {
+            return res.status(400).json({ error: "Staff email not found in staff_users table." });
+        }
+
+        // Use the email EXACTLY as it appears in the database to satisfy the Foreign Key
+        const dbEmail = staffCheck.rows[0].email;
 
         const loan = req.body;
-        
-        // Fix: Generate a unique ID since the 'id' column is 'text' and has no default value
         const uniqueLoanId = `LOAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         const query = `
@@ -145,17 +153,17 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             RETURNING *`;
 
         const values = [
-            uniqueLoanId,      // $1: Generated ID
-            loan.customerName, // $2
-            loan.bvn,          // $3
-            loan.nin,          // $4
-            loan.phone,        // $5
-            loan.loanAmount,   // $6
-            loan.status || 'Pending', // $7
-            officerEmail,      // $8
-            new Date().toISOString().split('T')[0], // $9
-            loan.bankName,     // $10
-            loan.accountNumber // $11
+            uniqueLoanId,
+            loan.customerName, 
+            loan.bvn, 
+            loan.nin, 
+            loan.phone,
+            loan.loanAmount, 
+            loan.status || 'Pending',
+            dbEmail, // Using the verified email from the DB row
+            new Date().toISOString().split('T')[0],
+            loan.bankName, 
+            loan.accountNumber
         ];
 
         const result = await db.query(query, values);
