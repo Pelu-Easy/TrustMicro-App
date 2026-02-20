@@ -168,7 +168,7 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// LOAN SUBMISSION (Path updated to match frontend)
+// LOAN SUBMISSION (Corrected column quoting)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
@@ -176,24 +176,34 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         if (staffCheck.rows.length === 0) return res.status(400).json({ error: "Staff email not recognized." });
 
         const loan = req.body;
+        
+        // Use double quotes around column names to satisfy PostgreSQL exact naming requirements
         const query = `
             INSERT INTO loans (
-                customer_name, bvn, nin, phone, loan_amount, 
-                status, "createdByEmail", "submittedDate", 
-                bank_name, account_number, employer_name
+                "customerName", "bvn", "nin", "phone", "loanAmount", 
+                "status", "createdByEmail", "submittedDate", 
+                "bankName", "accountNumber", "employerName"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *`;
-
         const values = [
-            loan.customerName, loan.bvn, loan.nin, loan.phone,
-            parseFloat(loan.loanAmount) || 0, loan.status || 'Pending',
-            officerEmail, new Date().toISOString().split('T')[0],
-            loan.bankName, loan.accountNumber, loan.employerName
+            loan.customerName, 
+            loan.bvn, 
+            loan.nin, 
+            loan.phone,
+            parseFloat(loan.loanAmount) || 0, 
+            loan.status || 'Pending',
+            officerEmail, 
+            new Date().toISOString().split('T')[0],
+            loan.bankName, 
+            loan.accountNumber, 
+            loan.employerName
         ];
 
         const result = await db.query(query, values);
+        console.log(`[DATABASE] Loan saved successfully for ${loan.customerName}`);
         res.status(201).json(result.rows[0]);
     } catch (err) {
+        console.error("DATABASE INSERT ERROR:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
