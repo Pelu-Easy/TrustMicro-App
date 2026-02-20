@@ -9,33 +9,36 @@ export default function RootLayout() {
   const router = useRouter();
   const navigationState = useRootNavigationState();
 
-  // The app is only truly "Ready" when store is hydrated AND navigation tree is built
-  const isReady = _hasHydrated && navigationState?.key;
+  // Ensure the store is loaded AND the router has initialized its internal state
+  const isReady = _hasHydrated && !!navigationState?.key;
 
   useEffect(() => {
-    // 1. Safety Check: Do nothing until the app is fully ready
+    // 1. Exit if the app isn't fully ready to handle navigation
     if (!isReady) return;
 
-    // 2. Determine auth status and current location
     const isLoggedIn = !!token;
-    
-    // Check if user is currently in the auth screens (login, signup, etc.)
     const inAuthGroup = segments[0] === 'login' || 
                        segments[0] === 'sign_up' || 
                        segments[0] === 'forgot_password';
 
-    // 3. Secure Redirection Logic
-    if (!isLoggedIn && !inAuthGroup) {
-      // Not logged in -> Force them to Login
-      router.replace('/login');
-    } else if (isLoggedIn && inAuthGroup) {
-      // Already logged in -> Redirect away from Login screens to Dashboard
-      router.replace('/(tabs)');
-    }
+    // 2. The Correction: Wrap navigation in a zero-delay timeout.
+    // This forces the router to wait until the current render cycle completes 
+    // and the Stack is officially "mounted" in the UI tree.
+    const timeout = setTimeout(() => {
+      if (!isLoggedIn && !inAuthGroup) {
+        // Not logged in -> Go to Login
+        router.replace('/login');
+      } else if (isLoggedIn && inAuthGroup) {
+        // Logged in but on Auth screen -> Go to App
+        router.replace('/(tabs)');
+      }
+    }, 0);
+
+    return () => clearTimeout(timeout);
   }, [token, isReady, segments]);
 
-  // 4. Important: Show loading screen until EVERYTHING is ready
-  // This prevents the "Attempted to navigate before mounting" error
+  // 3. Keep showing the loading screen while hydration or navigation is pending.
+  // We return a View here, NOT the Stack, to prevent partial renders.
   if (!isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
