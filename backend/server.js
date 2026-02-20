@@ -112,7 +112,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        // Gate: Check status before password
         if (user.is_active === false || user.failed_attempts >= 3) {
             console.log(`[AUTH] Blocked login for LOCKED user: ${cleanEmail}`);
             return res.status(403).json({ error: "Account locked. Contact Admin." });
@@ -123,7 +122,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
         if (!isMatch) {
             const newFailedCount = (user.failed_attempts || 0) + 1;
             
-            // Primary Key Update (ID) is the only way to be 100% sure we hit the row
             const updateResult = await db.query(
                 "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3 RETURNING failed_attempts", 
                 [newFailedCount, newFailedCount < 3, user.id]
@@ -138,7 +136,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
             }
         }
 
-        // Reset security on success
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
@@ -171,7 +168,8 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/loans', authenticateToken, async (req, res) => {
+// LOAN SUBMISSION (Path updated to match frontend)
+app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
         const staffCheck = await db.query('SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))', [officerEmail]);
