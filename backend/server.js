@@ -50,9 +50,9 @@ const authenticateToken = (req, res, next) => {
 
 app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Render!"));
 
-// --- 4. PUBLIC AUTH ROUTES (No Token Required) ---
+// --- 4. PUBLIC AUTH ROUTES ---
 
-// ACCOUNT DEACTIVATION (Lockout Notification)
+// ACCOUNT DEACTIVATION (Used by frontend when 3 strikes are reached)
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email, reason } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
@@ -61,10 +61,10 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
 
     try {
         const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE email = $1";
-        const result = await db.query(query, [cleanEmail]);
+        await db.query(query, [cleanEmail]);
 
         console.log(`[SECURITY] Account ${cleanEmail} deactivated. Reason: ${reason}`);
-        res.status(200).json({ message: "Admin notified and account locked." });
+        res.status(200).json({ message: "Account locked and Admin notified." });
     } catch (error) {
         console.error("Deactivation Route Error:", error);
         res.status(500).json({ error: "Internal server error during deactivation" });
@@ -116,9 +116,11 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     }
 });
 
-// LOGIN (Updated with 3-Strikes Lockout Logic)
+// LOGIN (Strict Enforcement of is_active and failed_attempts)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+
     const cleanEmail = email.trim().toLowerCase();
     
     try {
@@ -127,9 +129,9 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-        // 1. Check if account is deactivated
+        // 1. CRITICAL: Check if account is active BEFORE anything else
         if (user.is_active === false) {
-            return res.status(403).json({ error: "Account deactivated. Please contact Admin for activation." });
+            return res.status(403).json({ error: "Account locked or deactivated. Please contact Admin." });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
@@ -138,15 +140,18 @@ app.post('/api/v1/auth/login', async (req, res) => {
             const newFailedCount = (user.failed_attempts || 0) + 1;
             
             if (newFailedCount >= 3) {
-                await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newFailedCount, false, user.id]);
-                return res.status(403).json({ error: "Too many failed attempts. Account deactivated. Contact Admin." });
+                // Lock account in DB
+                await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = false WHERE email = $2", [newFailedCount, cleanEmail]);
+                return res.status(403).json({ error: "Too many failed attempts. Account locked. Contact Admin." });
             } else {
-                await db.query("UPDATE staff_users SET failed_attempts = $1 WHERE id = $2", [newFailedCount, user.id]);
+                // Increment counter in DB
+                await db.query("UPDATE staff_users SET failed_attempts = $1 WHERE email = $2", [newFailedCount, cleanEmail]);
                 return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts remaining.` });
             }
         }
 
-        await db.query("UPDATE staff_users SET failed_attempts = 0 WHERE id = $1", [user.id]);
+        // 2. SUCCESS: Reset failed attempts on successful login
+        await db.query("UPDATE staff_users SET failed_attempts = 0 WHERE email = $1", [cleanEmail]);
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
         
@@ -166,6 +171,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
 });
 
 // --- ROUTES REQUIRING TOKEN ---
+
 app.get('/api/v1/loans/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -238,22 +244,19 @@ app.patch('/api/v1/users/update-profile', authenticateToken, async (req, res) =>
     }
 });
 
-// ADMIN-ONLY: Reactivate a locked account
+// THE REACTIVATE ROUTE (Already exists in managerRoutes, but including the root-level version here for completeness)
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const adminRole = req.user.role?.toLowerCase();
 
-    // 1. Role Authorization Check
     if (adminRole !== 'admin' && adminRole !== 'super admin' && adminRole !== 'manager') {
-        return res.status(403).json({ error: "Unauthorized: Only managers/admins can reactivate accounts." });
+        return res.status(403).json({ error: "Unauthorized: Access Denied." });
     }
 
     if (!staffEmail) return res.status(400).json({ error: "Staff email is required." });
 
     try {
         const cleanEmail = staffEmail.trim().toLowerCase();
-        
-        // 2. Update Database: Set is_active to true and reset failed_attempts to 0
         const query = `
             UPDATE staff_users 
             SET is_active = true, failed_attempts = 0 
@@ -266,10 +269,8 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
             return res.status(404).json({ error: "Staff user not found." });
         }
 
-        console.log(`[SECURITY] Admin ${req.user.email} reactivated account: ${cleanEmail}`);
-        
         res.status(200).json({ 
-            message: `Account for ${result.rows[0].full_name} has been reactivated successfully.` 
+            message: `Account for ${result.rows[0].full_name} has been reactivated.` 
         });
 
     } catch (error) {
