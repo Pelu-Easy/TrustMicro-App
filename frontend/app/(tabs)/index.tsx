@@ -40,14 +40,18 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- ROLE LOGIC ---
+  // --- STRICT ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
-  const isManagerOrSupervisor = 
-    isSupervisor === true || 
-    ['manager', 'supervisor', 'admin'].includes(userRole);
   
-  // Loan onboarding is strictly for Sales/Loan Officers
-  const canOnboardLoan = !isManagerOrSupervisor && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
+  // 1. Identify Management
+  const isManagement = 
+    isSupervisor === true || 
+    userRole === 'manager' || 
+    userRole === 'supervisor' || 
+    userRole === 'admin';
+  
+  // 2. Grant onboarding ONLY to non-management staff (Sales/Officers)
+  const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
   // --- LOGIC: FETCH FROM DATABASE ---
   const fetchAllLoans = useCallback(async () => {
@@ -129,7 +133,8 @@ export default function Dashboard() {
         
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-            {/* New Loan: Only for Sales/Officers */}
+            
+            {/* 🚫 RESTRICTED: "New Loan" removed for Manager/Supervisor */}
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
@@ -137,8 +142,8 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
               
-            {/* Approvals: Only for Management */}
-            {isManagerOrSupervisor && (
+            {/* ✅ ALLOWED: "Approvals" shown only for Management */}
+            {isManagement && (
               <TouchableOpacity 
                 style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
                 onPress={() => router.push('/(tabs)/managerDashboard')}
@@ -170,7 +175,7 @@ export default function Dashboard() {
         </View>
 
         {/* STATS SECTION */}
-        <Text style={styles.sectionTitle}>{isManagerOrSupervisor ? "Portfolio Overview" : "My Statistics"}</Text>
+        <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
            <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
            <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
@@ -193,11 +198,15 @@ export default function Dashboard() {
               key={`${loan.id}-${index}`} 
               style={styles.loanItem}
               onPress={() => {
+                // 🔐 FINAL GUARD: Managers cannot click into a Draft loan to create/edit it
                 if (loan.status === 'Draft' && canOnboardLoan) {
                   router.push({
                     pathname: '/(tabs)/loanForm',
                     params: { draftId: loan.id }
                   });
+                } else if (loan.status !== 'Draft') {
+                  // Logic for viewing submitted loans can go here
+                  console.log("Viewing read-only loan details.");
                 }
               }}
             >
