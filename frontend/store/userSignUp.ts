@@ -9,6 +9,7 @@ interface UserState {
   isLoggedIn: boolean;
   phone: string;
   branch: string;
+  setToken: (token: string | null) => void;
   department: string;
   unit: string;
   supervisor: string;
@@ -41,6 +42,7 @@ const useUserData = create<UserState>()(
       supervisor: '',
       role: null,
       token: null,
+      setToken: (newToken) => set({ token: newToken }),
       isLoanOfficer: false,
       isSupervisor: false,
       

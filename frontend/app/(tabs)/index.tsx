@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert // Added for Logout Confirmation
+  ,
   Dimensions,
   RefreshControl,
   ScrollView,
@@ -35,7 +37,7 @@ export default function Dashboard() {
   const loans = useLoanStore((state) => state.loans);
   const setLoans = useLoanStore((state) => state.setLoans);
   const { disbursementTarget } = useStaffStore();
-  const { funame, token, branch, isSupervisor, role } = useUserData();
+  const { funame, token, branch, isSupervisor, role, setToken } = useUserData(); // Added setToken
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -43,27 +45,42 @@ export default function Dashboard() {
   // --- STRICT ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
   
-  // 1. Identify Management
   const isManagement = 
     isSupervisor === true || 
     userRole === 'manager' || 
     userRole === 'supervisor' || 
     userRole === 'admin';
   
-  // 2. Grant onboarding ONLY to non-management staff (Sales/Officers)
   const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
-  // --- LOGIC: FETCH FROM DATABASE ---
+  // --- LOGOUT LOGIC ---
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Logout", 
+          style: "destructive",
+          onPress: () => {
+            setToken(null); // Clear session in Zustand
+            router.replace('/login'); // Redirect to login
+          } 
+        }
+      ]
+    );
+  };
+
   const fetchAllLoans = useCallback(async () => {
     if (!token) return;
-    
     try {
       const response = await api.get('/loans');
       if (response.data) {
         setLoans(response.data);
       }
     } catch (error: any) {
-      console.log("Dashboard sync stopped or failed.");
+      console.log("Dashboard sync failed.");
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -123,7 +140,7 @@ export default function Dashboard() {
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
+          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('../(tabs)/profilesumary')}>
               <Ionicons name="person-circle-outline" size={45} color="#003366" />
           </TouchableOpacity>
         </View>
@@ -133,16 +150,13 @@ export default function Dashboard() {
         
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-            
-            {/* 🚫 RESTRICTED: "New Loan" removed for Manager/Supervisor */}
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
                 <Text style={styles.actionBtnText}>New Loan</Text>
               </TouchableOpacity>
             )}
-              
-            {/* ✅ ALLOWED: "Approvals" shown only for Management */}
+            
             {isManagement && (
               <TouchableOpacity 
                 style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
@@ -153,26 +167,31 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
-              <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>Reports</Text>
+            {/* Logout Button */}
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}>
+              <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>Logout</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* PERFORMANCE TRACKER */}
-        <Text style={styles.sectionTitle}>Target Tracking</Text>
-        <View style={styles.targetCard}>
-          <View style={styles.cardHeader}>
-            <Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} />
-            <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
-          </View>
-          <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
-          </View>
-          <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
-        </View>
+        {/* PERFORMANCE TRACKER - 🚫 Hidden for Managers */}
+        {!isManagement && (
+          <>
+            <Text style={styles.sectionTitle}>Target Tracking</Text>
+            <View style={styles.targetCard}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} />
+                <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
+              </View>
+              <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
+              <View style={styles.progressContainer}>
+                <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
+              </View>
+              <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
+            </View>
+          </>
+        )}
 
         {/* STATS SECTION */}
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
@@ -198,15 +217,11 @@ export default function Dashboard() {
               key={`${loan.id}-${index}`} 
               style={styles.loanItem}
               onPress={() => {
-                // 🔐 FINAL GUARD: Managers cannot click into a Draft loan to create/edit it
                 if (loan.status === 'Draft' && canOnboardLoan) {
                   router.push({
                     pathname: '/(tabs)/loanForm',
                     params: { draftId: loan.id }
                   });
-                } else if (loan.status !== 'Draft') {
-                  // Logic for viewing submitted loans can go here
-                  console.log("Viewing read-only loan details.");
                 }
               }}
             >
