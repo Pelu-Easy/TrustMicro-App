@@ -198,7 +198,7 @@ const handleFinalSubmit = async () => {
 
     try {
         // We use '/api/v1/loans' explicitly to ensure it matches the backend route
-        const response = await api.post('/api/v1/loans', payload, {
+        const response = await api.post('loans', payload, {
             headers: { Authorization: `Bearer ${token}` }
         });
         
