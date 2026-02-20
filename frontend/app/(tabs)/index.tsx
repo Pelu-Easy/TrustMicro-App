@@ -3,8 +3,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert // Added for Logout Confirmation
-  ,
+  Alert,
   Dimensions,
   RefreshControl,
   ScrollView,
@@ -37,12 +36,12 @@ export default function Dashboard() {
   const loans = useLoanStore((state) => state.loans);
   const setLoans = useLoanStore((state) => state.setLoans);
   const { disbursementTarget } = useStaffStore();
-  const { funame, token, branch, isSupervisor, role, setToken } = useUserData(); // Added setToken
+  const { funame, token, branch, isSupervisor, role, setToken } = useUserData(); 
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- STRICT ROLE LOGIC ---
+  // --- ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
   
   const isManagement = 
@@ -64,8 +63,8 @@ export default function Dashboard() {
           text: "Logout", 
           style: "destructive",
           onPress: () => {
-            setToken(null); // Clear session in Zustand
-            router.replace('/login'); // Redirect to login
+            setToken(null); 
+            router.replace('/login'); 
           } 
         }
       ]
@@ -150,6 +149,7 @@ export default function Dashboard() {
         
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
+            {/* New Loan - Hidden for Management */}
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
@@ -157,6 +157,7 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
             
+            {/* Approvals - Visible for Management */}
             {isManagement && (
               <TouchableOpacity 
                 style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
@@ -167,7 +168,13 @@ export default function Dashboard() {
               </TouchableOpacity>
             )}
 
-            {/* Logout Button */}
+            {/* Reports - Restored for Everyone */}
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
+              <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>Reports</Text>
+            </TouchableOpacity>
+
+            {/* Logout */}
             <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}>
               <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Logout</Text>
@@ -264,11 +271,11 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#011F3D', marginTop: 10, marginBottom: 15 },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   actionBtn: { 
-      width: (width - 64) / 3, 
-      minWidth: 100,
+      width: (width - 64) / 4, // Adjusted for 4 buttons in a row
+      minWidth: 80,
       backgroundColor: '#003366', 
       borderRadius: 16, 
-      padding: 15, 
+      padding: 12, 
       alignItems: 'center', 
       elevation: 4, 
       shadowColor: '#000', 
@@ -276,7 +283,7 @@ const styles = StyleSheet.create({
       shadowRadius: 4 
     },
   actionIconBg: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderRadius: 10 },
-  actionBtnText: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 8 },
+  actionBtnText: { color: '#fff', fontSize: 10, fontWeight: '700', marginTop: 8 },
   targetCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, marginBottom: 25, elevation: 2, borderWidth: 1, borderColor: '#F1F5F9' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   cardTitle: { fontSize: 14, color: '#475569', fontWeight: '600' },

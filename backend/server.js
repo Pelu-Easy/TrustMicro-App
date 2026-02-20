@@ -74,7 +74,7 @@ app.get('/api/v1/auth/check-phone/:phone', async (req, res) => {
     }
 });
 
-// SIGN-UP (With Email Normalization)
+// SIGN-UP (Updated to include failed_attempts)
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
     const cleanEmail = email.trim().toLowerCase();
@@ -85,10 +85,10 @@ app.post('/api/v1/auth/signup', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active) 
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)`;
+        const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) 
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
         
-        await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true]);
+        await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true, 0]);
         res.status(201).json({ message: "Staff account created successfully!" });
     } catch (error) { 
         console.error("Signup Error:", error.message);
@@ -96,7 +96,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     }
 });
 
-// LOGIN (With Email Normalization)
+// LOGIN (Updated with 3-Strikes Lockout Logic)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     const cleanEmail = email.trim().toLowerCase();
@@ -106,10 +106,31 @@ app.post('/api/v1/auth/login', async (req, res) => {
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
-        if (user.is_active === false) return res.status(403).json({ error: "Account deactivated." });
+
+        // 1. Check if account is deactivated
+        if (user.is_active === false) {
+            return res.status(403).json({ error: "Account deactivated. Please contact Admin for activation." });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
+
+        if (!isMatch) {
+            // 2. Increment failed attempts
+            const newFailedCount = (user.failed_attempts || 0) + 1;
+            
+            if (newFailedCount >= 3) {
+                // 3. Deactivate on 3rd strike
+                await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newFailedCount, false, user.id]);
+                return res.status(403).json({ error: "Too many failed attempts. Account deactivated. Contact Admin." });
+            } else {
+                // Update count and notify user of remaining attempts
+                await db.query("UPDATE staff_users SET failed_attempts = $1 WHERE id = $3", [newFailedCount, user.id]);
+                return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts remaining.` });
+            }
+        }
+
+        // 4. Success: Reset failed attempts on successful login
+        await db.query("UPDATE staff_users SET failed_attempts = 0 WHERE id = $1", [user.id]);
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
         
@@ -123,6 +144,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error("Login Error:", error);
         res.status(500).json({ error: "Server Error" });
     }
 });
@@ -149,13 +171,12 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// SECURE LOAN SUBMISSION (Normalized Email & Foreign Key Check)
+// SECURE LOAN SUBMISSION
 app.post('/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
 
     try {
-        // 1. Verify Staff exists (The check we just passed!)
-        const staffCheck = await pool.query(
+        const staffCheck = await db.query( // Fixed 'pool' to 'db'
             'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', 
             [officerEmail]
         );
@@ -165,12 +186,10 @@ app.post('/loans', authenticateToken, async (req, res) => {
         }
 
         const loan = req.body;
-
-        // 2. Insert with normalized data
         const query = `
             INSERT INTO loans (
                 customer_name, bvn, nin, phone, loan_amount, 
-                status, created_by_email, submitted_date, 
+                status, "createdByEmail", "submittedDate", 
                 bank_name, account_number, employer_name
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *`;
@@ -180,16 +199,16 @@ app.post('/loans', authenticateToken, async (req, res) => {
             loan.bvn,
             loan.nin,
             loan.phone,
-            parseFloat(loan.loanAmount) || 0, // Force to Number
+            parseFloat(loan.loanAmount) || 0,
             loan.status || 'Pending',
             officerEmail,
-            new Date().toISOString().split('T')[0], // Force YYYY-MM-DD
+            new Date().toISOString().split('T')[0],
             loan.bankName,
             loan.accountNumber,
             loan.employerName
         ];
 
-        const result = await pool.query(query, values);
+        const result = await db.query(query, values); // Fixed 'pool' to 'db'
         res.status(201).json(result.rows[0]);
 
     } catch (err) {
