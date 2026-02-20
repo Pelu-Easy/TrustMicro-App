@@ -9,29 +9,34 @@ export default function RootLayout() {
   const router = useRouter();
   const navigationState = useRootNavigationState();
 
+  // The app is only truly "Ready" when store is hydrated AND navigation tree is built
+  const isReady = _hasHydrated && navigationState?.key;
+
   useEffect(() => {
-    // 1. Wait for the store to load from AsyncStorage (Hydration)
-    if (!_hasHydrated) return;
+    // 1. Safety Check: Do nothing until the app is fully ready
+    if (!isReady) return;
 
-    // 2. Wait for the navigation tree to be ready (Prevents the "Root Layout" error)
-    if (!navigationState?.key) return;
-
-    // 3. Determine auth status and current location
+    // 2. Determine auth status and current location
     const isLoggedIn = !!token;
-    const inAuthGroup = segments[0] === 'login' || segments[0] === 'sign_up' || segments[0] === 'forgot_password';
+    
+    // Check if user is currently in the auth screens (login, signup, etc.)
+    const inAuthGroup = segments[0] === 'login' || 
+                       segments[0] === 'sign_up' || 
+                       segments[0] === 'forgot_password';
 
-    // 4. Redirection Logic
+    // 3. Secure Redirection Logic
     if (!isLoggedIn && !inAuthGroup) {
-      // If not logged in and not on an auth screen, force login
+      // Not logged in -> Force them to Login
       router.replace('/login');
     } else if (isLoggedIn && inAuthGroup) {
-      // If logged in but trying to access login/signup, go to dashboard
+      // Already logged in -> Redirect away from Login screens to Dashboard
       router.replace('/(tabs)');
     }
-  }, [token, _hasHydrated, navigationState?.key, segments]);
+  }, [token, isReady, segments]);
 
-  // 5. Show a loading screen while hydration is in progress
-  if (!_hasHydrated) {
+  // 4. Important: Show loading screen until EVERYTHING is ready
+  // This prevents the "Attempted to navigate before mounting" error
+  if (!isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
         <ActivityIndicator size="large" color="#003366" />
@@ -46,15 +51,15 @@ export default function RootLayout() {
         animation: 'fade', 
       }}
     >
-      {/* The Tabbed App */}
+      {/* Main App Routes */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
-      {/* Auth Screens */}
+      {/* Auth Routes */}
       <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="sign_up" options={{ title: 'Create Account' }} />
       <Stack.Screen name="forgot_password" options={{ title: 'Reset Password' }} />
       
-      {/* Profile Summary & Details (Outside Tabs) */}
+      {/* Individual Detail Routes */}
       <Stack.Screen name="profilesumary" options={{ title: 'Profile Summary' }} />
       <Stack.Screen name="loanDetails" options={{ title: 'Loan Details' }} />
     </Stack>
