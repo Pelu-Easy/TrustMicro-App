@@ -52,7 +52,7 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Rende
 
 // --- 4. PUBLIC AUTH ROUTES ---
 
-// ACCOUNT DEACTIVATION
+// ACCOUNT DEACTIVATION (Forced Lockout)
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email, reason } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
@@ -60,15 +60,14 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
     if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
 
     try {
-        // Use LOWER(TRIM()) to ensure DB match
-        const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1";
+        const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1 RETURNING id";
         const result = await db.query(query, [cleanEmail]);
 
-        console.log(`[SECURITY] Account ${cleanEmail} deactivated. Rows affected: ${result.rowCount}`);
+        console.log(`[SECURITY] Manual deactivation for ${cleanEmail}. Success: ${result.rowCount > 0}`);
         res.status(200).json({ message: "Account locked and Admin notified." });
     } catch (error) {
         console.error("Deactivation Route Error:", error);
-        res.status(500).json({ error: "Internal server error during deactivation" });
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -97,7 +96,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     }
 });
 
-// LOGIN (Strict Enforcement with forced DB updates)
+// LOGIN (Strict Enforcement & Auto-Lock Logic)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
@@ -105,18 +104,20 @@ app.post('/api/v1/auth/login', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     
     try {
-        // Fetch user with normalized email
+        // Fetch user using strict normalization
         const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         const user = result.rows[0];
 
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-        // 1. Check if account is active or already locked by attempts
-        if (user.is_active === false || user.failed_attempts >= 3) {
-            // Force sync: if attempts are high but is_active was true, fix it now
+        // 1. PRIMARY SECURITY GATE
+        // If the database says is_active is false, or attempts are already maxed, block immediately.
+        if (user.is_active === false || (user.failed_attempts && user.failed_attempts >= 3)) {
+            // Force status sync if the count is high but is_active was still true
             if (user.is_active === true) {
                 await db.query("UPDATE staff_users SET is_active = false WHERE id = $1", [user.id]);
             }
+            console.log(`[AUTH] Blocked login attempt for LOCKED account: ${cleanEmail}`);
             return res.status(403).json({ error: "Account locked. Please contact Admin for activation." });
         }
 
@@ -126,14 +127,15 @@ app.post('/api/v1/auth/login', async (req, res) => {
             const newFailedCount = (user.failed_attempts || 0) + 1;
             
             if (newFailedCount >= 3) {
-                // LOCK ACCOUNT: Set attempts to 3 and is_active to false
+                // LOCK ACCOUNT PERMANENTLY IN DB
                 await db.query(
-                    "UPDATE staff_users SET failed_attempts = $1, is_active = false WHERE id = $2", 
-                    [newFailedCount, user.id]
+                    "UPDATE staff_users SET failed_attempts = 3, is_active = false WHERE id = $1", 
+                    [user.id]
                 );
+                console.log(`[SECURITY] ${cleanEmail} reached 3 attempts. Account LOCKED.`);
                 return res.status(403).json({ error: "Too many failed attempts. Account locked. Contact Admin." });
             } else {
-                // INCREMENT: Update failed count
+                // INCREMENT FAILED ATTEMPT
                 await db.query(
                     "UPDATE staff_users SET failed_attempts = $1 WHERE id = $2", 
                     [newFailedCount, user.id]
@@ -142,7 +144,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
             }
         }
 
-        // 2. SUCCESS: Reset everything
+        // 2. SUCCESS PATH: Fully clear all security flags
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
 
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
@@ -162,7 +164,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
     }
 });
 
-// --- ROUTES REQUIRING TOKEN ---
+// --- 5. SECURE DATA ROUTES ---
 
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
@@ -212,7 +214,7 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
-// ADMIN REACTIVATE
+// ADMIN REACTIVATE (Clears locks)
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const adminRole = req.user.role?.toLowerCase();
