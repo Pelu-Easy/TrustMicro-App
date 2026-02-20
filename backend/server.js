@@ -54,19 +54,14 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Rende
 
 // ACCOUNT DEACTIVATION
 app.post('/api/v1/auth/deactivate', async (req, res) => {
-    const { email, reason } = req.body;
+    const { email } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
-
     if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
-
     try {
         const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) RETURNING id";
         const result = await db.query(query, [cleanEmail]);
-
-        console.log(`[SECURITY] Deactivation attempt for ${cleanEmail}. Success: ${result.rowCount > 0}`);
         res.status(200).json({ message: "Account locked and Admin notified." });
     } catch (error) {
-        console.error("Deactivation Route Error:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -75,81 +70,41 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
     const cleanEmail = email.trim().toLowerCase();
-    
     try {
         const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
-
         const hashedPassword = await bcrypt.hash(password, 10);
-        
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) 
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
-        
         await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true, 0]);
         res.status(201).json({ message: "Staff account created successfully!" });
     } catch (error) { 
-        console.error("Signup Error:", error.message);
         res.status(500).json({ error: "Internal Server Error" }); 
     }
 });
 
-// LOGIN (Normalized & Bulletproof)
+// LOGIN
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-
     const cleanEmail = email.trim().toLowerCase();
-    
     try {
-        const result = await db.query(
-            "SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", 
-            [cleanEmail]
-        );
+        const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
         const user = result.rows[0];
-
-        if (!user) {
-            console.log(`[AUTH] Login failed: User not found (${cleanEmail})`);
-            return res.status(401).json({ error: "Invalid email or password" });
-        }
-
-        if (user.is_active === false || user.failed_attempts >= 3) {
-            console.log(`[AUTH] Blocked login for LOCKED user: ${cleanEmail}`);
-            return res.status(403).json({ error: "Account locked. Contact Admin." });
-        }
+        if (!user) return res.status(401).json({ error: "Invalid email or password" });
+        if (user.is_active === false || user.failed_attempts >= 3) return res.status(403).json({ error: "Account locked. Contact Admin." });
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
-
         if (!isMatch) {
             const newFailedCount = (user.failed_attempts || 0) + 1;
-            
-            const updateResult = await db.query(
-                "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3 RETURNING failed_attempts", 
-                [newFailedCount, newFailedCount < 3, user.id]
-            );
-
-            console.log(`[SECURITY] Wrong password for ${cleanEmail}. New DB count: ${updateResult.rows[0].failed_attempts}`);
-
-            if (newFailedCount >= 3) {
-                return res.status(403).json({ error: "Too many failed attempts. Account locked." });
-            } else {
-                return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts left.` });
-            }
+            await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newFailedCount, newFailedCount < 3, user.id]);
+            return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts left.` });
         }
 
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
-
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({
-            token,
-            user: { 
-                full_name: user.full_name, 
-                email: user.email, 
-                role: user.role, 
-                branch: user.branch 
-            }
-        });
+        res.json({ token, user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
     } catch (error) {
-        console.error("CRITICAL LOGIN ERROR:", error);
         res.status(500).json({ error: "Server Error" });
     }
 });
@@ -168,7 +123,7 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// LOAN SUBMISSION (Corrected column quoting)
+// LOAN SUBMISSION (Final Sync with Supabase Schema)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
@@ -177,14 +132,17 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         const loan = req.body;
         
-        // Use double quotes around column names to satisfy PostgreSQL exact naming requirements
+        // Final Query - Using double quotes for camelCase Supabase columns
+        // NOTE: Commented out employerName as it was not visible in screenshots
         const query = `
             INSERT INTO loans (
                 "customerName", "bvn", "nin", "phone", "loanAmount", 
                 "status", "createdByEmail", "submittedDate", 
-                "bankName", "accountNumber", "employerName"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                "bankName", "accountNumber"
+                /* , "employerName" */ 
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *`;
+
         const values = [
             loan.customerName, 
             loan.bvn, 
@@ -195,12 +153,12 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             officerEmail, 
             new Date().toISOString().split('T')[0],
             loan.bankName, 
-            loan.accountNumber, 
-            loan.employerName
+            loan.accountNumber
+            // , loan.employerName
         ];
 
         const result = await db.query(query, values);
-        console.log(`[DATABASE] Loan saved successfully for ${loan.customerName}`);
+        console.log(`✅ Success! Loan saved for ${loan.customerName}`);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error("DATABASE INSERT ERROR:", err.message);
@@ -218,32 +176,15 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
-// ADMIN REACTIVATE (Clears locks)
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const adminRole = req.user.role?.toLowerCase();
-
-    if (adminRole !== 'admin' && adminRole !== 'super admin' && adminRole !== 'manager') {
-        return res.status(403).json({ error: "Unauthorized access." });
-    }
-
+    if (adminRole !== 'admin' && adminRole !== 'manager') return res.status(403).json({ error: "Unauthorized access." });
     try {
         const cleanEmail = staffEmail.trim().toLowerCase();
-        const query = `
-            UPDATE staff_users 
-            SET is_active = true, failed_attempts = 0 
-            WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))
-            RETURNING full_name`;
-
-        const result = await db.query(query, [cleanEmail]);
-
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: "Staff user not found." });
-        }
-
-        res.status(200).json({ message: `Account for ${result.rows[0].full_name} reactivated.` });
+        await db.query("UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
+        res.status(200).json({ message: "Account reactivated." });
     } catch (error) {
-        console.error("Reactivation Error:", error);
         res.status(500).json({ error: "Server error." });
     }
 });
