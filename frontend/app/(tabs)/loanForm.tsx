@@ -178,28 +178,47 @@ const handleFinalSubmit = async () => {
 
     setIsSubmitting(true);
 
-    // Normalize the email right here to ensure match
     const normalizedEmail = currentUserEmail?.trim().toLowerCase();
     
-    // Create the record with the normalized email
-    const newLoanRecord = createLoanObject('Pending');
-    newLoanRecord.createdByEmail = normalizedEmail; 
+    // 1. Prepare the data payload to match the backend's expected structure
+    // The backend uses Postgres column names, so we map them here
+    const payload = {
+        customerName: formData.customerName,
+        bvn: formData.bvn,
+        nin: formData.nin,
+        phone: formData.phone,
+        loanAmount: formData.loanAmount,
+        bankName: formData.bankName,
+        accountNumber: formData.accountNumber,
+        employerName: formData.employerName,
+        status: 'Pending'
+    };
 
-    console.log("🚀 Submitting Loan for:", normalizedEmail);
+    console.log("🚀 Attempting Submission to /api/v1/loans for:", normalizedEmail);
 
     try {
-        const response = await api.post('/loans', newLoanRecord, {
+        // We use '/api/v1/loans' explicitly to ensure it matches the backend route
+        const response = await api.post('/api/v1/loans', payload, {
             headers: { Authorization: `Bearer ${token}` }
         });
         
+        // 2. Local store update
+        const newLoanRecord = createLoanObject('Pending');
+        newLoanRecord.createdByEmail = normalizedEmail; 
         addLoan(newLoanRecord, normalizedEmail); 
+
         setIsSubmitting(false);
         setShowSuccess(true);
     } catch (error: any) {
         setIsSubmitting(false);
-        console.error("Loan Submission Error Details:", error.response?.data);
         
-        const serverError = error.response?.data?.error || "Connection error.";
+        // Log the exact error for debugging
+        console.group("🚨 TrustMicro API Error");
+        console.log("Status:", error.response?.status);
+        console.log("Data:", error.response?.data);
+        console.groupEnd();
+
+        const serverError = error.response?.data?.error || "The server rejected the request. Please check your connection.";
         Alert.alert("Submission Failed", serverError);
     }
   };
