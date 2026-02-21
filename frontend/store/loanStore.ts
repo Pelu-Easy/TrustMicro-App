@@ -76,7 +76,28 @@ export const useLoanStore = create<LoanState>()(
           const response = await axios.get(`${API_URL}/loans?email=${email.toLowerCase().trim()}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          set({ loans: response.data });
+          
+          const serverLoans = response.data;
+
+          // FIX: Preserve local drafts when fetching from server
+          // We filter our current local state for 'Draft' status
+          const localDrafts = get().loans.filter(l => l.status === 'Draft');
+          
+          // Merge local drafts with server data, avoiding duplicates
+          // We use the server version if a loan exists in both (unlikely for drafts)
+          const mergedLoans = [...localDrafts];
+          
+          serverLoans.forEach((sLoan: Loan) => {
+            const index = mergedLoans.findIndex(l => l.id === sLoan.id);
+            if (index === -1) {
+              mergedLoans.push(sLoan);
+            } else if (mergedLoans[index].status !== 'Draft') {
+              // Only overwrite if the local version isn't a draft
+              mergedLoans[index] = sLoan;
+            }
+          });
+
+          set({ loans: mergedLoans });
         } catch (error) {
           console.error("Fetch failed", error);
         }
@@ -93,29 +114,27 @@ export const useLoanStore = create<LoanState>()(
           branchName: userData.branch || 'Main Branch'
         };
         
+        // 1. Update Local State (Immediate UI response)
         set((state) => {
-            // CHECK: Does this loan ID already exist in our local list?
             const loanIndex = state.loans.findIndex((l) => l.id === loan.id);
             
             if (loanIndex !== -1) {
-                // UPDATE: Replace the old version with the new one
                 const updatedLoans = [...state.loans];
                 updatedLoans[loanIndex] = ownedLoan;
                 return { loans: updatedLoans };
             } else {
-                // INSERT: It's brand new, add it to the top
                 return { loans: [ownedLoan, ...state.loans] };
             }
         });
 
-        // 4. Sync with Backend (using PUT/PATCH for updates if your API supports it)
-        try {
-          // If your backend handles upserts at /loans, this is fine.
-          // Otherwise, you might need a check: if (isUpdate) axios.put else axios.post
-          await axios.post(`${API_URL}/loans`, ownedLoan);
-          console.log("Loan successfully synced.");
-        } catch (error: any) {
-          console.log("Cloud Sync Failed:", error.response?.data?.message || error.message);
+        // 2. Sync with Backend (Only for non-drafts or if your API supports draft storage)
+        if (ownedLoan.status !== 'Draft') {
+          try {
+            await axios.post(`${API_URL}/loans`, ownedLoan);
+            console.log("Loan successfully synced.");
+          } catch (error: any) {
+            console.log("Cloud Sync Failed:", error.response?.data?.message || error.message);
+          }
         }
       },
 
@@ -131,11 +150,13 @@ export const useLoanStore = create<LoanState>()(
           staffProfile: { ...state.staffProfile, monthlyTarget: amount },
         })),
 
+      // NOTE: Be careful calling this on logout if you want drafts to stay on the device disk
       clearAllData: () => set({ loans: [] }),
     }),
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // Only persist the loans array and target, avoid persisting transient flags if added later
     }
   )
 );
