@@ -58,7 +58,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
     const client = await db.connect(); 
     
     try {
-        await client.query('BEGIN'); // Start transaction
+        await client.query('BEGIN');
 
         const result = await client.query(
             "SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", 
@@ -72,7 +72,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        // Check if already locked
+        // BLOCK LOGIN IF DEACTIVATED
         if (user.is_active === false || user.failed_attempts >= 3) {
             await client.query('ROLLBACK');
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
@@ -84,23 +84,20 @@ app.post('/api/v1/auth/login', async (req, res) => {
             const newCount = (user.failed_attempts || 0) + 1;
             const stillActive = newCount < 3;
 
-            // Update failed attempts and active status
             await client.query(
                 "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3",
                 [newCount, stillActive, user.id]
             );
 
-            await client.query('COMMIT'); // Force save the "strike"
+            await client.query('COMMIT'); 
             
-            console.log(`[SECURITY] ${cleanEmail} failed. Strike: ${newCount}`);
-
             if (!stillActive) {
                 return res.status(403).json({ error: "Too many failed attempts. Account locked." });
             }
             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
         }
 
-        // SUCCESS - Reset attempts
+        // SUCCESS - Reset everything
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
         
@@ -115,75 +112,43 @@ app.post('/api/v1/auth/login', async (req, res) => {
     }
 });
 
-// --- SPECIFIC FIX FOR MOBILE APP LOCKOUT CALL ---
+// ACCOUNT DEACTIVATION (Notifies Database of Lockout)
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
-    
-    if (!cleanEmail) {
-        return res.status(400).json({ error: "Email is required for lockout" });
-    }
-    
-    try {
-        // We update the DB to force the 'Deactivated' state
-        const query = `
-            UPDATE staff_users 
-            SET is_active = false, failed_attempts = 3 
-            WHERE LOWER(TRIM(email)) = $1 
-            RETURNING id, full_name`;
-            
-        const result = await db.query(query, [cleanEmail]);
-        
-        if (result.rowCount === 0) {
-            console.log(`[DEACTIVATE] No user found for ${cleanEmail}`);
-            return res.status(404).json({ error: "Staff not found" });
-        }
-
-        console.log(`[SECURITY] Account ${cleanEmail} officially LOCKED via mobile trigger.`);
-        res.status(200).json({ message: "Account locked and Admin notified." });
-    } catch (error) {
-        console.error("DEACTIVATE ROUTE ERROR:", error.message);
-        res.status(500).json({ error: "Internal server error" });
-    }
-});
-
-// ACCOUNT DEACTIVATION (Used by the mobile app to force a lock)
-app.post('/api/v1/auth/deactivate', async (req, res) => {
-    const { email } = req.body;
-    const cleanEmail = email?.trim().toLowerCase();
-    
     if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
     
+    const client = await db.connect();
     try {
-        // Force the account to inactive and set attempts to 3
+        await client.query('BEGIN');
         const query = `
             UPDATE staff_users 
             SET is_active = false, failed_attempts = 3 
             WHERE LOWER(TRIM(email)) = $1 
             RETURNING id`;
             
-        const result = await db.query(query, [cleanEmail]);
+        const result = await client.query(query, [cleanEmail]);
+        await client.query('COMMIT');
         
         if (result.rowCount === 0) {
             return res.status(404).json({ error: "Staff email not found." });
         }
 
-        console.log(`[SECURITY] Manual lockout triggered for: ${cleanEmail}`);
+        console.log(`[SECURITY] Account ${cleanEmail} locked in DB.`);
         res.status(200).json({ message: "Account locked and Admin notified." });
     } catch (error) {
-        console.error("DEACTIVATE ERROR:", error.message);
+        await client.query('ROLLBACK');
         res.status(500).json({ error: "Internal server error" });
+    } finally {
+        client.release();
     }
 });
 
-// SIGN-UP (Staff Onboarding)
+// SIGN-UP
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
     const cleanEmail = email.trim().toLowerCase();
     try {
-        const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
-        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
-        
         const hashedPassword = await bcrypt.hash(password, 10);
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) 
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
@@ -195,71 +160,39 @@ app.post('/api/v1/auth/signup', async (req, res) => {
 });
 
 // --- 5. LOAN ROUTES ---
-
-// SUBMIT LOAN (With Unique ID and employerName)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const officerEmail = req.user.email.trim().toLowerCase();
     try {
-        const staffCheck = await db.query('SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1', [officerEmail]);
-        if (staffCheck.rows.length === 0) return res.status(400).json({ error: "Email not found in staff_users." });
-
-        const verifiedEmail = staffCheck.rows[0].email;
         const loan = req.body;
         const uniqueLoanId = `LOAN-${Date.now()}`;
-
         const query = `
-            INSERT INTO loans (
-                "id", "customerName", "bvn", "nin", "phone", 
-                "loanAmount", "amount", "status", "createdByEmail", 
-                "submittedDate", "bankName", "accountNumber", "employerName"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            RETURNING *`;
-
-        const values = [
-            uniqueLoanId, loan.customerName, loan.bvn, loan.nin, loan.phone,
-            loan.loanAmount || 0, loan.loanAmount || 0, loan.status || 'Pending',
-            verifiedEmail, new Date().toISOString().split('T')[0],
-            loan.bankName, loan.accountNumber, loan.employerName || 'N/A'
-        ];
-
-        const result = await db.query(query, values);
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+            INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
+        const values = [uniqueLoanId, loan.customerName, loan.bvn, loan.nin, loan.phone, loan.loanAmount || 0, loan.loanAmount || 0, 'Pending', officerEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A'];
+        await db.query(query, values);
+        res.status(201).json({ message: "Loan submitted" });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET STAFF LOANS
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     const email = req.user.email.trim().toLowerCase(); 
     try {
-        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = LOWER(TRIM($1))', [email]);
+        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [email]);
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: "Database error." });
-    }
+    } catch (err) { res.status(500).json({ error: "Database error." }); }
 });
 
 // --- 6. ADMIN ROUTES ---
-
-// REACTIVATE STAFF
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
-    const adminRole = req.user.role?.toLowerCase();
-    if (adminRole !== 'admin' && adminRole !== 'manager') return res.status(403).json({ error: "Unauthorized." });
-    
+    if (req.user.role !== 'admin' && req.user.role !== 'manager') return res.status(403).json({ error: "Unauthorized." });
     try {
-        const cleanEmail = staffEmail.trim().toLowerCase();
-        await db.query("UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
+        await db.query("UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1", [staffEmail.trim().toLowerCase()]);
         res.status(200).json({ message: "Account reactivated." });
-    } catch (error) {
-        res.status(500).json({ error: "Server error." });
-    }
+    } catch (error) { res.status(500).json({ error: "Server error." }); }
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server live on Port ${PORT}`));
-
-
 
 // require('dotenv').config(); 
 // const express = require('express');
