@@ -114,6 +114,26 @@ export default function LoginScreen() {
       }
 
     } catch (error: any) {
+      setIsLoading(false);
+      
+      // PROFESSIONAL UPDATE: Handle different error types
+      const status = error.response?.status;
+      const errorCode = error.response?.data?.code;
+
+      // A. Account doesn't exist (No strike penalty)
+      if (status === 404 && errorCode === "USER_NOT_FOUND") {
+        setErrors({ general: "Account not found. Please check your email or sign up." });
+        return; 
+      }
+
+      // B. Account is already deactivated (Redirect to lockout view)
+      if (status === 403) {
+        setIsLockedOut(true);
+        setErrors({ general: "Account Deactivated. Please contact System Admin." });
+        return;
+      }
+
+      // C. Password was wrong (Increment strikes)
       const nextAttemptCount = failedAttempts + 1;
       setFailedAttempts(nextAttemptCount);
 
@@ -129,7 +149,6 @@ export default function LoginScreen() {
           console.error("Failed to notify admin of lockout", backendErr);
         }
         
-        setIsLoading(false);
         setIsLockedOut(true);
         setErrors({ 
           general: "Account Deactivated: Too many failed attempts. Admin has been notified. Please contact System Admin to reactivate." 
@@ -140,12 +159,9 @@ export default function LoginScreen() {
           [{ text: "Understood" }]
         );
       } else {
-        setTimeout(() => {
-          setIsLoading(false);
-          const remaining = 3 - nextAttemptCount;
-          const errorMsg = `Invalid credentials. ${remaining} attempt(s) remaining before deactivation.`;
-          setErrors({ general: errorMsg });
-        }, 500);
+        const remaining = 3 - nextAttemptCount;
+        const errorMsg = `Invalid password. ${remaining} attempt(s) remaining before deactivation.`;
+        setErrors({ general: errorMsg });
       }
     }
   };
@@ -244,12 +260,12 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <View style={styles.signupRow}>
+            <div style={styles.signupRow}>
               <Text style={styles.noAccountText}>Don't have an account? </Text>
               <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
                 <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
               </TouchableOpacity>
-            </View>
+            </div>
 
           </View>
         </ScrollView>
