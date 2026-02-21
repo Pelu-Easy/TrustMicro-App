@@ -88,20 +88,28 @@ app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
     
+    // Normalize: Remove spaces and force lowercase
     const cleanEmail = email.trim().toLowerCase();
     
     try {
-        const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
+        // 1. Find user using a more flexible search
+        const result = await db.query(
+            "SELECT id, email, password_hash, is_active, failed_attempts, role, full_name, branch FROM staff_users WHERE LOWER(TRIM(email)) = $1", 
+            [cleanEmail]
+        );
+        
         const user = result.rows[0];
 
-        if (!user) return res.status(401).json({ error: "Invalid email or password" });
+        if (!user) {
+            console.log(`[AUTH] No user found for: ${cleanEmail}`);
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
 
-        // 1. Check if already locked out
-        if (user.is_active === false || user.failed_attempts >= 3) {
-            return res.status(403).json({ 
-                error: "Account Deactivated: Too many failed attempts. Please contact Admin.",
-                isLocked: true 
-            });
+        // 2. Immediate Lock Check
+        // Check both the boolean and the count (safety net)
+        if (user.is_active === false || (user.failed_attempts && user.failed_attempts >= 3)) {
+            console.log(`[SECURITY] Blocked login attempt for LOCKED user: ${cleanEmail}`);
+            return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
@@ -110,25 +118,29 @@ app.post('/api/v1/auth/login', async (req, res) => {
             const newFailedCount = (user.failed_attempts || 0) + 1;
             const shouldLock = newFailedCount >= 3;
 
-            // 2. UPDATE DATABASE IMMEDIATELY
-            await db.query(
-                "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", 
-                [newFailedCount, !shouldLock, user.id]
-            );
+            console.log(`[AUTH] Wrong password for ${cleanEmail}. Attempt: ${newFailedCount}`);
+
+            // 3. FORCE UPDATE THE DATABASE
+            // Using ID instead of Email for the WHERE clause is much more reliable
+            const updateQuery = `
+                UPDATE staff_users 
+                SET failed_attempts = $1, 
+                    is_active = $2 
+                WHERE id = $3 
+                RETURNING failed_attempts, is_active`;
+            
+            const updateRes = await db.query(updateQuery, [newFailedCount, !shouldLock, user.id]);
+            
+            console.log(`[DB SYNC] Updated User ${user.id}: Attempts=${updateRes.rows[0].failed_attempts}, Active=${updateRes.rows[0].is_active}`);
 
             if (shouldLock) {
-                return res.status(403).json({ 
-                    error: "Account Deactivated: Too many failed attempts.",
-                    isLocked: true 
-                });
+                return res.status(403).json({ error: "Too many failed attempts. Account locked." });
+            } else {
+                return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts left.` });
             }
-
-            return res.status(401).json({ 
-                error: `Invalid credentials. ${3 - newFailedCount} attempts left.` 
-            });
         }
 
-        // 3. Success - Reset attempts
+        // 4. Success - Reset everything
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
@@ -139,8 +151,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("LOGIN ERROR:", error);
-        res.status(500).json({ error: "Server Error" });
+        console.error("CRITICAL LOGIN ERROR:", error);
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
