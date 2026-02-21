@@ -260,12 +260,12 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <div style={styles.signupRow}>
-              <Text style={styles.noAccountText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
-                <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
-              </TouchableOpacity>
-            </div>
+          <View style={styles.signupRow}>
+            <Text style={styles.noAccountText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
+              <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
+            </TouchableOpacity>
+          </View>
 
           </View>
         </ScrollView>
