@@ -87,24 +87,59 @@ app.post('/api/v1/auth/signup', async (req, res) => {
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+    
     const cleanEmail = email.trim().toLowerCase();
+    
     try {
-        const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
+        const result = await db.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         const user = result.rows[0];
-        if (!user) return res.status(401).json({ error: "Invalid email or password" });
-        if (user.is_active === false || user.failed_attempts >= 3) return res.status(403).json({ error: "Account locked. Contact Admin." });
 
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            const newFailedCount = (user.failed_attempts || 0) + 1;
-            await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newFailedCount, newFailedCount < 3, user.id]);
-            return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts left.` });
+        if (!user) return res.status(401).json({ error: "Invalid email or password" });
+
+        // 1. Check if already locked out
+        if (user.is_active === false || user.failed_attempts >= 3) {
+            return res.status(403).json({ 
+                error: "Account Deactivated: Too many failed attempts. Please contact Admin.",
+                isLocked: true 
+            });
         }
 
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+
+        if (!isMatch) {
+            const newFailedCount = (user.failed_attempts || 0) + 1;
+            const shouldLock = newFailedCount >= 3;
+
+            // 2. UPDATE DATABASE IMMEDIATELY
+            await db.query(
+                "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", 
+                [newFailedCount, !shouldLock, user.id]
+            );
+
+            if (shouldLock) {
+                return res.status(403).json({ 
+                    error: "Account Deactivated: Too many failed attempts.",
+                    isLocked: true 
+                });
+            }
+
+            return res.status(401).json({ 
+                error: `Invalid credentials. ${3 - newFailedCount} attempts left.` 
+            });
+        }
+
+        // 3. Success - Reset attempts
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
+        
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
+        
+        res.json({ 
+            token, 
+            user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } 
+        });
+
     } catch (error) {
+        console.error("LOGIN ERROR:", error);
         res.status(500).json({ error: "Server Error" });
     }
 });
@@ -163,8 +198,9 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
                 "createdByEmail", 
                 "submittedDate", 
                 "bankName", 
-                "accountNumber"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                "accountNumber",
+                "employerName"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *`;
 
         const values = [
@@ -179,7 +215,8 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             verifiedDbEmail,         // $9 (The FK link)
             new Date().toISOString().split('T')[0], // $10
             loan.bankName,           // $11
-            loan.accountNumber       // $12
+            loan.accountNumber,       // $12
+            loan.employerName || 'N/A' //$13 Now sending the employer name!
         ];
 
         const result = await db.query(query, values);
@@ -204,16 +241,45 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
+// ADMIN/MANAGER REACTIVATE (Clears locks and resets attempts)
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const adminRole = req.user.role?.toLowerCase();
-    if (adminRole !== 'admin' && adminRole !== 'manager') return res.status(403).json({ error: "Unauthorized access." });
+
+    // Verify if the person making the request has permission
+    if (adminRole !== 'admin' && adminRole !== 'super admin' && adminRole !== 'manager') {
+        return res.status(403).json({ error: "Unauthorized: Only Admins or Managers can reactivate accounts." });
+    }
+
+    if (!staffEmail) {
+        return res.status(400).json({ error: "Staff email is required for reactivation." });
+    }
+
     try {
         const cleanEmail = staffEmail.trim().toLowerCase();
-        await db.query("UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
-        res.status(200).json({ message: "Account reactivated." });
+        
+        // Update the user: Reset failed attempts to 0 and set is_active to true
+        const query = `
+            UPDATE staff_users 
+            SET is_active = true, failed_attempts = 0 
+            WHERE LOWER(TRIM(email)) = $1
+            RETURNING full_name, email`;
+
+        const result = await db.query(query, [cleanEmail]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Staff user not found in database." });
+        }
+
+        console.log(`[ADMIN] Account reactivated for: ${result.rows[0].full_name} (${result.rows[0].email})`);
+        
+        res.status(200).json({ 
+            message: `Account for ${result.rows[0].full_name} has been successfully reactivated.`,
+            user: result.rows[0]
+        });
     } catch (error) {
-        res.status(500).json({ error: "Server error." });
+        console.error("Reactivation Error:", error.message);
+        res.status(500).json({ error: "Server error during reactivation." });
     }
 });
 
