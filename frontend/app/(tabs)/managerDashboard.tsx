@@ -201,7 +201,7 @@ export default function ManagerDashboard() {
           <Text style={[styles.tabText, activeTab === 'staff' && styles.activeTabText]}>Staff</Text>
         </TouchableOpacity>
       </View>
-      
+
       <FlatList
         data={activeTab === 'loans' ? pendingLoans : staffList}
         keyExtractor={(item) => item.id.toString()}
@@ -239,14 +239,17 @@ export default function ManagerDashboard() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
-                    <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
-                    <Ionicons name="close-circle" size={40} color="#C62828" />
-                  </TouchableOpacity>
-                </View>
+                {/* MODIFIED: Hide Approve/Reject buttons from non-management */}
+                {canManage && (
+                  <View style={styles.actions}>
+                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
+                      <Ionicons name="checkmark-circle" size={40} color="#2E7D32" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDecision(item.id, 'Rejected')}>
+                      <Ionicons name="close-circle" size={40} color="#C62828" />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           }
@@ -257,23 +260,27 @@ export default function ManagerDashboard() {
                 <Text style={styles.name}>{item.full_name}</Text>
                 <Text style={styles.officer}>{item.role} • {item.email}</Text>
               </View>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={() => handleStaffToggle(item)}>
-                  <Text style={{ 
-                    color: item.is_active ? '#E67E22' : '#27AE60', 
-                    fontWeight: 'bold',
-                    textTransform: 'uppercase',
-                    fontSize: 12
-                  }}>
-                    {item.is_active ? 'Deactivate' : 'Reactivate'}
-                  </Text>
-                </TouchableOpacity>
-                {role === 'Super Admin' && (
-                  <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                    <Ionicons name="trash" size={24} color="#C0392B" />
+              
+              {/* MODIFIED: Hide Staff Toggle/Delete from non-management */}
+              {canManage && (
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={() => handleStaffToggle(item)}>
+                    <Text style={{ 
+                      color: item.is_active ? '#E67E22' : '#27AE60', 
+                      fontWeight: 'bold',
+                      textTransform: 'uppercase',
+                      fontSize: 12
+                    }}>
+                      {item.is_active ? 'Deactivate' : 'Reactivate'}
+                    </Text>
                   </TouchableOpacity>
-                )}
-              </View>
+                  {role === 'Super Admin' && (
+                    <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                      <Ionicons name="trash" size={24} color="#C0392B" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           );
         }}

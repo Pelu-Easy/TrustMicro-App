@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios/dist/browser/axios.cjs';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import useUserData from '../store/userSignUp';
 
@@ -17,17 +17,10 @@ export default function LoanDetails() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // --- ROLE PROTECTION ---
+  // --- ROLE PROTECTION LOGIC ---
   const userRole = (role || '').toLowerCase();
-  const canManage = isSupervisor === true || 
-                    ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
-
-  useEffect(() => {
-    if (!canManage) {
-      console.warn("Unauthorized access redirected.");
-      router.replace('/(tabs)'); 
-    }
-  }, [canManage]);
+  const actsAsManagement = isSupervisor === true || 
+                           ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
 
   const openZoom = (uri: string) => {
     setSelectedImage(uri);
@@ -46,7 +39,6 @@ export default function LoanDetails() {
           onPress: async () => {
             setIsSubmitting(true);
             try {
-              // Replace with your actual backend URL if different
               const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
               
               await axios.patch(
@@ -69,8 +61,6 @@ export default function LoanDetails() {
       ]
     );
   };
-
-  if (!canManage) return null;
 
   return (
     <View style={{ flex: 1 }}>
@@ -130,28 +120,35 @@ export default function LoanDetails() {
             )}
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity 
-              disabled={isSubmitting}
-              style={[styles.actionBtn, { backgroundColor: BRAND.danger, opacity: isSubmitting ? 0.6 : 1 }]}
-              onPress={() => handleAction('Rejected')}
-            >
-              <Text style={styles.btnText}>Reject</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              disabled={isSubmitting}
-              style={[styles.actionBtn, { backgroundColor: BRAND.success, opacity: isSubmitting ? 0.6 : 1 }]}
-              onPress={() => handleAction('Approved')}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.btnText}>Approve Loan</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+          {/* Conditional Action Buttons: Only visible to Management */}
+          {actsAsManagement ? (
+            <View style={styles.actionRow}>
+              <TouchableOpacity 
+                disabled={isSubmitting}
+                style={[styles.actionBtn, { backgroundColor: BRAND.danger, opacity: isSubmitting ? 0.6 : 1 }]}
+                onPress={() => handleAction('Rejected')}
+              >
+                <Text style={styles.btnText}>Reject</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                disabled={isSubmitting}
+                style={[styles.actionBtn, { backgroundColor: BRAND.success, opacity: isSubmitting ? 0.6 : 1 }]}
+                onPress={() => handleAction('Approved')}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.btnText}>Approve Loan</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.readOnlyBadge}>
+              <Ionicons name="eye-outline" size={20} color="#64748B" />
+              <Text style={styles.readOnlyText}>View Only Mode</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -191,6 +188,17 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
   actionBtn: { flex: 1, padding: 18, borderRadius: 12, alignItems: 'center', minHeight: 60, justifyContent: 'center' },
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  readOnlyBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    backgroundColor: '#E2E8F0', 
+    padding: 15, 
+    borderRadius: 12, 
+    marginTop: 20,
+    gap: 8
+  },
+  readOnlyText: { color: '#475569', fontWeight: 'bold', fontSize: 14 },
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeModal: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
   fullImage: { width: width, height: height * 0.8 },
