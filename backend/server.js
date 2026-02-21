@@ -10,7 +10,11 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
 // --- MIDDLEWARE ---
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(cors({ 
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], 
+    allowedHeaders: ['Content-Type', 'Authorization'] 
+}));
 app.use(express.json());
 
 // Console log for debugging Render requests
@@ -25,8 +29,22 @@ const db = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// --- 1. THE DEACTIVATE ROUTE (Fixes 404) ---
-// We map the exact path your api.ts + Login.tsx creates
+// --- AUTH MIDDLEWARE ---
+// This checks the JWT token and extracts the user's role
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
+    
+    if (!token) return res.status(401).json({ error: "Unauthorized access" });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: "Session expired or invalid" });
+        req.user = user;
+        next();
+    });
+};
+
+// --- 1. THE DEACTIVATE ROUTE ---
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
@@ -46,7 +64,7 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
     } finally { client.release(); }
 });
 
-// --- 2. THE LOGIN ROUTE (Fixes Strike Counting for Non-existent Users) ---
+// --- 2. THE LOGIN ROUTE ---
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
@@ -57,7 +75,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
         const result = await client.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         const user = result.rows[0];
 
-        // NEW LOGIC: If user doesn't exist, tell the app immediately
         if (!user) {
             await client.query('ROLLBACK');
             return res.status(404).json({ 
@@ -66,7 +83,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
             });
         }
 
-        // Check if already deactivated
         if (user.is_active === false || user.failed_attempts >= 3) {
             await client.query('ROLLBACK');
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
@@ -83,10 +99,10 @@ app.post('/api/v1/auth/login', async (req, res) => {
             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
         }
 
-        // Success: Reset strikes
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
         
+        // We include the role in the token so we can check it later
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
         res.json({ token, user });
     } catch (e) { 
@@ -95,7 +111,41 @@ app.post('/api/v1/auth/login', async (req, res) => {
     } finally { client.release(); }
 });
 
-// --- OTHER ROUTES ---
+// --- 3. MANAGER ROUTES (Fixes 404 in Dashboard) ---
+
+// GET ALL LOANS
+app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
+    const role = req.user.role?.toLowerCase();
+    if (!['admin', 'manager', 'supervisor'].includes(role)) {
+        return res.status(403).json({ error: "Forbidden: Manager access required" });
+    }
+
+    try {
+        const result = await db.query('SELECT * FROM loans ORDER BY "submittedDate" DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch loans" });
+    }
+});
+
+// GET ALL STAFF
+app.get('/api/v1/manager/all-staff', authenticateToken, async (req, res) => {
+    const role = req.user.role?.toLowerCase();
+    if (!['admin', 'manager', 'supervisor'].includes(role)) {
+        return res.status(403).json({ error: "Forbidden: Manager access required" });
+    }
+
+    try {
+        const result = await db.query(
+            'SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch staff" });
+    }
+});
+
+// --- 4. OTHER ROUTES ---
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body;
     try {
