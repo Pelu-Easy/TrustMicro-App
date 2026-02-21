@@ -115,6 +115,38 @@ app.post('/api/v1/auth/login', async (req, res) => {
     }
 });
 
+// --- SPECIFIC FIX FOR MOBILE APP LOCKOUT CALL ---
+app.post('/api/v1/auth/deactivate', async (req, res) => {
+    const { email } = req.body;
+    const cleanEmail = email?.trim().toLowerCase();
+    
+    if (!cleanEmail) {
+        return res.status(400).json({ error: "Email is required for lockout" });
+    }
+    
+    try {
+        // We update the DB to force the 'Deactivated' state
+        const query = `
+            UPDATE staff_users 
+            SET is_active = false, failed_attempts = 3 
+            WHERE LOWER(TRIM(email)) = $1 
+            RETURNING id, full_name`;
+            
+        const result = await db.query(query, [cleanEmail]);
+        
+        if (result.rowCount === 0) {
+            console.log(`[DEACTIVATE] No user found for ${cleanEmail}`);
+            return res.status(404).json({ error: "Staff not found" });
+        }
+
+        console.log(`[SECURITY] Account ${cleanEmail} officially LOCKED via mobile trigger.`);
+        res.status(200).json({ message: "Account locked and Admin notified." });
+    } catch (error) {
+        console.error("DEACTIVATE ROUTE ERROR:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 // ACCOUNT DEACTIVATION (Used by the mobile app to force a lock)
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
