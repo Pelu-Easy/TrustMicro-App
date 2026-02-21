@@ -49,7 +49,7 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live!"));
 
 // --- 4. AUTH ROUTES ---
 
-// LOGIN (With Bulletproof Lockout & Database Commit)
+// LOGIN logic remains exactly as is (Bulletproof)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
@@ -59,12 +59,10 @@ app.post('/api/v1/auth/login', async (req, res) => {
     
     try {
         await client.query('BEGIN');
-
         const result = await client.query(
             "SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", 
             [cleanEmail]
         );
-        
         const user = result.rows[0];
 
         if (!user) {
@@ -72,7 +70,6 @@ app.post('/api/v1/auth/login', async (req, res) => {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        // BLOCK LOGIN IF DEACTIVATED
         if (user.is_active === false || user.failed_attempts >= 3) {
             await client.query('ROLLBACK');
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
@@ -83,66 +80,51 @@ app.post('/api/v1/auth/login', async (req, res) => {
         if (!isMatch) {
             const newCount = (user.failed_attempts || 0) + 1;
             const stillActive = newCount < 3;
-
             await client.query(
                 "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3",
                 [newCount, stillActive, user.id]
             );
-
             await client.query('COMMIT'); 
-            
-            if (!stillActive) {
-                return res.status(403).json({ error: "Too many failed attempts. Account locked." });
-            }
+            if (!stillActive) return res.status(403).json({ error: "Too many failed attempts. Account locked." });
             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
         }
 
-        // SUCCESS - Reset everything
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
-        
         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
         res.json({ token, user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
-
     } catch (error) {
         await client.query('ROLLBACK');
         res.status(500).json({ error: "Internal Server Error" });
-    } finally {
-        client.release();
-    }
+    } finally { client.release(); }
 });
 
-// ACCOUNT DEACTIVATION (Notifies Database of Lockout)
-app.post('/api/v1/auth/deactivate', async (req, res) => {
+// --- UNIVERSAL DEACTIVATE HANDLER ---
+const deactivateHandler = async (req, res) => {
     const { email } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
-    if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
+    if (!cleanEmail) return res.status(400).json({ error: "Email required" });
     
     const client = await db.connect();
     try {
         await client.query('BEGIN');
-        const query = `
-            UPDATE staff_users 
-            SET is_active = false, failed_attempts = 3 
-            WHERE LOWER(TRIM(email)) = $1 
-            RETURNING id`;
-            
+        const query = `UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1 RETURNING id`;
         const result = await client.query(query, [cleanEmail]);
         await client.query('COMMIT');
         
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: "Staff email not found." });
-        }
-
-        console.log(`[SECURITY] Account ${cleanEmail} locked in DB.`);
+        if (result.rowCount === 0) return res.status(404).json({ error: "User not found" });
+        console.log(`[SECURITY] ${cleanEmail} officially LOCKED in database.`);
         res.status(200).json({ message: "Account locked and Admin notified." });
-    } catch (error) {
+    } catch (e) {
         await client.query('ROLLBACK');
-        res.status(500).json({ error: "Internal server error" });
-    } finally {
-        client.release();
-    }
-});
+        res.status(500).json({ error: "Server error" });
+    } finally { client.release(); }
+};
+
+// Listen on all possible variations to stop 404 errors
+app.post('/api/v1/auth/deactivate', deactivateHandler);
+app.post('/auth/deactivate', deactivateHandler);
+app.post('/deactivate', deactivateHandler);
 
 // SIGN-UP
 app.post('/api/v1/auth/signup', async (req, res) => {
@@ -154,9 +136,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
         await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true, 0]);
         res.status(201).json({ message: "Staff account created successfully!" });
-    } catch (error) { 
-        res.status(500).json({ error: "Internal Server Error" }); 
-    }
+    } catch (error) { res.status(500).json({ error: "Internal Server Error" }); }
 });
 
 // --- 5. LOAN ROUTES ---
@@ -193,7 +173,6 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server live on Port ${PORT}`));
-
 // require('dotenv').config(); 
 // const express = require('express');
 // const cors = require('cors');
