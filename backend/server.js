@@ -115,6 +115,35 @@ app.post('/api/v1/auth/login', async (req, res) => {
     }
 });
 
+// ACCOUNT DEACTIVATION (Used by the mobile app to force a lock)
+app.post('/api/v1/auth/deactivate', async (req, res) => {
+    const { email } = req.body;
+    const cleanEmail = email?.trim().toLowerCase();
+    
+    if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
+    
+    try {
+        // Force the account to inactive and set attempts to 3
+        const query = `
+            UPDATE staff_users 
+            SET is_active = false, failed_attempts = 3 
+            WHERE LOWER(TRIM(email)) = $1 
+            RETURNING id`;
+            
+        const result = await db.query(query, [cleanEmail]);
+        
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Staff email not found." });
+        }
+
+        console.log(`[SECURITY] Manual lockout triggered for: ${cleanEmail}`);
+        res.status(200).json({ message: "Account locked and Admin notified." });
+    } catch (error) {
+        console.error("DEACTIVATE ERROR:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 // SIGN-UP (Staff Onboarding)
 app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body; 
