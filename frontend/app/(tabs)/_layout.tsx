@@ -5,7 +5,7 @@ import useUserData from '../../store/userSignUp';
 export default function TabLayout() {
   const { isSupervisor, role } = useUserData();
 
-  // Standardized check for management (Manager and Supervisor)
+  // Standardized check for management (Manager, Supervisor, Admin, etc.)
   const userRole = role?.toLowerCase() || '';
   const isManagement = 
     isSupervisor === true || 
@@ -20,7 +20,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#003366',
         headerShown: false,
       }}>
-      {/* 1. Dashboard (Home) */}
+      {/* 1. Dashboard (Home) - Visible to everyone */}
       <Tabs.Screen
         name="index"
         options={{
@@ -35,20 +35,21 @@ export default function TabLayout() {
         options={{
           title: 'New Loan',
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={24} color={color} />,
-          href: isManagement ? null : undefined, // This removes the tab for managers/supervisors
+          href: isManagement ? null : undefined, // Removes tab for managers
         }}
       />
 
-      {/* 3. Manager Dashboard */}
+      {/* 3. Manager Dashboard - HIDDEN FOR LOAN OFFICERS */}
       <Tabs.Screen
         name="managerDashboard"
         options={{
           title: 'Approvals',
           tabBarIcon: ({ color }) => <Ionicons name="shield-checkmark" size={24} color={color} />,
+          href: !isManagement ? null : undefined, // Removes tab for officers
         }}
       />
 
-      {/* 4. Profile */}
+      {/* 4. Profile - Visible to everyone */}
       <Tabs.Screen
         name="profile"
         options={{
