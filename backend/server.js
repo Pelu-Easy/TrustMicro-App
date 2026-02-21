@@ -18,7 +18,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// Console log for debugging Render requests
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     next();
@@ -30,8 +29,7 @@ const db = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-db.on('connect', () => console.log('✅ Connected to TrustMicro Database.'));
-db.on('error', (err) => console.error('❌ Unexpected database error:', err));
+db.on('connect', () => console.log('✅ Connected to TrustMicro Supabase Database.'));
 
 // --- 3. AUTHENTICATION MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -49,11 +47,10 @@ const authenticateToken = (req, res, next) => {
 
 // --- 4. PUBLIC AUTH ROUTES ---
 
-// LOGIN (With Failure Strike Logic)
+// LOGIN (With Security Strike Logic)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-    
     const cleanEmail = email.trim().toLowerCase();
     
     try {
@@ -63,14 +60,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
         );
         const user = result.rows[0];
 
-        if (!user) {
-            return res.status(404).json({ 
-                error: "Account not found. Please Sign Up.", 
-                code: "USER_NOT_FOUND" 
-            });
-        }
+        if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-        // Lock Check
         if (user.is_active === false || (user.failed_attempts && user.failed_attempts >= 3)) {
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
         }
@@ -80,142 +71,104 @@ app.post('/api/v1/auth/login', async (req, res) => {
         if (!isMatch) {
             const newCount = (user.failed_attempts || 0) + 1;
             const stillActive = newCount < 3;
-            
-            await db.query(
-                "UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", 
-                [newCount, stillActive, user.id]
-            );
-            
+            await db.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newCount, stillActive, user.id]);
             if (!stillActive) return res.status(403).json({ error: "Too many failed attempts. Account locked." });
             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
         }
 
-        // Success - Reset strikes
         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
-        
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, user });
-
-    } catch (e) {
-        console.error("Login Error:", e);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
+        const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
+        res.json({ token, user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
+    } catch (error) { res.status(500).json({ error: "Internal Server Error" }); }
 });
 
 // SIGN-UP
 app.post('/api/v1/auth/signup', async (req, res) => {
-    const { full_name, email, phone_no, branch, password, role } = req.body;
-    const cleanEmail = email.trim().toLowerCase();
+    const { full_name, email, phone_no, branch, password, role } = req.body; 
     try {
-        const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
-        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
-
-        const hash = await bcrypt.hash(password, 10);
-        await db.query(
-            `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
-            [full_name, cleanEmail, phone_no, hash, role || 'Officer', branch, true, 0]
-        );
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await db.query(`INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
+        [full_name, email.trim().toLowerCase(), phone_no, hashedPassword, role || 'Officer', branch, true, 0]);
         res.status(201).json({ message: "Staff account created successfully!" });
-    } catch (e) { res.status(500).json({ error: "Signup failed" }); }
+    } catch (error) { res.status(500).json({ error: "Signup failed" }); }
 });
 
-// DEACTIVATE (Manual lock)
+// DEACTIVATE
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
     try {
-        await db.query(
-            'UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1', 
-            [email?.trim().toLowerCase()]
-        );
-        res.status(200).json({ message: "Account locked successfully" });
-    } catch (e) { res.status(500).json({ error: "Database error" }); }
+        await db.query("UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1", [email?.trim().toLowerCase()]);
+        res.status(200).json({ message: "Account locked successfully." });
+    } catch (error) { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// --- 5. DATA ROUTES (Loans & Profile) ---
+// --- 5. MANAGER DASHBOARD ROUTES (FIXES THE 404) ---
 
-// SUBMIT LOAN
+// Path 1: Some dashboards use /manager/all-staff
+app.get('/api/v1/manager/all-staff', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT id, full_name, email, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
+});
+
+// Path 2: Some dashboards use /manager/staff
+app.get('/api/v1/manager/staff', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT id, full_name, email, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
+});
+
+// Path 3: All Loans for Manager
+app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT * FROM loans ORDER BY "submittedDate" DESC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Database error" }); }
+});
+
+// Path 4: Reactivate
+app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
+    const { staffEmail } = req.body;
+    try {
+        await db.query('UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1', [staffEmail.trim().toLowerCase()]);
+        res.status(200).json({ message: "Reactivated" });
+    } catch (error) { res.status(500).json({ error: "Server error" }); }
+});
+
+// --- 6. LOAN & USER DATA ---
+
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     try {
         const staffCheck = await db.query('SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [tokenEmail]);
-        if (staffCheck.rows.length === 0) return res.status(400).json({ error: "Staff account not found." });
-
         const verifiedDbEmail = staffCheck.rows[0].email;
         const loan = req.body;
         const uniqueLoanId = `LOAN-${Date.now()}`;
-
-        const query = `
-            INSERT INTO loans (
-                "id", "customerName", "bvn", "nin", "phone", 
-                "loanAmount", "amount", "status", "createdByEmail", 
-                "submittedDate", "bankName", "accountNumber", "employerName"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
-
-        const values = [
-            uniqueLoanId, loan.customerName, loan.bvn, loan.nin, loan.phone, 
-            loan.loanAmount || 0, loan.loanAmount || 0, loan.status || 'Pending',
-            verifiedDbEmail, new Date().toISOString().split('T')[0], 
-            loan.bankName, loan.accountNumber, loan.employerName || 'N/A'
-        ];
-
+        const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
+        const values = [uniqueLoanId, loan.customerName, loan.bvn, loan.nin, loan.phone, loan.loanAmount || 0, loan.loanAmount || 0, loan.status || 'Pending', verifiedDbEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A'];
         const result = await db.query(query, values);
         res.status(201).json(result.rows[0]);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET STAFF'S OWN LOANS
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
-    const email = req.user.email.trim().toLowerCase(); 
     try {
-        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [email]);
+        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Database error." }); }
 });
 
-// --- 6. MANAGER & ADMIN DASHBOARD ROUTES ---
-
-// GET ALL LOANS (Fixes Manager Dashboard)
-app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
-    const role = req.user.role?.toLowerCase();
-    if (!['admin', 'manager', 'supervisor', 'super admin'].includes(role)) {
-        return res.status(403).json({ error: "Forbidden: Manager access required" });
-    }
+app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query('SELECT * FROM loans ORDER BY "submittedDate" DESC');
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
-});
-
-// GET ALL STAFF (Fixes Manager Dashboard 404)
-app.get('/api/v1/manager/staff', authenticateToken, async (req, res) => {
-    const role = req.user.role?.toLowerCase();
-    if (!['admin', 'manager', 'supervisor', 'super admin'].includes(role)) {
-        return res.status(403).json({ error: "Forbidden: Manager access required" });
-    }
-    try {
-        const result = await db.query('SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
-});
-
-// REACTIVATE STAFF
-app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
-    const { staffEmail } = req.body;
-    const role = req.user.role?.toLowerCase();
-    if (!['admin', 'manager', 'super admin'].includes(role)) return res.status(403).json({ error: "Unauthorized" });
-
-    try {
-        const result = await db.query(
-            'UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1 RETURNING full_name', 
-            [staffEmail?.trim().toLowerCase()]
-        );
-        if (result.rowCount === 0) return res.status(404).json({ error: "User not found" });
-        res.json({ message: `Account for ${result.rows[0].full_name} reactivated.` });
-    } catch (e) { res.status(500).json({ error: "Server error" }); }
+        const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: "Auth sync failed" }); }
 });
 
 app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on Port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
 
 
 // require('dotenv').config(); 
