@@ -9,6 +9,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
+// --- CONFIGURATION & LIMITS ---
+const LOAN_LIMITS = {
+    'Federal': 1000000,
+    'State': 500000,
+    'Private': 250000
+};
+
 // --- 1. MIDDLEWARE SETUP ---
 app.use(cors({ 
     origin: '*', 
@@ -158,22 +165,62 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
 
 // --- 6. LOAN & USER ROUTES ---
 
-// Submit Loan (All 18 Fields)
+// Submit Loan (Updated with Dropdown logic & Limits)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
     const uniqueId = `LOAN-${Date.now()}`;
+
+    // --- SERVER SIDE VALIDATION ---
+    const requestedAmount = parseFloat(loan.loanAmount || 0);
+    const selectedType = loan.loanType || 'Private';
+    const limit = LOAN_LIMITS[selectedType] || 250000;
+
+    if (requestedAmount > limit) {
+        return res.status(400).json({ 
+            error: `Validation Error: Maximum amount for ${selectedType} loans is ₦${limit.toLocaleString()}` 
+        });
+    }
+
     try {
         const query = `
             INSERT INTO loans (
                 "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
                 "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName",
-                "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "signatureImageUrl"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`;
-        const values = [uniqueId, loan.customerName, loan.bvn, loan.nin, loan.phone, loan.loanAmount || 0, loan.loanAmount || 0, 'Pending', tokenEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A', loan.ninImageUrl, loan.idImageUrl, loan.passportImageUrl, loan.utilityBillUrl, loan.signatureImageUrl];
+                "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "signatureImageUrl",
+                "monthlyIncome", "loanType", "repaymentCycle", "gender"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
+        
+        const values = [
+            uniqueId, 
+            loan.customerName, 
+            loan.bvn, 
+            loan.nin, 
+            loan.phone, 
+            requestedAmount, 
+            requestedAmount, 
+            'Pending', 
+            tokenEmail, 
+            new Date().toISOString().split('T')[0], 
+            loan.bankName, 
+            loan.accountNumber, 
+            loan.employerName || 'N/A', 
+            loan.ninImageUrl, 
+            loan.idImageUrl, 
+            loan.passportImageUrl, 
+            loan.utilityBillUrl, 
+            loan.signatureImageUrl,
+            loan.monthlyIncome,
+            loan.loanType,
+            loan.repaymentCycle,
+            loan.gender
+        ];
+
         await db.query(query, values);
         res.status(201).json({ message: "Loan Submitted" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 // Get personal loans
