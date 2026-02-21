@@ -18,7 +18,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// Logger for debugging Render requests
+// Console log for debugging Render requests
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     next();
@@ -31,6 +31,7 @@ const db = new Pool({
 });
 
 db.on('connect', () => console.log('✅ Connected to TrustMicro Database.'));
+db.on('error', (err) => console.error('❌ Unexpected database error:', err));
 
 // --- 3. AUTHENTICATION MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -46,12 +47,14 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// --- 4. AUTH ROUTES (With Strike Logic) ---
+// --- 4. PUBLIC AUTH ROUTES ---
 
-// LOGIN with Strike Protection
+// LOGIN (With Failure Strike Logic)
 app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body;
-    const cleanEmail = email?.trim().toLowerCase();
+    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+    
+    const cleanEmail = email.trim().toLowerCase();
     
     try {
         const result = await db.query(
@@ -67,8 +70,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
             });
         }
 
-        // Check if already locked
-        if (user.is_active === false || user.failed_attempts >= 3) {
+        // Lock Check
+        if (user.is_active === false || (user.failed_attempts && user.failed_attempts >= 3)) {
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
         }
 
@@ -94,6 +97,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
         res.json({ token, user });
 
     } catch (e) {
+        console.error("Login Error:", e);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
@@ -103,6 +107,9 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body;
     const cleanEmail = email.trim().toLowerCase();
     try {
+        const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
+        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
+
         const hash = await bcrypt.hash(password, 10);
         await db.query(
             `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
@@ -112,7 +119,7 @@ app.post('/api/v1/auth/signup', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Signup failed" }); }
 });
 
-// DEACTIVATE (Manual/Login Trigger)
+// DEACTIVATE (Manual lock)
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
     try {
@@ -126,7 +133,7 @@ app.post('/api/v1/auth/deactivate', async (req, res) => {
 
 // --- 5. DATA ROUTES (Loans & Profile) ---
 
-// SUBMIT LOAN (The working logic you liked)
+// SUBMIT LOAN
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     try {
@@ -138,8 +145,11 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         const uniqueLoanId = `LOAN-${Date.now()}`;
 
         const query = `
-            INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
+            INSERT INTO loans (
+                "id", "customerName", "bvn", "nin", "phone", 
+                "loanAmount", "amount", "status", "createdByEmail", 
+                "submittedDate", "bankName", "accountNumber", "employerName"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
 
         const values = [
             uniqueLoanId, loan.customerName, loan.bvn, loan.nin, loan.phone, 
@@ -164,7 +174,7 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
 
 // --- 6. MANAGER & ADMIN DASHBOARD ROUTES ---
 
-// GET ALL LOANS (For Manager Dashboard)
+// GET ALL LOANS (Fixes Manager Dashboard)
 app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     const role = req.user.role?.toLowerCase();
     if (!['admin', 'manager', 'supervisor', 'super admin'].includes(role)) {
@@ -173,11 +183,11 @@ app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM loans ORDER BY "submittedDate" DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch all loans" }); }
+    } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
 });
 
-// GET ALL STAFF (For Manager Dashboard)
-app.get('/api/v1/manager/all-staff', authenticateToken, async (req, res) => {
+// GET ALL STAFF (Fixes Manager Dashboard 404)
+app.get('/api/v1/manager/staff', authenticateToken, async (req, res) => {
     const role = req.user.role?.toLowerCase();
     if (!['admin', 'manager', 'supervisor', 'super admin'].includes(role)) {
         return res.status(403).json({ error: "Forbidden: Manager access required" });
@@ -185,10 +195,10 @@ app.get('/api/v1/manager/all-staff', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch staff list" }); }
+    } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
 
-// REACTIVATE STAFF (Admin tool)
+// REACTIVATE STAFF
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     const role = req.user.role?.toLowerCase();
@@ -204,9 +214,8 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
     } catch (e) { res.status(500).json({ error: "Server error" }); }
 });
 
-app.get('/', (req, res) => res.send("🚀 TrustMicro API is Live!"));
-
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
+app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on Port ${PORT}`));
 
 
 // require('dotenv').config(); 
