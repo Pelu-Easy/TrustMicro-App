@@ -100,35 +100,32 @@ const handleLogin = async (req, res) => {
     } finally { client.release(); }
 };
 
-app.post('/auth/login', handleLogin);
-app.post('/api/v1/auth/login', handleLogin);
-
-app.post('/api/v1/auth/deactivate', async (req, res) => {
-    const { email } = req.body;
-    try {
-        await db.query("UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1", [email?.trim().toLowerCase()]);
-        res.json({ message: "Account locked successfully" });
-    } catch (e) { res.status(500).json({ error: "Lockout failed" }); }
-});
-
-app.post('/api/v1/auth/signup', async (req, res) => {
+const handleSignup = async (req, res) => {
     const { full_name, email, phone_no, branch, password, role } = req.body;
     try {
         const hash = await bcrypt.hash(password, 10);
         await db.query(`INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
         [full_name, email.trim().toLowerCase(), phone_no, hash, role || 'Officer', branch, true, 0]);
         res.status(201).json({ message: "Staff created" });
-    } catch (e) { res.status(500).json({ error: "Signup failed" }); }
-});
-app.post('/auth/signup', async (req, res) => {
-    // ... same logic as below ...
-     const { full_name, email, phone_no, branch, password, role } = req.body;
+    } catch (e) { 
+        console.error("Signup error:", e.message);
+        res.status(500).json({ error: "Signup failed" }); 
+    }
+};
+
+// Public Routes (No authenticateToken)
+app.post('/auth/login', handleLogin);
+app.post('/api/v1/auth/login', handleLogin);
+app.post('/auth/signup', handleSignup);
+app.post('/api/v1/auth/signup', handleSignup);
+
+// Account Lockout (Also public so login screen can call it on 3 strikes)
+app.post('/api/v1/auth/deactivate', async (req, res) => {
+    const { email } = req.body;
     try {
-        const hash = await bcrypt.hash(password, 10);
-        await db.query(`INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
-        [full_name, email.trim().toLowerCase(), phone_no, hash, role || 'Officer', branch, true, 0]);
-        res.status(201).json({ message: "Staff created" });
-    } catch (e) { res.status(500).json({ error: "Signup failed" }); }
+        await db.query("UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1", [email?.trim().toLowerCase()]);
+        res.json({ message: "Account locked successfully" });
+    } catch (e) { res.status(500).json({ error: "Lockout failed" }); }
 });
 
 // --- 5. MANAGER DASHBOARD ROUTES ---
@@ -168,10 +165,10 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
         res.json({ message: "Reactivated" });
     } catch (err) { res.status(500).json({ error: "Reactivation failed" }); }
 });
-// --- NEW ROUTE TO FIX SIGNUP LOAD ERROR ---
-app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
+
+// --- SUPERVISOR LIST (PUBLIC for Signup) ---
+const handleGetSupervisors = async (req, res) => {
     try {
-        // This fetches users who can act as supervisors (Managers and Admins)
         const query = `
             SELECT id, full_name, email, role, branch 
             FROM staff_users 
@@ -179,22 +176,17 @@ app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
             ORDER BY full_name ASC`;
         
         const result = await db.query(query);
-        
-        // Return an empty array instead of an error if no supervisors exist yet
         res.json(result.rows || []);
     } catch (err) {
         console.error("Supervisor fetch error:", err.message);
-        res.status(500).json({ error: "Failed to load supervisors list" });
+        res.status(500).json({ error: "Failed to load supervisors" });
     }
-});
+};
 
-// Also add a version without the /api/v1 prefix just in case your frontend config varies
-app.get('/manager/supervisors', authenticateToken, async (req, res) => {
-    // Redirects to the logic above
-    const query = `SELECT id, full_name, email, role, branch FROM staff_users WHERE role ILIKE 'Manager' OR role ILIKE 'Admin' ORDER BY full_name ASC`;
-    const result = await db.query(query);
-    res.json(result.rows || []);
-});
+// Open these routes for the Sign Up page
+app.get('/api/v1/manager/supervisors', handleGetSupervisors);
+app.get('/manager/supervisors', handleGetSupervisors);
+
 // --- 6. LOAN & USER ROUTES ---
 
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
@@ -213,7 +205,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 
     try {
-        // --- UPDATED QUERY TO INCLUDE NEW DOCUMENT URLS ---
         const query = `
             INSERT INTO loans (
                 "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
@@ -241,9 +232,9 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             loan.idImageUrl, 
             loan.passportImageUrl, 
             loan.utilityBillUrl, 
-            loan.workIdUrl,      // <--- NEW
-            loan.statementUrl,   // <--- NEW
-            loan.signatureUrl,   // <--- NEW
+            loan.workIdUrl,
+            loan.statementUrl,
+            loan.signatureUrl,
             loan.monthlyIncome,
             loan.loanType,
             loan.repaymentCycle,
