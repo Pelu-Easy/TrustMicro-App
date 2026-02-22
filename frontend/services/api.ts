@@ -16,16 +16,37 @@ const api = axios.create({
 });
 
 // --- REQUEST INTERCEPTOR ---
+// 1. Request Interceptor: Attach the token to every request
 api.interceptors.request.use(
   (config) => {
     // Get token from Zustand store
     const token = useUserData.getState().token; 
-    if (token) {
+    
+    // Only attach if token exists and isn't an empty string
+    if (token && token.trim() !== "") {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
     return config;
   },
   (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// 2. Response Interceptor: Handle the "Session Expired" logic
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // If the server returns 401 (Unauthorized), it means the token is invalid/expired
+    if (error.response?.status === 401) {
+      // We only alert if there was actually a token we tried to use
+      const token = useUserData.getState().token;
+      if (token) {
+        Alert.alert("Session Expired", "Please log in again to continue.");
+        // Optional: useUserData.getState().logout(); 
+      }
+    }
     return Promise.reject(error);
   }
 );

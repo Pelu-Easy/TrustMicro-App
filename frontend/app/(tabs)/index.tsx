@@ -90,9 +90,17 @@ export default function Dashboard() {
     }
   }, [token, setLoans]);
 
+// We wrap the logic in a useEffect that listens to the 'token'
   useEffect(() => {
-    fetchAllLoans();
-  }, [fetchAllLoans]);
+    // 1. Check if token exists and isn't just an empty string/null
+    if (token && token.trim() !== "") {
+      console.log("Token detected, fetching dashboard data...");
+      fetchAllLoans();
+    } else {
+      // 2. While the token is loading from AsyncStorage, we stay quiet
+      console.log("Waiting for user session to initialize...");
+    }
+  }, [token, fetchAllLoans]);
 
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
