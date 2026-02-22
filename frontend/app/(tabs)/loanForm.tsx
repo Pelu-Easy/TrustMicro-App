@@ -35,6 +35,21 @@ const LOAN_LIMITS: Record<string, number> = {
   'Private': 250000
 };
 
+// --- HELPER COMPONENTS FOR REVIEW ---
+const ReviewItem = ({ label, value }: { label: string, value: string }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+    <Text style={styles.revLabel}>{label}:</Text>
+    <Text style={styles.revVal}>{value}</Text>
+  </View>
+);
+
+const DocStatus = ({ label, exists }: { label: string, exists: boolean }) => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+    <Ionicons name={exists ? "checkmark-circle" : "close-circle"} size={14} color={exists ? BRAND.accent : BRAND.danger} />
+    <Text style={{ fontSize: 11, color: '#64748b' }}>{label}</Text>
+  </View>
+);
+
 export default function CompleteLoanForm() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -135,11 +150,10 @@ export default function CompleteLoanForm() {
   };
 
   // --- LOGIC: FINAL SUBMISSION TO BACKEND ---
-const handleFinalSubmit = async () => {
+  const handleFinalSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
-    // 1. Prepare Payload
     const payload = {
       customerName: formData.customerName,
       bvn: formData.bvn,
@@ -166,9 +180,6 @@ const handleFinalSubmit = async () => {
     console.log("Attempting Submission to:", api.defaults.baseURL + '/api/v1/loans');
 
     try {
-      // 2. Execute Request
-      // If your server.js uses app.use('/api/v1', loanRoutes), keep this. 
-      // If it's a simple server, try changing this to just '/loans'
       const response = await api.post('/api/v1/loans', payload, {
         headers: { 
           Authorization: `Bearer ${token}`,
@@ -183,9 +194,8 @@ const handleFinalSubmit = async () => {
       }
     } catch (error: any) {
       console.error("Submission Error Details:", error.response?.status, error.response?.data);
-      
       if (error.response?.status === 404) {
-        Alert.alert("Server Error (404)", "The submission endpoint was not found. Please check if the backend server is running and the URL is correct.");
+        Alert.alert("Server Error (404)", "Submission endpoint not found. Ensure server is running and the URL /api/v1/loans is correct.");
       } else {
         const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
         Alert.alert("Submission Failed", errorMsg);
@@ -299,19 +309,40 @@ const handleFinalSubmit = async () => {
         {step === 5 && (
           <View>
             <Text style={styles.title}>Review & Submit</Text>
+            <Text style={styles.subtitle}>Confirm details below are correct before submitting.</Text>
+            
             <View style={styles.reviewCard}>
-                <Text style={styles.revLabel}>Customer: <Text style={styles.revVal}>{formData.customerName}</Text></Text>
-                <Text style={styles.revLabel}>Loan Type: <Text style={styles.revVal}>{formData.loanType}</Text></Text>
-                <Text style={styles.revLabel}>Amount: <Text style={styles.revVal}>₦{Number(formData.loanAmount || 0).toLocaleString()}</Text></Text>
+                <Text style={styles.reviewSectionHeader}>Identity</Text>
+                <ReviewItem label="Name" value={formData.customerName} />
+                <ReviewItem label="BVN" value={`*******${formData.bvn.slice(-4)}`} />
+                <ReviewItem label="Gender" value={formData.gender} />
+                
+                <View style={styles.divider} />
+
+                <Text style={styles.reviewSectionHeader}>Loan Details</Text>
+                <ReviewItem label="Type" value={formData.loanType} />
+                <ReviewItem label="Amount" value={`₦${Number(formData.loanAmount || 0).toLocaleString()}`} />
+                <ReviewItem label="Tenure" value={formData.tenure} />
+
+                <View style={styles.divider} />
+
+                <Text style={styles.reviewSectionHeader}>Documents</Text>
+                <View style={styles.docRow}>
+                  <DocStatus label="ID" exists={!!formData.idUploaded} />
+                  <DocStatus label="Utility" exists={!!formData.utilityUploaded} />
+                  <DocStatus label="Letter" exists={!!formData.statementUploaded} />
+                  <DocStatus label="Photo" exists={!!formData.selfieUploaded} />
+                </View>
             </View>
+
             <TouchableOpacity 
               style={[styles.primaryBtn, isSubmitting && { opacity: 0.7 }]} 
               onPress={handleFinalSubmit}
               disabled={isSubmitting}
             >
-              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Submit Application</Text>}
+              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Confirm & Submit</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(4)} disabled={isSubmitting}><Text>Edit</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(4)} disabled={isSubmitting}><Text>Edit Details</Text></TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -326,6 +357,7 @@ const styles = StyleSheet.create({
   barBg: { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, flex: 1 },
   barFill: { height: 4, backgroundColor: BRAND.primary, borderRadius: 2 },
   title: { fontSize: 22, fontWeight: 'bold', color: BRAND.primary, marginBottom: 15 },
+  subtitle: { fontSize: 14, color: '#64748b', marginBottom: 20 },
   label: { fontSize: 12, fontWeight: 'bold', marginTop: 10, color: '#64748b' },
   input: { backgroundColor: '#FFF', borderWidth: 1, borderColor: BRAND.border, padding: 12, borderRadius: 10, marginTop: 8 },
   disabledInput: { backgroundColor: '#F1F5F9' },
@@ -339,8 +371,11 @@ const styles = StyleSheet.create({
   uploadBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border, marginBottom: 12 },
   uploadText: { fontWeight: 'bold', color: BRAND.primary },
   reviewCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border, marginBottom: 20 },
+  reviewSectionHeader: { fontSize: 14, fontWeight: 'bold', color: BRAND.primary, marginBottom: 10 },
+  divider: { height: 1, backgroundColor: BRAND.border, marginVertical: 12 },
   revLabel: { fontSize: 13, color: '#64748b' },
   revVal: { color: BRAND.primary, fontWeight: 'bold' },
+  docRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 5 },
   selectorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   selectorItem: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: BRAND.border, backgroundColor: '#FFF' },
   selectorActive: { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
