@@ -40,10 +40,14 @@ const db = new Pool({
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
+    
     if (!token) return res.status(401).json({ error: "Unauthorized access" });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: "Session expired or invalid" });
+        if (err) {
+            console.log(`[AUTH ERROR] JWT Verification failed: ${err.message}`);
+            return res.status(403).json({ error: "Session expired or invalid" });
+        }
         req.user = user;
         next();
     });
