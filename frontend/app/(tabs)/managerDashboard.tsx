@@ -14,6 +14,16 @@ import {
   Vibration // Added for haptic feedback
   ,
 
+
+
+
+
+
+
+
+
+
+
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
