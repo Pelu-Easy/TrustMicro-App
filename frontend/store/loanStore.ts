@@ -41,6 +41,9 @@ export interface Loan {
   monthlyRepayment?: string;
   totalRepayment?: string;
   repaymentEndDate?: string;
+  bankStatement?: string; // This fixes the red underline
+  workId?: string;
+  signature?: string;
 }
 
 interface LoanState {

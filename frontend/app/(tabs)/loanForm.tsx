@@ -66,7 +66,13 @@ export default function CompleteLoanForm() {
     customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
     loanAmount: '', bankName: '', accountNumber: '',
     employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-    idUploaded: '', utilityUploaded: '', statementUploaded: '', selfieUploaded: '',
+    // --- UPDATED DOCUMENT STATE KEYS ---
+    idUploaded: '', 
+    utilityUploaded: '', 
+    passportUploaded: '', 
+    workIdUploaded: '', 
+    statementUploaded: '', 
+    signatureUploaded: '',
     monthlyIncome: '₦50,000.00 - ₦100,000.00',
     loanType: 'Federal',
     repaymentCycle: 'Monthly',
@@ -99,13 +105,13 @@ export default function CompleteLoanForm() {
     return { valid: true, msg: "" };
   };
 
-  useEffect(() => {
+useEffect(() => {
     if (params.draftId) {
       const existingLoan = allLoans.find(l => l.id === params.draftId);
       if (existingLoan) {
         setCurrentLoanId(existingLoan.id);
-        setFormData({
-          ...formData,
+        setFormData(prev => ({
+          ...prev,
           customerName: existingLoan.customerName || '',
           bvn: existingLoan.bvn || '',
           nin: existingLoan.nin || '',
@@ -118,13 +124,14 @@ export default function CompleteLoanForm() {
           dob: existingLoan.dob || '',
           idUploaded: existingLoan.idCard || '',
           utilityUploaded: existingLoan.ninHardCopy || '',
-          statementUploaded: existingLoan.employmentLetter || '',
-          selfieUploaded: existingLoan.passportPhoto || '',
-        });
+          statementUploaded: (existingLoan as any).bankStatement || '',
+          passportUploaded: existingLoan.passportPhoto || '',
+        }));
       }
     } else {
       setCurrentLoanId(`loan_${Date.now()}`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.draftId]);
 
   const handleVerifyIdentity = async () => {
@@ -160,10 +167,14 @@ export default function CompleteLoanForm() {
       accountNumber: formData.accountNumber,
       employerName: formData.employerName,
       jobTitle: formData.jobTitle,
-      ninImageUrl: formData.utilityUploaded,
+      // --- MAPPING TO DATABASE EXPECTED FIELDS ---
+      ninImageUrl: formData.idUploaded, 
       idImageUrl: formData.idUploaded,
-      passportImageUrl: formData.selfieUploaded,
-      utilityBillUrl: formData.statementUploaded,
+      passportImageUrl: formData.passportUploaded,
+      utilityBillUrl: formData.utilityUploaded,
+      workIdUrl: formData.workIdUploaded,
+      statementUrl: formData.statementUploaded,
+      signatureUrl: formData.signatureUploaded,
       monthlyIncome: formData.monthlyIncome,
       loanType: formData.loanType,
       repaymentCycle: formData.repaymentCycle,
@@ -288,8 +299,10 @@ export default function CompleteLoanForm() {
             {[
               { label: 'ID CARD', key: 'idUploaded' },
               { label: 'UTILITY BILL', key: 'utilityUploaded' },
-              { label: 'EMPLOYMENT LETTER', key: 'statementUploaded' },
-              { label: 'PASSPORT PHOTO', key: 'selfieUploaded' }
+              { label: 'PASSPORT PHOTO', key: 'passportUploaded' },
+              { label: 'WORK ID / EMPLOYMENT', key: 'workIdUploaded' },
+              { label: 'BANK STATEMENT', key: 'statementUploaded' },
+              { label: 'CUSTOMER SIGNATURE', key: 'signatureUploaded' }
             ].map(doc => (
               <TouchableOpacity key={doc.key} style={[styles.uploadBox, (formData as any)[doc.key] && { borderColor: BRAND.accent }]} onPress={() => handlePickDocument(doc.key)}>
                 <Text style={[styles.uploadText, (formData as any)[doc.key] && { color: BRAND.accent }]}>{doc.label} {(formData as any)[doc.key] ? '✅' : ''}</Text>
@@ -334,8 +347,10 @@ export default function CompleteLoanForm() {
                 <View style={styles.docRow}>
                   <DocStatus label="ID" exists={!!formData.idUploaded} />
                   <DocStatus label="Utility" exists={!!formData.utilityUploaded} />
-                  <DocStatus label="Letter" exists={!!formData.statementUploaded} />
-                  <DocStatus label="Photo" exists={!!formData.selfieUploaded} />
+                  <DocStatus label="Photo" exists={!!formData.passportUploaded} />
+                  <DocStatus label="WorkID" exists={!!formData.workIdUploaded} />
+                  <DocStatus label="Stmt" exists={!!formData.statementUploaded} />
+                  <DocStatus label="Sign" exists={!!formData.signatureUploaded} />
                 </View>
             </View>
 

@@ -12,11 +12,12 @@ export default function LoanDetails() {
   const router = useRouter();
   const { role, isSupervisor, token } = useUserData();
   
-  // --- UPDATED PARAMS TO MATCH DATABASE & FORM ---
+  // --- UPDATED PARAMS TO INCLUDE ALL 7 DOCUMENTS ---
   const { 
     id, customerName, amount, loanType, staffName, 
     phone, bankName, accountNumber,
-    ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl 
+    ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl,
+    workIdUrl, statementUrl, signatureUrl 
   } = useLocalSearchParams();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -145,6 +146,11 @@ export default function LoanDetails() {
           <DocumentCard label="National Identity (NIN)" uri={ninImageUrl} placeholder="No NIN Image Uploaded" />
           <DocumentCard label="Government Issued ID" uri={idImageUrl} placeholder="No ID Image Uploaded" />
           <DocumentCard label="Utility Bill" uri={utilityBillUrl} placeholder="No Utility Bill Uploaded" />
+          
+          {/* Added Missing 3 Documents */}
+          <DocumentCard label="Proof of Employment / Work ID" uri={workIdUrl} placeholder="No Work ID Uploaded" />
+          <DocumentCard label="Bank Statement" uri={statementUrl} placeholder="No Bank Statement Uploaded" />
+          <DocumentCard label="Customer Signature" uri={signatureUrl} placeholder="No Signature Uploaded" />
 
           {/* Conditional Action Buttons: Only visible to Management */}
           {actsAsManagement ? (
