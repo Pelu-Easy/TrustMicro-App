@@ -64,6 +64,7 @@ export default function LoginScreen() {
 
     try {
       // 1. Backend Authentication Request
+      // Note: baseURL handles the '/api/v1' prefix
       const response = await api.post('/auth/login', { 
         email: trimmedEmail.toLowerCase(), 
         password: trimmedPassword 
@@ -75,16 +76,17 @@ export default function LoginScreen() {
       setFailedAttempts(0);
 
       // Calculate roles immediately for redirection
+      const userRole = user.role?.toLowerCase() || '';
       const isUserSupervisor = 
           user.is_supervisor === true || 
-          ['manager', 'supervisor', 'admin', 'super admin'].includes(user.role?.toLowerCase());
+          ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
 
       // 2. Save Secure Session to Zustand
       updateUserData({
         token: token,
         isLoggedIn: true,
         role: user.role,
-        funame: user.fullName || user.full_name,
+        funame: user.full_name || user.fullName || 'Staff Member',
         email: user.email,
         phone: user.phone_no || user.phone,
         branch: user.branch,
@@ -94,14 +96,14 @@ export default function LoginScreen() {
         isSupervisor: isUserSupervisor,
         isLoanOfficer: 
           user.is_loan_officer === true || 
-          user.role?.toLowerCase() === 'officer'
+          userRole === 'officer'
       });
 
       // 3. Sync to Loan Store
       useLoanStore.setState((state) => ({
         staffProfile: {
           ...state.staffProfile,
-          funame: user.fullName || user.full_name,
+          funame: user.full_name || user.fullName || 'Staff Member',
         }
       }));
 
@@ -116,17 +118,16 @@ export default function LoginScreen() {
     } catch (error: any) {
       setIsLoading(false);
       
-      // PROFESSIONAL UPDATE: Handle different error types
       const status = error.response?.status;
       const errorCode = error.response?.data?.code;
 
-      // A. Account doesn't exist (No strike penalty)
+      // A. Account doesn't exist
       if (status === 404 && errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
         return; 
       }
 
-      // B. Account is already deactivated (Redirect to lockout view)
+      // B. Account is already deactivated
       if (status === 403) {
         setIsLockedOut(true);
         setErrors({ general: "Account Deactivated. Please contact System Admin." });
@@ -137,7 +138,6 @@ export default function LoginScreen() {
       const nextAttemptCount = failedAttempts + 1;
       setFailedAttempts(nextAttemptCount);
 
-      // Handle Lockout Trigger
       if (nextAttemptCount >= 3) {
         try {
           // NOTIFY BACKEND OF DEACTIVATION
@@ -151,7 +151,7 @@ export default function LoginScreen() {
         
         setIsLockedOut(true);
         setErrors({ 
-          general: "Account Deactivated: Too many failed attempts. Admin has been notified. Please contact System Admin to reactivate." 
+          general: "Account Deactivated: Too many failed attempts. Admin has been notified." 
         });
         Alert.alert(
           "Security Lockout", 
@@ -260,13 +260,12 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-          <View style={styles.signupRow}>
-            <Text style={styles.noAccountText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
-              <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
-            </TouchableOpacity>
-          </View>
-
+            <View style={styles.signupRow}>
+              <Text style={styles.noAccountText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
+                <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -6,7 +6,8 @@ import useUserData from '../store/userSignUp';
 
 const axios = axiosImport as AxiosStatic;
 
-// 1. Centralized Production URL
+// 1. Centralized Production URL 
+// Note: This includes /api/v1, so all calls using 'api' should NOT start with /api/v1
 export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
 const api = axios.create({
@@ -22,6 +23,12 @@ api.interceptors.request.use(
     if (token && token.trim() !== "") {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Safety check: If the URL already contains the baseURL, remove it to prevent doubling
+    if (config.url?.startsWith('/api/v1')) {
+       config.url = config.url.replace('/api/v1', '');
+    }
+    
     return config;
   },
   (error) => Promise.reject(error)
@@ -45,8 +52,6 @@ api.interceptors.response.use(
     if (status === 401 || status === 403) {
       console.log(`[AUTH] Unauthorized/Forbidden (${status}). Clearing session...`);
       
-      // FIX: Call the existing logout function defined in userSignUp.ts
-      // This resets 'isLoggedIn', 'token', and clears AsyncStorage correctly.
       const { logout } = useUserData.getState();
       logout(); 
 
@@ -67,7 +72,7 @@ api.interceptors.response.use(
       errorMessage = "The server is taking too long to respond. (Render might be waking up)";
     } else if (error.response) {
       if (status === 404) {
-        errorMessage = "Endpoint not found on server.";
+        errorMessage = `Endpoint not found: ${originalRequest?.url}`;
       } else {
         errorMessage = error.response.data.error || "A server error occurred.";
       }

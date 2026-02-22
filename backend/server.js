@@ -168,7 +168,33 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
         res.json({ message: "Reactivated" });
     } catch (err) { res.status(500).json({ error: "Reactivation failed" }); }
 });
+// --- NEW ROUTE TO FIX SIGNUP LOAD ERROR ---
+app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
+    try {
+        // This fetches users who can act as supervisors (Managers and Admins)
+        const query = `
+            SELECT id, full_name, email, role, branch 
+            FROM staff_users 
+            WHERE role ILIKE 'Manager' OR role ILIKE 'Admin' OR role ILIKE 'Super Admin'
+            ORDER BY full_name ASC`;
+        
+        const result = await db.query(query);
+        
+        // Return an empty array instead of an error if no supervisors exist yet
+        res.json(result.rows || []);
+    } catch (err) {
+        console.error("Supervisor fetch error:", err.message);
+        res.status(500).json({ error: "Failed to load supervisors list" });
+    }
+});
 
+// Also add a version without the /api/v1 prefix just in case your frontend config varies
+app.get('/manager/supervisors', authenticateToken, async (req, res) => {
+    // Redirects to the logic above
+    const query = `SELECT id, full_name, email, role, branch FROM staff_users WHERE role ILIKE 'Manager' OR role ILIKE 'Admin' ORDER BY full_name ASC`;
+    const result = await db.query(query);
+    res.json(result.rows || []);
+});
 // --- 6. LOAN & USER ROUTES ---
 
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {

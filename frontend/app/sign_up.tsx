@@ -49,9 +49,15 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        const response = await api.get('/manager/supervisors');
-        if (response.data) setSupervisors(response.data);
-      } catch (error) { console.log("Supervisor load failed:", error); }
+        // Updated to use the full path to match the backend structure
+        const response = await api.get('/api/v1/manager/supervisors');
+        if (response.data) {
+          setSupervisors(response.data);
+        }
+      } catch (error) { 
+        // Log error but don't break the UI
+        console.log("Supervisor load failed: Endpoint might be protected or missing", error); 
+      }
     };
     fetchSupervisors();
   }, []);
@@ -87,25 +93,17 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      // 1. Check if phone is unique
-      const checkResponse = await api.get(`/auth/check-phone/${formData.phone.trim()}`);
-      if (checkResponse.data.exists) {
-        setIsLoading(false);
-        setErrors({ phone: "This phone number is already taken" });
-        return;
-      }
-
-      // 2. Register Account
-      await api.post('/auth/signup', {
+      // 1. Register Account
+      await api.post('/api/v1/auth/signup', {
         full_name: formData.fullName.trim(),
-        email: formData.email.trim().toLowerCase(), // Crucial: Normalize for DB
+        email: formData.email.trim().toLowerCase(),
         phone_no: formData.phone.trim(),
         branch: formData.branch,
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
         supervisor_name: formData.supervisor,
-        role: formData.isSupervisor ? 'Manager' : 'Officer', // Map to DB Role
+        role: formData.isSupervisor ? 'Manager' : 'Officer',
         is_loan_officer: formData.isLoanOfficer,
         is_active: true 
       });
@@ -114,7 +112,7 @@ export default function SignUpScreen() {
       Alert.alert("Success", "Account created!", [{ text: "Login", onPress: () => router.replace('/login') }]);
     } catch (error: any) {
       setIsLoading(false);
-      const serverError = error.response?.data?.error || "Registration failed.";
+      const serverError = error.response?.data?.error || "Registration failed. Ensure you are connected to the server.";
       Alert.alert("Failed", serverError);
     }
   };
@@ -217,7 +215,6 @@ export default function SignUpScreen() {
               </View>
             </View>
 
-            {/* PASSWORD WITH TOGGLE */}
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput 
@@ -233,7 +230,6 @@ export default function SignUpScreen() {
             </View>
             <ErrorMsg name="password" />
 
-            {/* CONFIRM PASSWORD WITH TOGGLE */}
             <Text style={styles.label}>Confirm Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput 
@@ -270,11 +266,15 @@ export default function SignUpScreen() {
           <Modal visible={showSupModal} transparent animationType="fade">
             <View style={styles.modalOverlay}><View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Select Supervisor</Text>
-                <FlatList data={supervisors} keyExtractor={(_, i) => i.toString()} renderItem={({ item }) => (
-                    <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}>
-                    <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
-                    </TouchableOpacity>
-                )} />
+                {supervisors.length === 0 ? (
+                  <Text style={{ textAlign: 'center', marginVertical: 20, color: '#64748B' }}>No supervisors available.</Text>
+                ) : (
+                  <FlatList data={supervisors} keyExtractor={(_, i) => i.toString()} renderItem={({ item }) => (
+                      <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}>
+                      <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
+                      </TouchableOpacity>
+                  )} />
+                )}
                 <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity>
             </View></View>
           </Modal>
