@@ -120,6 +120,16 @@ app.post('/api/v1/auth/signup', async (req, res) => {
         res.status(201).json({ message: "Staff created" });
     } catch (e) { res.status(500).json({ error: "Signup failed" }); }
 });
+app.post('/auth/signup', async (req, res) => {
+    // ... same logic as below ...
+     const { full_name, email, phone_no, branch, password, role } = req.body;
+    try {
+        const hash = await bcrypt.hash(password, 10);
+        await db.query(`INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
+        [full_name, email.trim().toLowerCase(), phone_no, hash, role || 'Officer', branch, true, 0]);
+        res.status(201).json({ message: "Staff created" });
+    } catch (e) { res.status(500).json({ error: "Signup failed" }); }
+});
 
 // --- 5. MANAGER DASHBOARD ROUTES ---
 
