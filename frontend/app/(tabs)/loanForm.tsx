@@ -135,10 +135,11 @@ export default function CompleteLoanForm() {
   };
 
   // --- LOGIC: FINAL SUBMISSION TO BACKEND ---
-  const handleFinalSubmit = async () => {
+const handleFinalSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
+    // 1. Prepare Payload
     const payload = {
       customerName: formData.customerName,
       bvn: formData.bvn,
@@ -148,29 +149,47 @@ export default function CompleteLoanForm() {
       bankName: formData.bankName || "N/A",
       accountNumber: formData.accountNumber || "0000000000",
       employerName: formData.employerName,
+      jobTitle: formData.jobTitle,
       ninImageUrl: formData.utilityUploaded,
       idImageUrl: formData.idUploaded,
       passportImageUrl: formData.selfieUploaded,
       utilityBillUrl: formData.statementUploaded,
-      signatureImageUrl: "",
       monthlyIncome: formData.monthlyIncome,
       loanType: formData.loanType,
       repaymentCycle: formData.repaymentCycle,
-      gender: formData.gender
+      gender: formData.gender,
+      tenure: formData.tenure,
+      staffName: staffFullName || 'System',
+      branchName: staffBranch || 'Main'
     };
 
+    console.log("Attempting Submission to:", api.defaults.baseURL + '/api/v1/loans');
+
     try {
+      // 2. Execute Request
+      // If your server.js uses app.use('/api/v1', loanRoutes), keep this. 
+      // If it's a simple server, try changing this to just '/loans'
       const response = await api.post('/api/v1/loans', payload, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
+
       if (response.status === 201 || response.status === 200) {
         Alert.alert("Success", "Loan application submitted successfully!", [
           { text: "OK", onPress: () => router.replace('/(tabs)') }
         ]);
       }
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
-      Alert.alert("Submission Failed", errorMsg);
+      console.error("Submission Error Details:", error.response?.status, error.response?.data);
+      
+      if (error.response?.status === 404) {
+        Alert.alert("Server Error (404)", "The submission endpoint was not found. Please check if the backend server is running and the URL is correct.");
+      } else {
+        const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
+        Alert.alert("Submission Failed", errorMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
