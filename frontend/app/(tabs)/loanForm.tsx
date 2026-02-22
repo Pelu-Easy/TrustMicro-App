@@ -28,18 +28,16 @@ const BRAND = {
   border: "#E2E8F0" 
 };
 
-// --- CONFIGURATION ---
 const LOAN_LIMITS: Record<string, number> = {
   'Federal': 1000000,
   'State': 500000,
   'Private': 250000
 };
 
-// --- HELPER COMPONENTS FOR REVIEW ---
 const ReviewItem = ({ label, value }: { label: string, value: string }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
     <Text style={styles.revLabel}>{label}:</Text>
-    <Text style={styles.revVal}>{value}</Text>
+    <Text style={styles.revVal}>{value || 'N/A'}</Text>
   </View>
 );
 
@@ -78,7 +76,6 @@ export default function CompleteLoanForm() {
 
   const updateData = (key: string, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
 
-  // --- LOGIC: PICK DOCUMENTS ---
   const handlePickDocument = async (fieldKey: string) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -94,7 +91,6 @@ export default function CompleteLoanForm() {
     }
   };
 
-  // --- LOGIC: VALIDATE LOAN AMOUNT ---
   const validateAmount = () => {
     const amount = parseFloat(formData.loanAmount);
     const limit = LOAN_LIMITS[formData.loanType];
@@ -103,7 +99,6 @@ export default function CompleteLoanForm() {
     return { valid: true, msg: "" };
   };
 
-  // --- LOGIC: HANDLE DRAFTS & INITIAL LOAD ---
   useEffect(() => {
     if (params.draftId) {
       const existingLoan = allLoans.find(l => l.id === params.draftId);
@@ -114,7 +109,10 @@ export default function CompleteLoanForm() {
           customerName: existingLoan.customerName || '',
           bvn: existingLoan.bvn || '',
           nin: existingLoan.nin || '',
+          phone: existingLoan.phone || '',
           loanAmount: existingLoan.loanAmount || '',
+          bankName: existingLoan.bankName || '',
+          accountNumber: existingLoan.accountNumber || '',
           loanType: existingLoan.loanType || 'Federal',
           gender: existingLoan.gender || '',
           dob: existingLoan.dob || '',
@@ -129,7 +127,6 @@ export default function CompleteLoanForm() {
     }
   }, [params.draftId]);
 
-  // --- LOGIC: VERIFY BVN ---
   const handleVerifyIdentity = async () => {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
@@ -149,7 +146,6 @@ export default function CompleteLoanForm() {
     finally { setIsVerifying(false); }
   };
 
-  // --- LOGIC: FINAL SUBMISSION TO BACKEND ---
   const handleFinalSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
@@ -158,10 +154,10 @@ export default function CompleteLoanForm() {
       customerName: formData.customerName,
       bvn: formData.bvn,
       nin: formData.nin,
-      phone: formData.phone || "0000000000",
+      phone: formData.phone,
       loanAmount: formData.loanAmount,
-      bankName: formData.bankName || "N/A",
-      accountNumber: formData.accountNumber || "0000000000",
+      bankName: formData.bankName,
+      accountNumber: formData.accountNumber,
       employerName: formData.employerName,
       jobTitle: formData.jobTitle,
       ninImageUrl: formData.utilityUploaded,
@@ -177,15 +173,8 @@ export default function CompleteLoanForm() {
       branchName: staffBranch || 'Main'
     };
 
-    console.log("Attempting Submission to:", api.defaults.baseURL + '/api/v1/loans');
-
     try {
-      const response = await api.post('/loans', payload, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await api.post('/loans', payload);
 
       if (response.status === 201 || response.status === 200) {
         Alert.alert("Success", "Loan application submitted successfully!", [
@@ -193,13 +182,8 @@ export default function CompleteLoanForm() {
         ]);
       }
     } catch (error: any) {
-      console.error("Submission Error Details:", error.response?.status, error.response?.data);
-      if (error.response?.status === 404) {
-        Alert.alert("Server Error (404)", "Submission endpoint not found. Ensure server is running and the URL /api/v1/loans is correct.");
-      } else {
-        const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
-        Alert.alert("Submission Failed", errorMsg);
-      }
+      const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
+      Alert.alert("Submission Failed", errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -246,6 +230,10 @@ export default function CompleteLoanForm() {
 
             <Text style={styles.label}>Full Name *</Text>
             <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Auto-filled from BVN" />
+            
+            <Text style={styles.label}>Customer Phone Number *</Text>
+            <TextInput style={styles.input} value={formData.phone} onChangeText={v=>updateData('phone', v)} keyboardType="phone-pad" placeholder="080XXXXXXXX" />
+
             <Text style={styles.label}>Date of Birth *</Text>
             <TextInput style={[styles.input, styles.disabledInput]} value={formData.dob} editable={false} placeholder="Auto-filled from BVN" />
 
@@ -253,7 +241,7 @@ export default function CompleteLoanForm() {
             <Text style={styles.label}>NIN *</Text>
             <TextInput style={styles.input} value={formData.nin} onChangeText={v=>updateData('nin',v)} keyboardType="numeric" maxLength={11} placeholder="11-digit NIN" />
             
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => formData.customerName ? setStep(2) : Alert.alert("Required", "Verify BVN first")}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => (formData.customerName && formData.phone) ? setStep(2) : Alert.alert("Required", "Please verify BVN and enter Phone Number")}>
                 <Text style={styles.btnText}>Next</Text>
             </TouchableOpacity>
           </View>
@@ -261,12 +249,21 @@ export default function CompleteLoanForm() {
 
         {step === 2 && (
           <View>
-            <Text style={styles.title}>Employment</Text>
+            <Text style={styles.title}>Employment & Bank</Text>
+            <Text style={styles.label}>Employer Name</Text>
             <TextInput style={styles.input} value={formData.employerName} onChangeText={v=>updateData('employerName', v)} placeholder="Employer Name" />
+            <Text style={styles.label}>Job Title</Text>
             <TextInput style={styles.input} value={formData.jobTitle} onChangeText={v=>updateData('jobTitle', v)} placeholder="Job Title" />
+            
+            <View style={styles.divider} />
+            <Text style={styles.label}>Bank Name *</Text>
+            <TextInput style={styles.input} value={formData.bankName} onChangeText={v=>updateData('bankName', v)} placeholder="e.g. GTBank" />
+            <Text style={styles.label}>Account Number *</Text>
+            <TextInput style={styles.input} value={formData.accountNumber} onChangeText={v=>updateData('accountNumber', v)} keyboardType="numeric" maxLength={10} placeholder="10-digit Account Number" />
+
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(1)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={()=>setStep(3)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=> (formData.bankName && formData.accountNumber) ? setStep(3) : Alert.alert("Required", "Please enter Bank details")}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
@@ -312,11 +309,18 @@ export default function CompleteLoanForm() {
             <Text style={styles.subtitle}>Confirm details below are correct before submitting.</Text>
             
             <View style={styles.reviewCard}>
-                <Text style={styles.reviewSectionHeader}>Identity</Text>
+                <Text style={styles.reviewSectionHeader}>Identity & Contact</Text>
                 <ReviewItem label="Name" value={formData.customerName} />
+                <ReviewItem label="Phone" value={formData.phone} />
                 <ReviewItem label="BVN" value={`*******${formData.bvn.slice(-4)}`} />
                 <ReviewItem label="Gender" value={formData.gender} />
                 
+                <View style={styles.divider} />
+
+                <Text style={styles.reviewSectionHeader}>Bank Details</Text>
+                <ReviewItem label="Bank" value={formData.bankName} />
+                <ReviewItem label="Account" value={formData.accountNumber} />
+
                 <View style={styles.divider} />
 
                 <Text style={styles.reviewSectionHeader}>Loan Details</Text>
