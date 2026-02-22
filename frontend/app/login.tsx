@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -37,8 +38,15 @@ export default function LoginScreen() {
 
   const validateEmail = (emailStr: string) => /\S+@\S+\.\S+/.test(emailStr);
 
+  // New: Function to handle support contact
+  const handleContactSupport = () => {
+    const supportEmail = "admin@trustmicrobank.com";
+    const subject = encodeURIComponent("Account Reactivation Request");
+    const body = encodeURIComponent(`Hello Admin,\n\nMy account (${email}) has been deactivated due to failed login attempts. Please assist with reactivation.\n\nThank you.`);
+    Linking.openURL(`mailto:${supportEmail}?subject=${subject}&body=${body}`);
+  };
+
   const handleSignIn = async () => {
-    // Prevent login if locked out
     if (isLockedOut) return;
 
     const trimmedEmail = email.trim();
@@ -63,25 +71,19 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      // 1. Backend Authentication Request
-      // Note: baseURL handles the '/api/v1' prefix
       const response = await api.post('/auth/login', { 
         email: trimmedEmail.toLowerCase(), 
         password: trimmedPassword 
       });
 
       const { token, user } = response.data;
-
-      // SUCCESS: Reset failed attempts
       setFailedAttempts(0);
 
-      // Calculate roles immediately for redirection
       const userRole = user.role?.toLowerCase() || '';
       const isUserSupervisor = 
           user.is_supervisor === true || 
           ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
 
-      // 2. Save Secure Session to Zustand
       updateUserData({
         token: token,
         isLoggedIn: true,
@@ -99,7 +101,6 @@ export default function LoginScreen() {
           userRole === 'officer'
       });
 
-      // 3. Sync to Loan Store
       useLoanStore.setState((state) => ({
         staffProfile: {
           ...state.staffProfile,
@@ -121,47 +122,39 @@ export default function LoginScreen() {
       const status = error.response?.status;
       const errorCode = error.response?.data?.code;
 
-      // A. Account doesn't exist
       if (status === 404 && errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
         return; 
       }
 
-      // B. Account is already deactivated
       if (status === 403) {
         setIsLockedOut(true);
         setErrors({ general: "Account Deactivated. Please contact System Admin." });
         return;
       }
 
-      // C. Password was wrong (Increment strikes)
       const nextAttemptCount = failedAttempts + 1;
       setFailedAttempts(nextAttemptCount);
 
       if (nextAttemptCount >= 3) {
-        try {
-          // NOTIFY BACKEND OF DEACTIVATION
-          await api.post('/auth/deactivate', { 
-            email: trimmedEmail.toLowerCase(),
-            reason: "Excessive failed login attempts" 
-          });
-        } catch (backendErr) {
-          console.error("Failed to notify admin of lockout", backendErr);
-        }
-        
         setIsLockedOut(true);
         setErrors({ 
-          general: "Account Deactivated: Too many failed attempts. Admin has been notified." 
+          general: "Account Deactivated: Too many failed attempts." 
         });
+
+        api.post('/auth/deactivate', { 
+          email: trimmedEmail.toLowerCase(),
+          reason: "Excessive failed login attempts" 
+        }).catch(err => console.error("Deactivation sync failed", err));
+        
         Alert.alert(
           "Security Lockout", 
-          "Your account is now deactivated. Admin has been notified of the unauthorized attempts.",
+          "Your account is now deactivated. Please contact support to reactivate.",
           [{ text: "Understood" }]
         );
       } else {
         const remaining = 3 - nextAttemptCount;
-        const errorMsg = `Invalid password. ${remaining} attempt(s) remaining before deactivation.`;
-        setErrors({ general: errorMsg });
+        setErrors({ general: `Invalid password. ${remaining} attempt(s) remaining.` });
       }
     }
   };
@@ -256,9 +249,16 @@ export default function LoginScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.signInText}>{isLockedOut ? "Account Deactivated" : "Sign In"}</Text>
+                <Text style={styles.signInText}>{isLockedOut ? "Account Locked" : "Sign In"}</Text>
               )}
             </TouchableOpacity>
+
+            {/* NEW: Recovery/Support option only visible when locked out */}
+            {isLockedOut && (
+              <TouchableOpacity style={styles.supportLink} onPress={handleContactSupport}>
+                <Text style={styles.supportLinkText}>Need help? Contact System Admin</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.signupRow}>
               <Text style={styles.noAccountText}>Don't have an account? </Text>
@@ -321,4 +321,7 @@ const styles = StyleSheet.create({
   signupRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   noAccountText: { color: '#64748B', fontSize: 15 },
   signUpLinkText: { color: '#003366', fontSize: 15, fontWeight: 'bold', textDecorationLine: 'underline' },
+  // Styles for support link
+  supportLink: { marginTop: 15, alignItems: 'center' },
+  supportLinkText: { color: '#003366', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });
