@@ -6,7 +6,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 interface UserState {
   funame: string;
   email: string;
-  isLoggedIn: boolean;
+  isLoggedIn: boolean; // This is the field we use for authentication status
   phone: string;
   branch: string;
   setToken: (token: string | null) => void;
