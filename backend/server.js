@@ -53,7 +53,7 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// --- 4. AUTH & SECURITY (The "Memory" Solution) ---
+// --- 4. AUTH & SECURITY ---
 
 const handleLogin = async (req, res) => {
     const { email, password } = req.body;
@@ -65,7 +65,6 @@ const handleLogin = async (req, res) => {
         const result = await client.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
         const user = result.rows[0];
 
-        // SOLUTION: If user doesn't exist, Rollback and return Sign Up error immediately.
         if (!user) {
             await client.query('ROLLBACK');
             return res.status(404).json({ 
@@ -74,7 +73,6 @@ const handleLogin = async (req, res) => {
             });
         }
 
-        // Check if locked
         if (user.is_active === false || user.failed_attempts >= 3) {
             await client.query('ROLLBACK');
             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
@@ -91,7 +89,6 @@ const handleLogin = async (req, res) => {
             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
         }
 
-        // Reset on success
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
 
@@ -106,7 +103,6 @@ const handleLogin = async (req, res) => {
 app.post('/auth/login', handleLogin);
 app.post('/api/v1/auth/login', handleLogin);
 
-// Restored: Route for app to notify of auto-lockout
 app.post('/api/v1/auth/deactivate', async (req, res) => {
     const { email } = req.body;
     try {
@@ -127,7 +123,6 @@ app.post('/api/v1/auth/signup', async (req, res) => {
 
 // --- 5. MANAGER DASHBOARD ROUTES ---
 
-// Approve/Reject Loan Status Update
 app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, res) => {
     const { status } = req.body;
     try {
@@ -137,7 +132,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, re
     } catch (err) { res.status(500).json({ error: "Update failed" }); }
 });
 
-// Get All Loans (Joined with Staff Name)
 app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     try {
         const query = `
@@ -150,7 +144,6 @@ app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
 });
 
-// Get All Staff
 app.get('/api/v1/manager/staff-list', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
@@ -158,7 +151,6 @@ app.get('/api/v1/manager/staff-list', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
 
-// Reactivate Staff
 app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
     const { staffEmail } = req.body;
     try {
@@ -169,13 +161,11 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
 
 // --- 6. LOAN & USER ROUTES ---
 
-// Submit Loan (Updated with Dropdown logic & Limits)
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
     const uniqueId = `LOAN-${Date.now()}`;
 
-    // --- SERVER SIDE VALIDATION ---
     const requestedAmount = parseFloat(loan.loanAmount || 0);
     const selectedType = loan.loanType || 'Private';
     const limit = LOAN_LIMITS[selectedType] || 250000;
@@ -187,13 +177,15 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 
     try {
+        // --- UPDATED QUERY TO INCLUDE NEW DOCUMENT URLS ---
         const query = `
             INSERT INTO loans (
                 "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
                 "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName",
-                "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "signatureImageUrl",
+                "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", 
+                "workIdUrl", "statementUrl", "signatureUrl",
                 "monthlyIncome", "loanType", "repaymentCycle", "gender"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`;
         
         const values = [
             uniqueId, 
@@ -213,7 +205,9 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             loan.idImageUrl, 
             loan.passportImageUrl, 
             loan.utilityBillUrl, 
-            loan.signatureImageUrl,
+            loan.workIdUrl,      // <--- NEW
+            loan.statementUrl,   // <--- NEW
+            loan.signatureUrl,   // <--- NEW
             loan.monthlyIncome,
             loan.loanType,
             loan.repaymentCycle,
@@ -223,11 +217,11 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         await db.query(query, values);
         res.status(201).json({ message: "Loan Submitted" });
     } catch (err) { 
+        console.error("Database Insert Error:", err.message);
         res.status(500).json({ error: err.message }); 
     }
 });
 
-// Get personal loans
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
@@ -235,7 +229,6 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Database error." }); }
 });
 
-// Sync User Profile
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
@@ -243,8 +236,9 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });
 
-app.get('/', (req, res) => res.send("🚀 TrustMicro API Live & Full"));
+app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
+
 
 
 // require('dotenv').config(); 
@@ -258,15 +252,22 @@ app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
 // const PORT = process.env.PORT || 5000;
 // const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
-// // --- 1. MIDDLEWARE SETUP ---
-// app.use(cors({
-//     origin: '*', 
-//     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Content-Type', 'Authorization']
-// }));
+// // --- CONFIGURATION & LIMITS ---
+// const LOAN_LIMITS = {
+//     'Federal': 1000000,
+//     'State': 500000,
+//     'Private': 250000
+// };
 
+// // --- 1. MIDDLEWARE SETUP ---
+// app.use(cors({ 
+//     origin: '*', 
+//     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], 
+//     allowedHeaders: ['Content-Type', 'Authorization'] 
+// }));
 // app.use(express.json());
 
+// // Log requests for debugging production traffic
 // app.use((req, res, next) => {
 //     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
 //     next();
@@ -278,272 +279,212 @@ app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
 //     ssl: { rejectUnauthorized: false }
 // });
 
-// db.on('connect', () => console.log('✅ Connected to TrustMicro Supabase Database.'));
-// db.on('error', (err) => console.error('❌ Unexpected database error:', err));
-
-// module.exports.db = db; 
-
 // // --- 3. AUTHENTICATION MIDDLEWARE ---
 // const authenticateToken = (req, res, next) => {
 //     const authHeader = req.headers['authorization'];
 //     const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
-
-//     if (!token) return res.status(401).json({ error: "Unauthorized: Token missing" });
+    
+//     if (!token) return res.status(401).json({ error: "Unauthorized access" });
 
 //     jwt.verify(token, JWT_SECRET, (err, user) => {
-//         if (err) return res.status(403).json({ error: "Forbidden: Invalid token" });
+//         if (err) {
+//             console.log(`[AUTH ERROR] JWT Verification failed: ${err.message}`);
+//             return res.status(403).json({ error: "Session expired or invalid" });
+//         }
 //         req.user = user;
 //         next();
 //     });
 // };
 
-// app.get('/', (req, res) => res.send("🚀 TrustMicro Secure API is Live on Render!"));
+// // --- 4. AUTH & SECURITY (The "Memory" Solution) ---
 
-// // --- 4. PUBLIC AUTH ROUTES ---
-
-// // ACCOUNT DEACTIVATION
-// app.post('/api/v1/auth/deactivate', async (req, res) => {
-//     const { email } = req.body;
-//     const cleanEmail = email?.trim().toLowerCase();
-//     if (!cleanEmail) return res.status(400).json({ error: "Email is required" });
-//     try {
-//         const query = "UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) RETURNING id";
-//         const result = await db.query(query, [cleanEmail]);
-//         res.status(200).json({ message: "Account locked and Admin notified." });
-//     } catch (error) {
-//         res.status(500).json({ error: "Internal server error" });
-//     }
-// });
-
-// // SIGN-UP
-// app.post('/api/v1/auth/signup', async (req, res) => {
-//     const { full_name, email, phone_no, branch, password, role } = req.body; 
-//     const cleanEmail = email.trim().toLowerCase();
-//     try {
-//         const userExists = await db.query("SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [cleanEmail]);
-//         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already registered." });
-//         const hashedPassword = await bcrypt.hash(password, 10);
-//         const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) 
-//                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
-//         await db.query(query, [full_name, cleanEmail, phone_no, hashedPassword, role || 'Officer', branch, true, 0]);
-//         res.status(201).json({ message: "Staff account created successfully!" });
-//     } catch (error) { 
-//         res.status(500).json({ error: "Internal Server Error" }); 
-//     }
-// });
-
-// // LOGIN
-// app.post('/api/v1/auth/login', async (req, res) => {
+// const handleLogin = async (req, res) => {
 //     const { email, password } = req.body;
-//     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-    
-//     // Normalize: Remove spaces and force lowercase
-//     const cleanEmail = email.trim().toLowerCase();
+//     const cleanEmail = email?.trim().toLowerCase();
+//     const client = await db.connect();
     
 //     try {
-//         // 1. Find user using a more flexible search
-//         const result = await db.query(
-//             "SELECT id, email, password_hash, is_active, failed_attempts, role, full_name, branch FROM staff_users WHERE LOWER(TRIM(email)) = $1", 
-//             [cleanEmail]
-//         );
-        
+//         await client.query('BEGIN');
+//         const result = await client.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
 //         const user = result.rows[0];
 
+//         // SOLUTION: If user doesn't exist, Rollback and return Sign Up error immediately.
 //         if (!user) {
-//             console.log(`[AUTH] No user found for: ${cleanEmail}`);
-//             return res.status(401).json({ error: "Invalid email or password" });
+//             await client.query('ROLLBACK');
+//             return res.status(404).json({ 
+//                 error: "This account does not exist. Please Sign Up.",
+//                 code: "USER_NOT_FOUND" 
+//             });
 //         }
 
-//         // 2. Immediate Lock Check
-//         // Check both the boolean and the count (safety net)
-//         if (user.is_active === false || (user.failed_attempts && user.failed_attempts >= 3)) {
-//             console.log(`[SECURITY] Blocked login attempt for LOCKED user: ${cleanEmail}`);
+//         // Check if locked
+//         if (user.is_active === false || user.failed_attempts >= 3) {
+//             await client.query('ROLLBACK');
 //             return res.status(403).json({ error: "Account Deactivated. Contact Admin." });
 //         }
 
 //         const isMatch = await bcrypt.compare(password, user.password_hash);
-
 //         if (!isMatch) {
-//             const newFailedCount = (user.failed_attempts || 0) + 1;
-//             const shouldLock = newFailedCount >= 3;
-
-//             console.log(`[AUTH] Wrong password for ${cleanEmail}. Attempt: ${newFailedCount}`);
-
-//             // 3. FORCE UPDATE THE DATABASE
-//             // Using ID instead of Email for the WHERE clause is much more reliable
-//             const updateQuery = `
-//                 UPDATE staff_users 
-//                 SET failed_attempts = $1, 
-//                     is_active = $2 
-//                 WHERE id = $3 
-//                 RETURNING failed_attempts, is_active`;
+//             const newCount = (user.failed_attempts || 0) + 1;
+//             const stillActive = newCount < 3;
+//             await client.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newCount, stillActive, user.id]);
+//             await client.query('COMMIT');
             
-//             const updateRes = await db.query(updateQuery, [newFailedCount, !shouldLock, user.id]);
-            
-//             console.log(`[DB SYNC] Updated User ${user.id}: Attempts=${updateRes.rows[0].failed_attempts}, Active=${updateRes.rows[0].is_active}`);
-
-//             if (shouldLock) {
-//                 return res.status(403).json({ error: "Too many failed attempts. Account locked." });
-//             } else {
-//                 return res.status(401).json({ error: `Invalid credentials. ${3 - newFailedCount} attempts left.` });
-//             }
+//             if (!stillActive) return res.status(403).json({ error: "Too many failed attempts. Account locked." });
+//             return res.status(401).json({ error: `Invalid credentials. ${3 - newCount} attempts left.` });
 //         }
 
-//         // 4. Success - Reset everything
-//         await db.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
-        
-//         const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
-        
-//         res.json({ 
-//             token, 
-//             user: { full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } 
-//         });
+//         // Reset on success
+//         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
+//         await client.query('COMMIT');
 
-//     } catch (error) {
-//         console.error("CRITICAL LOGIN ERROR:", error);
-//         res.status(500).json({ error: "Internal Server Error" });
+//         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
+//         res.json({ token, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
+//     } catch (e) { 
+//         await client.query('ROLLBACK');
+//         res.status(500).json({ error: "Internal Server Error" }); 
+//     } finally { client.release(); }
+// };
+
+// app.post('/auth/login', handleLogin);
+// app.post('/api/v1/auth/login', handleLogin);
+
+// // Restored: Route for app to notify of auto-lockout
+// app.post('/api/v1/auth/deactivate', async (req, res) => {
+//     const { email } = req.body;
+//     try {
+//         await db.query("UPDATE staff_users SET is_active = false, failed_attempts = 3 WHERE LOWER(TRIM(email)) = $1", [email?.trim().toLowerCase()]);
+//         res.json({ message: "Account locked successfully" });
+//     } catch (e) { res.status(500).json({ error: "Lockout failed" }); }
+// });
+
+// app.post('/api/v1/auth/signup', async (req, res) => {
+//     const { full_name, email, phone_no, branch, password, role } = req.body;
+//     try {
+//         const hash = await bcrypt.hash(password, 10);
+//         await db.query(`INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, is_active, failed_attempts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
+//         [full_name, email.trim().toLowerCase(), phone_no, hash, role || 'Officer', branch, true, 0]);
+//         res.status(201).json({ message: "Staff created" });
+//     } catch (e) { res.status(500).json({ error: "Signup failed" }); }
+// });
+
+// // --- 5. MANAGER DASHBOARD ROUTES ---
+
+// // Approve/Reject Loan Status Update
+// app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, res) => {
+//     const { status } = req.body;
+//     try {
+//         const result = await db.query('UPDATE loans SET status = $1 WHERE id = $2 RETURNING *', [status, req.params.id]);
+//         if (result.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
+//         res.json({ message: "Status updated" });
+//     } catch (err) { res.status(500).json({ error: "Update failed" }); }
+// });
+
+// // Get All Loans (Joined with Staff Name)
+// app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
+//     try {
+//         const query = `
+//             SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
+//             FROM loans l
+//             LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+//             ORDER BY l."submittedDate" DESC`;
+//         const result = await db.query(query);
+//         res.json(result.rows);
+//     } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
+// });
+
+// // Get All Staff
+// app.get('/api/v1/manager/staff-list', authenticateToken, async (req, res) => {
+//     try {
+//         const result = await db.query('SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
+//         res.json(result.rows);
+//     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
+// });
+
+// // Reactivate Staff
+// app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
+//     const { staffEmail } = req.body;
+//     try {
+//         await db.query('UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1', [staffEmail.trim().toLowerCase()]);
+//         res.json({ message: "Reactivated" });
+//     } catch (err) { res.status(500).json({ error: "Reactivation failed" }); }
+// });
+
+// // --- 6. LOAN & USER ROUTES ---
+
+// // Submit Loan (Updated with Dropdown logic & Limits)
+// app.post('/api/v1/loans', authenticateToken, async (req, res) => {
+//     const tokenEmail = req.user.email.trim().toLowerCase();
+//     const loan = req.body;
+//     const uniqueId = `LOAN-${Date.now()}`;
+
+//     // --- SERVER SIDE VALIDATION ---
+//     const requestedAmount = parseFloat(loan.loanAmount || 0);
+//     const selectedType = loan.loanType || 'Private';
+//     const limit = LOAN_LIMITS[selectedType] || 250000;
+
+//     if (requestedAmount > limit) {
+//         return res.status(400).json({ 
+//             error: `Validation Error: Maximum amount for ${selectedType} loans is ₦${limit.toLocaleString()}` 
+//         });
+//     }
+
+//     try {
+//         const query = `
+//             INSERT INTO loans (
+//                 "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
+//                 "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName",
+//                 "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "signatureImageUrl",
+//                 "monthlyIncome", "loanType", "repaymentCycle", "gender"
+//             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
+        
+//         const values = [
+//             uniqueId, 
+//             loan.customerName, 
+//             loan.bvn, 
+//             loan.nin, 
+//             loan.phone, 
+//             requestedAmount, 
+//             requestedAmount, 
+//             'Pending', 
+//             tokenEmail, 
+//             new Date().toISOString().split('T')[0], 
+//             loan.bankName, 
+//             loan.accountNumber, 
+//             loan.employerName || 'N/A', 
+//             loan.ninImageUrl, 
+//             loan.idImageUrl, 
+//             loan.passportImageUrl, 
+//             loan.utilityBillUrl, 
+//             loan.signatureImageUrl,
+//             loan.monthlyIncome,
+//             loan.loanType,
+//             loan.repaymentCycle,
+//             loan.gender
+//         ];
+
+//         await db.query(query, values);
+//         res.status(201).json({ message: "Loan Submitted" });
+//     } catch (err) { 
+//         res.status(500).json({ error: err.message }); 
 //     }
 // });
 
-// // --- 5. SECURE DATA ROUTES ---
+// // Get personal loans
+// app.get('/api/v1/loans', authenticateToken, async (req, res) => {
+//     try {
+//         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
+//         res.json(result.rows);
+//     } catch (err) { res.status(500).json({ error: "Database error." }); }
+// });
 
-// const managerRoutes = require('./routes/managerRoutes');
-// app.use('/api/v1/manager', managerRoutes);
-
+// // Sync User Profile
 // app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 //     try {
 //         const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
 //         res.json(result.rows[0]);
-//     } catch (err) {
-//         res.status(500).json({ error: "Auth sync failed" });
-//     }
+//     } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 // });
 
-// // LOAN SUBMISSION (Final Sync with Supabase Schema)
-// // LOAN SUBMISSION (Generates unique ID to fix NULL constraint error)
-// app.post('/api/v1/loans', authenticateToken, async (req, res) => {
-//     // 1. Get the email from the token
-//     const tokenEmail = req.user.email.trim().toLowerCase();
-    
-//     try {
-//         // 2. Fetch the EXACT user record to ensure we match the Foreign Key exactly
-//         const staffCheck = await db.query(
-//             'SELECT email FROM staff_users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', 
-//             [tokenEmail]
-//         );
-        
-//         if (staffCheck.rows.length === 0) {
-//             console.error(`[AUTH ERROR] ${tokenEmail} not found in staff_users table.`);
-//             return res.status(400).json({ error: "Your staff account is not fully registered in the staff_users table." });
-//         }
-
-//         // This is the email EXACTLY as it is stored in the database
-//         const verifiedDbEmail = staffCheck.rows[0].email;
-//         console.log(`[DEBUG] Attempting insert for verified staff: ${verifiedDbEmail}`);
-
-//         const loan = req.body;
-//         const uniqueLoanId = `LOAN-${Date.now()}`;
-
-//         // 3. The Insert Query
-//         // We use double quotes for camelCase columns and cast $8 (email) to text
-//         const query = `
-//             INSERT INTO loans (
-//                 "id", 
-//                 "customerName", 
-//                 "bvn", 
-//                 "nin", 
-//                 "phone", 
-//                 "loanAmount", 
-//                 "amount", 
-//                 "status", 
-//                 "createdByEmail", 
-//                 "submittedDate", 
-//                 "bankName", 
-//                 "accountNumber",
-//                 "employerName"
-//             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-//             RETURNING *`;
-
-//         const values = [
-//             uniqueLoanId,            // $1
-//             loan.customerName,       // $2
-//             loan.bvn,                // $3
-//             loan.nin,                // $4
-//             loan.phone,              // $5
-//             loan.loanAmount || 0,    // $6
-//             loan.loanAmount || 0,    // $7 (Mapping to 'amount' column)
-//             loan.status || 'Pending',// $8
-//             verifiedDbEmail,         // $9 (The FK link)
-//             new Date().toISOString().split('T')[0], // $10
-//             loan.bankName,           // $11
-//             loan.accountNumber,       // $12
-//             loan.employerName || 'N/A' //$13 Now sending the employer name!
-//         ];
-
-//         const result = await db.query(query, values);
-//         console.log(`✅ Success! Loan ${uniqueLoanId} created.`);
-//         res.status(201).json(result.rows[0]);
-
-//     } catch (err) {
-//         console.error("❌ DATABASE INSERT ERROR:", err.message);
-//         // If it's STILL a FK error, it means the column 'createdByEmail' 
-//         // in 'loans' isn't actually linked to the 'email' column in 'staff_users'
-//         res.status(500).json({ error: err.message });
-//     }
-// });
-
-// app.get('/api/v1/loans', authenticateToken, async (req, res) => {
-//     const email = req.user.email.trim().toLowerCase(); 
-//     try {
-//         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = LOWER(TRIM($1))', [email]);
-//         res.json(result.rows);
-//     } catch (err) {
-//         res.status(500).json({ error: "Database error." });
-//     }
-// });
-
-// // ADMIN/MANAGER REACTIVATE (Clears locks and resets attempts)
-// app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
-//     const { staffEmail } = req.body;
-//     const adminRole = req.user.role?.toLowerCase();
-
-//     // Verify if the person making the request has permission
-//     if (adminRole !== 'admin' && adminRole !== 'super admin' && adminRole !== 'manager') {
-//         return res.status(403).json({ error: "Unauthorized: Only Admins or Managers can reactivate accounts." });
-//     }
-
-//     if (!staffEmail) {
-//         return res.status(400).json({ error: "Staff email is required for reactivation." });
-//     }
-
-//     try {
-//         const cleanEmail = staffEmail.trim().toLowerCase();
-        
-//         // Update the user: Reset failed attempts to 0 and set is_active to true
-//         const query = `
-//             UPDATE staff_users 
-//             SET is_active = true, failed_attempts = 0 
-//             WHERE LOWER(TRIM(email)) = $1
-//             RETURNING full_name, email`;
-
-//         const result = await db.query(query, [cleanEmail]);
-
-//         if (result.rowCount === 0) {
-//             return res.status(404).json({ error: "Staff user not found in database." });
-//         }
-
-//         console.log(`[ADMIN] Account reactivated for: ${result.rows[0].full_name} (${result.rows[0].email})`);
-        
-//         res.status(200).json({ 
-//             message: `Account for ${result.rows[0].full_name} has been successfully reactivated.`,
-//             user: result.rows[0]
-//         });
-//     } catch (error) {
-//         console.error("Reactivation Error:", error.message);
-//         res.status(500).json({ error: "Server error during reactivation." });
-//     }
-// });
-
-// app.listen(PORT, '0.0.0.0', () => {
-//     console.log(`🚀 Server live on Port ${PORT}`);
-// });
+// app.get('/', (req, res) => res.send("🚀 TrustMicro API Live & Full"));
+// app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Port ${PORT}`));
