@@ -92,16 +92,19 @@ export default function Dashboard() {
 
 // We wrap the logic in a useEffect that listens to the 'token'
   useEffect(() => {
-    // 1. Check if token exists and isn't just an empty string/null
-    if (token && token.trim() !== "") {
-      console.log("Token detected, fetching dashboard data...");
-      fetchAllLoans();
-    } else {
-      // 2. While the token is loading from AsyncStorage, we stay quiet
-      console.log("Waiting for user session to initialize...");
-    }
-  }, [token, fetchAllLoans]);
+    const syncDashboard = async () => {
+      // Only proceed if token AND user email (or another identifier) exist
+      if (token && token.length > 10) { 
+        try {
+          await fetchAllLoans();
+        } catch (err) {
+          console.log("LOG: Dashboard sync failed.");
+        }
+      }
+    };
 
+    syncDashboard();
+  }, [token]); // Triggers as soon as token is loaded from storage
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
     .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);

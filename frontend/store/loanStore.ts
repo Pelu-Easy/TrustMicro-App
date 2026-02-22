@@ -72,6 +72,12 @@ export const useLoanStore = create<LoanState>()(
       setLoans: (newLoans) => set({ loans: newLoans }),
 
       fetchLoans: async (email, token) => {
+        // Prevent API call if parameters are missing to avoid 403/401 errors
+        if (!email || !token) {
+          console.log("Fetch postponed: Missing email or token");
+          return;
+        }
+
         try {
           const response = await axios.get(`${API_URL}/loans?email=${email.toLowerCase().trim()}`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -80,11 +86,9 @@ export const useLoanStore = create<LoanState>()(
           const serverLoans = response.data;
 
           // FIX: Preserve local drafts when fetching from server
-          // We filter our current local state for 'Draft' status
           const localDrafts = get().loans.filter(l => l.status === 'Draft');
           
           // Merge local drafts with server data, avoiding duplicates
-          // We use the server version if a loan exists in both (unlikely for drafts)
           const mergedLoans = [...localDrafts];
           
           serverLoans.forEach((sLoan: Loan) => {
@@ -98,8 +102,8 @@ export const useLoanStore = create<LoanState>()(
           });
 
           set({ loans: mergedLoans });
-        } catch (error) {
-          console.error("Fetch failed", error);
+        } catch (error: any) {
+          console.error("Fetch failed:", error.response?.status === 403 ? "Forbidden (403)" : error.message);
         }
       },
 
@@ -127,10 +131,13 @@ export const useLoanStore = create<LoanState>()(
             }
         });
 
-        // 2. Sync with Backend (Only for non-drafts or if your API supports draft storage)
+        // 2. Sync with Backend
         if (ownedLoan.status !== 'Draft') {
           try {
-            await axios.post(`${API_URL}/loans`, ownedLoan);
+            // Using axios directly here to match existing pattern
+            await axios.post(`${API_URL}/loans`, ownedLoan, {
+              headers: { Authorization: `Bearer ${userData.token}` }
+            });
             console.log("Loan successfully synced.");
           } catch (error: any) {
             console.log("Cloud Sync Failed:", error.response?.data?.message || error.message);
@@ -150,13 +157,11 @@ export const useLoanStore = create<LoanState>()(
           staffProfile: { ...state.staffProfile, monthlyTarget: amount },
         })),
 
-      // NOTE: Be careful calling this on logout if you want drafts to stay on the device disk
       clearAllData: () => set({ loans: [] }),
     }),
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // Only persist the loans array and target, avoid persisting transient flags if added later
     }
   )
 );
