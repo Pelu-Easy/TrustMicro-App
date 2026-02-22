@@ -11,7 +11,13 @@ const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "
 export default function LoanDetails() {
   const router = useRouter();
   const { role, isSupervisor, token } = useUserData();
-  const { id, customerName, amount, loanType, staffName, ninImage, idImage } = useLocalSearchParams();
+  
+  // --- UPDATED PARAMS TO MATCH DATABASE & FORM ---
+  const { 
+    id, customerName, amount, loanType, staffName, 
+    phone, bankName, accountNumber,
+    ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl 
+  } = useLocalSearchParams();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
@@ -20,7 +26,7 @@ export default function LoanDetails() {
   // --- ROLE PROTECTION LOGIC ---
   const userRole = (role || '').toLowerCase();
   const actsAsManagement = isSupervisor === true || 
-                           ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
+                            ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
 
   const openZoom = (uri: string) => {
     setSelectedImage(uri);
@@ -62,6 +68,20 @@ export default function LoanDetails() {
     );
   };
 
+  // Helper to render Document Cards
+  const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => (
+    <View style={styles.docCard}>
+      <Text style={styles.docLabel}>{label}</Text>
+      {uri ? (
+        <TouchableOpacity onPress={() => openZoom(uri as string)}>
+          <Image source={{ uri: uri as string }} style={styles.docImage} resizeMode="cover" />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>{placeholder}</Text></View>
+      )}
+    </View>
+  );
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -78,47 +98,53 @@ export default function LoanDetails() {
           <View style={styles.card}>
             <Text style={styles.label}>CUSTOMER NAME</Text>
             <Text style={styles.value}>{customerName}</Text>
+            
+            <View style={styles.row}>
+              <View>
+                <Text style={styles.label}>PHONE NUMBER</Text>
+                <Text style={styles.value}>{phone || "N/A"}</Text>
+              </View>
+              <View>
+                <Text style={styles.label}>LOAN TYPE</Text>
+                <Text style={styles.value}>{loanType}</Text>
+              </View>
+            </View>
+
             <View style={styles.divider} />
+            
             <View style={styles.row}>
               <View>
                 <Text style={styles.label}>LOAN AMOUNT</Text>
                 <Text style={styles.amountText}>₦{Number(amount || 0).toLocaleString()}</Text>
               </View>
               <View>
-                <Text style={styles.label}>TYPE</Text>
-                <Text style={styles.value}>{loanType}</Text>
+                <Text style={styles.label}>ACCOUNT NUMBER</Text>
+                <Text style={styles.value}>{accountNumber || "N/A"}</Text>
               </View>
             </View>
+
             <View style={styles.divider} />
-            <Text style={styles.label}>SUBMITTED BY</Text>
-            <Text style={styles.value}>{staffName || "Field Officer"}</Text>
+            
+            <View style={styles.row}>
+              <View>
+                <Text style={styles.label}>BANK NAME</Text>
+                <Text style={styles.value}>{bankName || "N/A"}</Text>
+              </View>
+              <View>
+                <Text style={styles.label}>SUBMITTED BY</Text>
+                <Text style={styles.value}>{staffName || "Field Officer"}</Text>
+              </View>
+            </View>
           </View>
 
           <Text style={styles.sectionTitle}>Verification Documents</Text>
           <Text style={styles.helperText}>Tap image to view full screen</Text>
           
           {/* Documents Section */}
-          <View style={styles.docCard}>
-            <Text style={styles.docLabel}>National Identity Number (NIN)</Text>
-            {ninImage ? (
-              <TouchableOpacity onPress={() => openZoom(ninImage as string)}>
-                <Image source={{ uri: ninImage as string }} style={styles.docImage} resizeMode="cover" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>No NIN Image Uploaded</Text></View>
-            )}
-          </View>
-
-          <View style={styles.docCard}>
-            <Text style={styles.docLabel}>Government Issued ID</Text>
-            {idImage ? (
-              <TouchableOpacity onPress={() => openZoom(idImage as string)}>
-                <Image source={{ uri: idImage as string }} style={styles.docImage} resizeMode="cover" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>No ID Image Uploaded</Text></View>
-            )}
-          </View>
+          <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport Uploaded" />
+          <DocumentCard label="National Identity (NIN)" uri={ninImageUrl} placeholder="No NIN Image Uploaded" />
+          <DocumentCard label="Government Issued ID" uri={idImageUrl} placeholder="No ID Image Uploaded" />
+          <DocumentCard label="Utility Bill" uri={utilityBillUrl} placeholder="No Utility Bill Uploaded" />
 
           {/* Conditional Action Buttons: Only visible to Management */}
           {actsAsManagement ? (

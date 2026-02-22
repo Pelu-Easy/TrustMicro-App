@@ -27,8 +27,14 @@ interface LoanItem {
   status: string;
   staffName?: string;
   branchName?: string;
+  // --- ADDED MISSING FIELDS ---
+  phone?: string;
+  bankName?: string;
+  accountNumber?: string;
   ninImageUrl?: string; 
   idImageUrl?: string;   
+  passportImageUrl?: string;
+  utilityBillUrl?: string;
 }
 
 interface StaffItem {
@@ -122,7 +128,6 @@ export default function ManagerDashboard() {
     ]);
   };
 
-  // NEW: Reactivate/Deactivate Logic integrated with Security Lockout reset
   const handleStaffToggle = async (item: StaffItem) => {
     if (!canManage) return;
 
@@ -133,13 +138,11 @@ export default function ManagerDashboard() {
         { text: "Yes", onPress: async () => {
             try {
                 if (item.is_active) {
-                    // Standard Deactivation
                     await axios.patch(`${API_URL}/manager/deactivate-staff/${item.id}`, 
                         { isActive: false },
                         { headers: { Authorization: `Bearer ${token}` } }
                     );
                 } else {
-                    // SECURE REACTIVATION (Resets failed attempts to 0)
                     await axios.post(`${API_URL}/manager/reactivate-staff`, 
                         { staffEmail: item.email },
                         { headers: { Authorization: `Bearer ${token}` } }
@@ -218,17 +221,23 @@ export default function ManagerDashboard() {
                     params: { 
                       id: item.id, 
                       customerName: item.customerName,
-                      amount: item.amount,
+                      amount: item.amount || item.loanAmount,
                       loanType: item.loanType,
                       staffName: item.staffName || 'Field Officer',
+                      // --- PASSING NEW FIELDS TO DETAILS ---
+                      phone: item.phone || '',
+                      bankName: item.bankName || '',
+                      accountNumber: item.accountNumber || '',
                       ninImageUrl: item.ninImageUrl || '', 
-                      idImageUrl: item.idImageUrl || '' 
+                      idImageUrl: item.idImageUrl || '',
+                      passportImageUrl: item.passportImageUrl || '',
+                      utilityBillUrl: item.utilityBillUrl || ''
                     }
                   })}
                 >
                   <Text style={styles.name}>{item.customerName}</Text>
                   <Text style={styles.details}>
-                      {typeof item.amount === 'string' ? item.amount : `₦${Number(item.amount || 0).toLocaleString()}`} • {item.loanType}
+                      {typeof item.amount === 'string' ? item.amount : `₦${Number(item.amount || item.loanAmount || 0).toLocaleString()}`} • {item.loanType}
                   </Text>
                   
                   <View style={styles.staffTag}>
@@ -239,7 +248,6 @@ export default function ManagerDashboard() {
                   </View>
                 </TouchableOpacity>
 
-                {/* MODIFIED: Hide Approve/Reject buttons from non-management */}
                 {canManage && (
                   <View style={styles.actions}>
                     <TouchableOpacity onPress={() => handleDecision(item.id, 'Approved')}>
@@ -261,7 +269,6 @@ export default function ManagerDashboard() {
                 <Text style={styles.officer}>{item.role} • {item.email}</Text>
               </View>
               
-              {/* MODIFIED: Hide Staff Toggle/Delete from non-management */}
               {canManage && (
                 <View style={styles.actions}>
                   <TouchableOpacity onPress={() => handleStaffToggle(item)}>
