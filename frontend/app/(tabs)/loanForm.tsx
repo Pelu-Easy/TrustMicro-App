@@ -180,7 +180,7 @@ export default function CompleteLoanForm() {
     console.log("Attempting Submission to:", api.defaults.baseURL + '/api/v1/loans');
 
     try {
-      const response = await api.post('/api/v1/loans', payload, {
+      const response = await api.post('/loans', payload, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
