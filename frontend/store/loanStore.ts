@@ -1,11 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// @ts-ignore
-import axios from 'axios/dist/browser/axios.cjs';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import useUserData from './userSignUp'; // Imported to pull branch/name data
-
-const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
+import api from '../services/api'; // Use the centralized API instance
+import useUserData from './userSignUp';
 
 export interface Loan {
   id: string;
@@ -72,23 +69,18 @@ export const useLoanStore = create<LoanState>()(
       setLoans: (newLoans) => set({ loans: newLoans }),
 
       fetchLoans: async (email, token) => {
-        // Prevent API call if parameters are missing to avoid 403/401 errors
         if (!email || !token) {
           console.log("Fetch postponed: Missing email or token");
           return;
         }
 
         try {
-          const response = await axios.get(`${API_URL}/loans?email=${email.toLowerCase().trim()}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          // Changed to use the 'api' instance
+          // baseURL already includes /api/v1, so we just use /loans
+          const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           
           const serverLoans = response.data;
-
-          // FIX: Preserve local drafts when fetching from server
           const localDrafts = get().loans.filter(l => l.status === 'Draft');
-          
-          // Merge local drafts with server data, avoiding duplicates
           const mergedLoans = [...localDrafts];
           
           serverLoans.forEach((sLoan: Loan) => {
@@ -96,20 +88,20 @@ export const useLoanStore = create<LoanState>()(
             if (index === -1) {
               mergedLoans.push(sLoan);
             } else if (mergedLoans[index].status !== 'Draft') {
-              // Only overwrite if the local version isn't a draft
               mergedLoans[index] = sLoan;
             }
           });
 
           set({ loans: mergedLoans });
         } catch (error: any) {
-          console.error("Fetch failed:", error.response?.status === 403 ? "Forbidden (403)" : error.message);
+          console.error("Fetch failed:", error.message);
         }
       },
 
       addLoan: async (loan, currentUserEmail) => {
         const userData = useUserData.getState();
         const sanitizedEmail = currentUserEmail.toLowerCase().trim();
+        const token = userData.token;
 
         const ownedLoan: Loan = { 
           ...loan, 
@@ -133,14 +125,17 @@ export const useLoanStore = create<LoanState>()(
 
         // 2. Sync with Backend
         if (ownedLoan.status !== 'Draft') {
+          if (!token) {
+            console.log("Cloud Sync Aborted: No valid token found.");
+            return;
+          }
+
           try {
-            // Using axios directly here to match existing pattern
-            await axios.post(`${API_URL}/loans`, ownedLoan, {
-              headers: { Authorization: `Bearer ${userData.token}` }
-            });
+            // Use the 'api' instance. Interceptors handle the Auth Header automatically.
+            await api.post('/loans', ownedLoan);
             console.log("Loan successfully synced.");
           } catch (error: any) {
-            console.log("Cloud Sync Failed:", error.response?.data?.message || error.message);
+            console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
           }
         }
       },

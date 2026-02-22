@@ -13,7 +13,6 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import api from '../../services/api';
 
 // --- STORES ---
 import { useLoanStore } from '../../store/loanStore';
@@ -34,9 +33,9 @@ export default function Dashboard() {
 
   // STORES
   const loans = useLoanStore((state) => state.loans);
-  const setLoans = useLoanStore((state) => state.setLoans);
+  const fetchLoans = useLoanStore((state) => state.fetchLoans); // Use the store method
   const { disbursementTarget } = useStaffStore();
-  const { funame, token, branch, isSupervisor, role, setToken, logout } = useUserData(); 
+  const { funame, token, email, branch, isSupervisor, role, setToken, logout } = useUserData(); 
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,7 +43,6 @@ export default function Dashboard() {
   // --- ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
   
-  // Standardized check for management
   const isManagement = 
     isSupervisor === true || 
     userRole === 'manager' || 
@@ -52,7 +50,6 @@ export default function Dashboard() {
     userRole === 'admin' ||
     userRole === 'super admin';
   
-  // Logic to hide loan onboarding for management
   const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
   // --- LOGOUT LOGIC ---
@@ -75,36 +72,30 @@ export default function Dashboard() {
     );
   };
 
+  // Improved Fetch Logic using the Store's specialized method
   const fetchAllLoans = useCallback(async () => {
-    if (!token) return;
+    if (!token || !email) return;
     try {
-      const response = await api.get('/loans');
-      if (response.data) {
-        setLoans(response.data);
-      }
+      await fetchLoans(email, token);
     } catch (error: any) {
       console.log("Dashboard sync failed.");
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [token, setLoans]);
+  }, [token, email, fetchLoans]);
 
-// We wrap the logic in a useEffect that listens to the 'token'
+  // Sync effect: triggers when token is available
   useEffect(() => {
-    const syncDashboard = async () => {
-      // Only proceed if token AND user email (or another identifier) exist
-      if (token && token.length > 10) { 
-        try {
-          await fetchAllLoans();
-        } catch (err) {
-          console.log("LOG: Dashboard sync failed.");
-        }
-      }
-    };
+    if (token && token.length > 10 && email) {
+      fetchAllLoans();
+    } else {
+      // If no token after initial load, stop spinner
+      const timeout = setTimeout(() => setIsLoading(false), 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [token, email, fetchAllLoans]);
 
-    syncDashboard();
-  }, [token]); // Triggers as soon as token is loaded from storage
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
     .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
@@ -162,7 +153,6 @@ export default function Dashboard() {
         
         <View style={{ marginBottom: 10 }}>
           <View style={styles.actionGrid}>
-            {/* HIDDEN FOR SUPERVISORS/MANAGERS: Only shows for field staff */}
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
