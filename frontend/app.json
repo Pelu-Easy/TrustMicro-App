@@ -30,6 +30,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9"
+      }
+    },
+    "owner": "peluisrael"
   }
 }
