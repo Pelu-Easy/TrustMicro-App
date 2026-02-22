@@ -1,3 +1,4 @@
+import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -106,6 +107,23 @@ export default function Dashboard() {
     setRefreshing(true);
     fetchAllLoans();
   };
+
+  const [activeTab, setActiveTab] = useState<'loans' | 'team'>('loans');
+  const [team, setTeam] = useState<any[]>([]);
+
+  const fetchTeam = async () => {
+  try {
+    const response = await api.get('/manager/my-team');
+    setTeam(response.data);
+  } catch (error) {
+    console.error("Error fetching team:", error);
+  }
+};
+
+// Fetch team only when the "Team" tab is clicked
+useEffect(() => {
+  if (activeTab === 'team') fetchTeam();
+}, [activeTab]);
 
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>

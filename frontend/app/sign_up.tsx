@@ -49,14 +49,13 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        // Updated to use the full path to match the backend structure
-        const response = await api.get('/api/v1/manager/supervisors');
+        // Calling the public endpoint established in server.js
+        const response = await api.get('/manager/supervisors');
         if (response.data) {
           setSupervisors(response.data);
         }
       } catch (error) { 
-        // Log error but don't break the UI
-        console.log("Supervisor load failed: Endpoint might be protected or missing", error); 
+        console.log("Supervisor load failed:", error); 
       }
     };
     fetchSupervisors();
@@ -83,6 +82,7 @@ export default function SignUpScreen() {
     if (!validateEmail(formData.email)) currentErrors.email = "Enter a valid corporate email";
     if (formData.phone.length !== 11) currentErrors.phone = "Phone must be 11 digits";
     if (!formData.department) currentErrors.department = "Please select a department";
+    if (!formData.isSupervisor && !formData.supervisor) currentErrors.supervisor = "Please select a supervisor";
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
     if (formData.password !== formData.confirmPassword) currentErrors.confirmPassword = "Passwords do not match";
 
@@ -93,8 +93,8 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      // 1. Register Account
-      await api.post('/api/v1/auth/signup', {
+      // Sending payload to backend. supervisor_name is mapped to the selected supervisor's full name.
+      await api.post('/auth/signup', {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone_no: formData.phone.trim(),
@@ -102,14 +102,14 @@ export default function SignUpScreen() {
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
-        supervisor_name: formData.supervisor,
+        supervisor_name: formData.supervisor, 
         role: formData.isSupervisor ? 'Manager' : 'Officer',
         is_loan_officer: formData.isLoanOfficer,
         is_active: true 
       });
 
       setIsLoading(false);
-      Alert.alert("Success", "Account created!", [{ text: "Login", onPress: () => router.replace('/login') }]);
+      Alert.alert("Success", "Account created successfully!", [{ text: "Login", onPress: () => router.replace('/login') }]);
     } catch (error: any) {
       setIsLoading(false);
       const serverError = error.response?.data?.error || "Registration failed. Ensure you are connected to the server.";
@@ -188,7 +188,10 @@ export default function SignUpScreen() {
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text style={styles.label}>Supervisor</Text>
-                <TouchableOpacity style={styles.pickerTrigger} onPress={() => setShowSupModal(true)}>
+                <TouchableOpacity 
+                    style={[styles.pickerTrigger, errors.supervisor && styles.inputError]} 
+                    onPress={() => setShowSupModal(true)}
+                >
                   <Text style={[styles.triggerText, !formData.supervisor && { color: '#94A3B8' }]} numberOfLines={1}>
                     {formData.supervisor || "Select..."}
                   </Text>
