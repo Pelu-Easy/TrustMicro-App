@@ -126,6 +126,8 @@ useEffect(() => {
           utilityUploaded: existingLoan.ninHardCopy || '',
           statementUploaded: (existingLoan as any).bankStatement || '',
           passportUploaded: existingLoan.passportPhoto || '',
+          workIdUploaded: (existingLoan as any).workIdUrl || '',
+          signatureUploaded: (existingLoan as any).signatureUrl || '',
         }));
       }
     } else {

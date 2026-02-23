@@ -69,19 +69,24 @@ export default function LoanDetails() {
     );
   };
 
-  // Helper to render Document Cards
-  const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => (
-    <View style={styles.docCard}>
-      <Text style={styles.docLabel}>{label}</Text>
-      {uri ? (
-        <TouchableOpacity onPress={() => openZoom(uri as string)}>
-          <Image source={{ uri: uri as string }} style={styles.docImage} resizeMode="cover" />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>{placeholder}</Text></View>
-      )}
-    </View>
-  );
+  // Helper to render Document Cards with URI decoding for safety
+  const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => {
+    // Decode URI in case it was encoded during navigation
+    const cleanUri = typeof uri === 'string' ? decodeURIComponent(uri) : uri;
+
+    return (
+      <View style={styles.docCard}>
+        <Text style={styles.docLabel}>{label}</Text>
+        {cleanUri ? (
+          <TouchableOpacity onPress={() => openZoom(cleanUri as string)}>
+            <Image source={{ uri: cleanUri as string }} style={styles.docImage} resizeMode="cover" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>{placeholder}</Text></View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -191,7 +196,7 @@ export default function LoanDetails() {
             <Ionicons name="close-circle" size={40} color="#fff" />
           </TouchableOpacity>
           {selectedImage && (
-            <Image source={{ uri: selectedImage }} style={styles.fullImage} resizeMode="contain" />
+            <Image source={{ uri: decodeURIComponent(selectedImage) }} style={styles.fullImage} resizeMode="contain" />
           )}
         </View>
       </Modal>
