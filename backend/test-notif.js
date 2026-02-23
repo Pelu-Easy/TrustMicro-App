@@ -3,7 +3,7 @@ const { Expo } = require('expo-server-sdk');
 let expo = new Expo();
 
 // PASTE YOUR TOKEN HERE (Get this from your terminal/console log when the app starts)
-const PUSH_TOKEN = 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]';
+const PUSH_TOKEN = 'ExponentPushToken[Gzly69HGY-6zeqpH0kv8u0]';
 
 const sendTestNotification = async () => {
     if (!Expo.isExpoPushToken(PUSH_TOKEN)) {
