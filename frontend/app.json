@@ -12,12 +12,13 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {
+  "android": {
+      "package": "com.peluisrael.trustmicro",
+      "googleServicesFile": "./google-services.json", 
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "package": "com.peluisrael.trustmicro"
+      }
     },
     "web": {
       "bundler": "metro",
