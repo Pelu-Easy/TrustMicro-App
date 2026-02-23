@@ -155,7 +155,7 @@ useEffect(() => {
     finally { setIsVerifying(false); }
   };
 
-  const handleFinalSubmit = async () => {
+const handleFinalSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
@@ -169,7 +169,6 @@ useEffect(() => {
       accountNumber: formData.accountNumber,
       employerName: formData.employerName,
       jobTitle: formData.jobTitle,
-      // --- MAPPING TO DATABASE EXPECTED FIELDS ---
       ninImageUrl: formData.idUploaded, 
       idImageUrl: formData.idUploaded,
       passportImageUrl: formData.passportUploaded,
@@ -190,11 +189,29 @@ useEffect(() => {
       const response = await api.post('/loans', payload);
 
       if (response.status === 201 || response.status === 200) {
+        
+        // --- SAFE STATE RESET ---
+        // This clears the local screen so the "Create Loan" button 
+        // opens a fresh form next time.
+        setFormData({
+          customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
+          loanAmount: '', bankName: '', accountNumber: '',
+          employerName: '', jobTitle: '', nokName: '', nokPhone: '',
+          idUploaded: '', utilityUploaded: '', passportUploaded: '', 
+          workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
+          monthlyIncome: '₦50,000.00 - ₦100,000.00',
+          loanType: 'Federal', repaymentCycle: 'Monthly',
+          gender: '', tenure: '12 Months'
+        });
+
+        // This moves the user away from the form
         Alert.alert("Success", "Loan application submitted successfully!", [
           { text: "OK", onPress: () => router.replace('/(tabs)') }
         ]);
       }
     } catch (error: any) {
+      // If there is an error (e.g., no internet), the data 
+      // stays in the form so the officer doesn't have to re-type it.
       const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
       Alert.alert("Submission Failed", errorMsg);
     } finally {

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications'; // New import for foreground handling
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -11,19 +11,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  Vibration // Added for haptic feedback
-  ,
-
-
-
-
-
-
-
-
-
-
-
+  Vibration,
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,13 +20,11 @@ import { registerForPushNotificationsAsync } from '../../services/notifications'
 import useUserData from '../../store/userSignUp';
 
 // Configure how the app behaves when a notification arrives while open
-// Configure how the app behaves when a notification arrives while open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    // Add these two lines to satisfy the newer Expo types:
     shouldShowBanner: true, 
     shouldShowList: true,
   }),
@@ -61,6 +47,10 @@ interface LoanItem {
   idImageUrl?: string;   
   passportImageUrl?: string;
   utilityBillUrl?: string;
+  // Added missing document fields
+  workIdUrl?: string;
+  statementUrl?: string;
+  signatureUrl?: string;
 }
 
 interface StaffItem {
@@ -113,8 +103,6 @@ export default function ManagerDashboard() {
     }
   }, [token, canManage]);
 
-  // Handle Foreground Notifications (Sound/Vibration/Refresh)
-// Handle Foreground Notifications (Sound/Vibration/Refresh)
   useEffect(() => {
     if (!canManage) return;
 
@@ -130,11 +118,8 @@ export default function ManagerDashboard() {
     };
     setupNotifications();
 
-    // FIXED: Corrected the vibration call and typed the notification parameter
     const subscription = Notifications.addNotificationReceivedListener((notification: Notifications.Notification) => {
-        // Trigger Vibration pattern: [Wait, Vibrate, Wait, Vibrate]
         Vibration.vibrate([0, 500, 100, 500]);
-        // Refresh the list automatically
         fetchData();
     });
 
@@ -278,7 +263,11 @@ export default function ManagerDashboard() {
                       ninImageUrl: item.ninImageUrl || '', 
                       idImageUrl: item.idImageUrl || '',
                       passportImageUrl: item.passportImageUrl || '',
-                      utilityBillUrl: item.utilityBillUrl || ''
+                      utilityBillUrl: item.utilityBillUrl || '',
+                      // FIXED: Added missing params for the detail view
+                      workIdUrl: item.workIdUrl || '',
+                      statementUrl: item.statementUrl || '',
+                      signatureUrl: item.signatureUrl || ''
                     }
                   })}
                 >
