@@ -13,25 +13,19 @@ const api = axios.create({
   timeout: 15000, 
 });
 
-// --- REQUEST INTERCEPTOR ---
+// --- 1. REQUEST INTERCEPTOR (Attaches the Token) ---
 api.interceptors.request.use(
-  (config) => {
-    const token = useUserData.getState().token; 
-    if (token && token.trim() !== "") {
+  async (config) => {
+    const { token } = useUserData.getState();
+    if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
-    // Prevent double versioning
-    if (config.url?.startsWith('/api/v1')) {
-       config.url = config.url.replace('/api/v1', '');
-    }
-    
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// --- RESPONSE INTERCEPTOR ---
+// --- 2. RESPONSE INTERCEPTOR (Handles Errors & Logging) ---
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -39,24 +33,29 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
 
-    console.group('🚨 TrustMicro API Error');
-    console.log('URL:', originalRequest?.url);
-    console.log('Status:', status);
-    console.groupEnd();
+    // ✅ FIX: Only log "🚨 TrustMicro API Error" if it's NOT a 401 or 403
+    if (status !== 401 && status !== 403) {
+      console.group('🚨 TrustMicro API Error');
+      console.log('URL:', originalRequest?.url);
+      console.log('Status:', status);
+      console.groupEnd();
+    }
 
     // HANDLE SESSION EXPIRY (401 or 403)
     if (status === 401 || status === 403) {
       // Logic: If it's a login attempt, DON'T show the popup. 
-      // Let the Login.tsx handle the "Invalid Password" or "Locked Out" message.
       if (!isAuthRequest) {
         const { logout } = useUserData.getState();
         logout(); 
 
-        Alert.alert(
-          "Session Expired", 
-          "Your security token is invalid or expired. Please login again to continue.",
-          [{ text: "OK" }]
-        );
+        // We also silence the Alert for 401s during the background check (/users/me)
+        if (originalRequest?.url !== '/users/me') {
+            Alert.alert(
+              "Session Expired", 
+              "Your security token is invalid or expired. Please login again.",
+              [{ text: "OK" }]
+            );
+        }
       }
       return Promise.reject(error);
     }
@@ -68,9 +67,10 @@ api.interceptors.response.use(
       errorMessage = "The server is taking too long to respond.";
     } else if (error.response) {
       if (status === 404) {
-        // Only alert 404 if it's NOT an auth request (prevents redundant popups)
         if (isAuthRequest) return Promise.reject(error);
         errorMessage = "Endpoint not found on server.";
+      } else if (status === 500) {
+        errorMessage = "Server error (500). Please contact Admin.";
       } else {
         errorMessage = error.response.data.error || "A server error occurred.";
       }

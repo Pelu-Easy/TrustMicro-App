@@ -49,7 +49,6 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        // Calling the public endpoint established in server.js
         const response = await api.get('/manager/supervisors');
         if (response.data) {
           setSupervisors(response.data);
@@ -80,7 +79,7 @@ export default function SignUpScreen() {
     let currentErrors: any = {};
     if (!formData.fullName.trim()) currentErrors.fullName = "Full name is required";
     if (!validateEmail(formData.email)) currentErrors.email = "Enter a valid corporate email";
-    if (formData.phone.length !== 11) currentErrors.phone = "Phone must be 11 digits";
+    if (formData.phone.trim().length !== 11) currentErrors.phone = "Phone must be 11 digits";
     if (!formData.department) currentErrors.department = "Please select a department";
     if (!formData.isSupervisor && !formData.supervisor) currentErrors.supervisor = "Please select a supervisor";
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
@@ -93,12 +92,12 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      // Sending payload to backend. supervisor_name is mapped to the selected supervisor's full name.
-      await api.post('/auth/signup', {
+      // Clean data before sending
+      const payload = {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone_no: formData.phone.trim(),
-        branch: formData.branch,
+        branch: formData.branch.trim(),
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
@@ -106,14 +105,21 @@ export default function SignUpScreen() {
         role: formData.isSupervisor ? 'Manager' : 'Officer',
         is_loan_officer: formData.isLoanOfficer,
         is_active: true 
-      });
+      };
+
+      const response = await api.post('/auth/signup', payload);
 
       setIsLoading(false);
-      Alert.alert("Success", "Account created successfully!", [{ text: "Login", onPress: () => router.replace('/login') }]);
+      Alert.alert(
+        "Success", 
+        response.data.message || "Account created successfully!", 
+        [{ text: "Login", onPress: () => router.replace('/login') }]
+      );
     } catch (error: any) {
       setIsLoading(false);
-      const serverError = error.response?.data?.error || "Registration failed. Ensure you are connected to the server.";
-      Alert.alert("Failed", serverError);
+      // The logic below captures the "Email already registered" message from the backend
+      const serverError = error.response?.data?.error || "Registration failed. Please try again.";
+      Alert.alert("Registration Issue", serverError);
     }
   };
 

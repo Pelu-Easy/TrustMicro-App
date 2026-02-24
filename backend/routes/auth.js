@@ -8,7 +8,6 @@ const { db } = require('../server');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key';
 
 // --- CHECK PHONE UNIQUE ROUTE ---
-// FIX: Added explicit handling to ensure it catches the phone parameter correctly
 router.get('/check-phone/:phone', async (req, res) => {
     try {
         const phone = req.params.phone ? req.params.phone.trim() : null;
@@ -21,7 +20,6 @@ router.get('/check-phone/:phone', async (req, res) => {
         const result = await db.query(query, [phone]);
 
         if (result.rows.length > 0) {
-            // We return the user data needed for auto-login verification
             return res.status(200).json({ 
                 exists: true, 
                 isActive: result.rows[0].is_active,
@@ -86,11 +84,21 @@ router.post('/signup', async (req, res) => {
     } = req.body;
 
     try {
-        // 1. Double check phone uniqueness
-        const checkQuery = "SELECT id FROM staff_users WHERE phone_no = $1";
-        const checkResult = await db.query(checkQuery, [phone_no.trim()]);
+        // 1. Double check phone AND email uniqueness
+        const sanitizedEmail = email.trim().toLowerCase();
+        const sanitizedPhone = phone_no.trim();
+
+        const checkQuery = "SELECT id, email, phone_no FROM staff_users WHERE email = $1 OR phone_no = $2";
+        const checkResult = await db.query(checkQuery, [sanitizedEmail, sanitizedPhone]);
+
         if (checkResult.rows.length > 0) {
-            return res.status(400).json({ error: "Phone number already registered" });
+            const existingUser = checkResult.rows[0];
+            if (existingUser.email === sanitizedEmail) {
+                return res.status(400).json({ error: "This email address is already registered." });
+            }
+            if (existingUser.phone_no === sanitizedPhone) {
+                return res.status(400).json({ error: "This phone number is already registered." });
+            }
         }
 
         // 2. Hash Password
@@ -108,8 +116,8 @@ router.post('/signup', async (req, res) => {
 
         const params = [
             full_name, 
-            email.trim().toLowerCase(), 
-            phone_no.trim(), 
+            sanitizedEmail, 
+            sanitizedPhone, 
             hashedPassword, 
             branch, 
             role || 'Officer', 
@@ -124,8 +132,12 @@ router.post('/signup', async (req, res) => {
         res.status(201).json({ id: result.rows[0].id, message: "Account created successfully" });
 
     } catch (error) {
+        // Handle specific Postgres unique constraint violations (if the check above somehow missed it)
+        if (error.code === '23505') {
+            return res.status(400).json({ error: "An account with these details already exists." });
+        }
         console.error("❌ SIGNUP ERROR:", error.message);
-        res.status(500).json({ error: error.message || "Server error during registration" });
+        res.status(500).json({ error: "Server error during registration. Please try again later." });
     }
 });
 
