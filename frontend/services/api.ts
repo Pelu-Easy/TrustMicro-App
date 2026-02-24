@@ -1,19 +1,22 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-// @ts-ignore - This forces Axios to use the XHR adapter compatible with React Native
+// @ts-ignore
+import { AxiosStatic } from 'axios';
+import axiosImport from 'axios/dist/browser/axios.cjs';
 import { Alert } from 'react-native';
 import useUserData from '../store/userSignUp';
 
+// Use the imported version as the Axios static instance
+const axios = axiosImport as AxiosStatic;
+
 export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
-// Create instance using the direct library reference to avoid Node.js dependencies
 const api = axios.create({
   baseURL: API_URL,
   timeout: 15000,
 });
 
-// --- 1. REQUEST INTERCEPTOR ---
+// --- 1. REQUEST INTERCEPTOR (Attaches the Token) ---
 api.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
+  async (config: any) => {
     const { token } = useUserData.getState();
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -23,10 +26,10 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// --- 2. RESPONSE INTERCEPTOR ---
+// --- 2. RESPONSE INTERCEPTOR (Handles Errors & Logging) ---
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<any>) => {
+  (error: any) => {
     const originalRequest = error.config;
     const status = error.response?.status;
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
@@ -42,6 +45,7 @@ api.interceptors.response.use(
       if (!isAuthRequest) {
         const { logout } = useUserData.getState();
         logout(); 
+
         if (originalRequest?.url !== '/users/me') {
           Alert.alert(
             "Session Expired", 
@@ -54,6 +58,7 @@ api.interceptors.response.use(
     }
 
     let errorMessage = "Network Error: Please check your internet connection.";
+    
     if (error.code === 'ECONNABORTED') {
       errorMessage = "The server is taking too long to respond.";
     } else if (error.response) {
