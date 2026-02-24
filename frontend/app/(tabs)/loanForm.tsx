@@ -59,14 +59,13 @@ export default function CompleteLoanForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentLoanId, setCurrentLoanId] = useState<string>('');
 
-  const { addLoan, loans: allLoans } = useLoanStore();
-  const { token, email: currentUserEmail, funame: staffFullName, branch: staffBranch } = useUserData();
+  const { loans: allLoans } = useLoanStore();
+  const { funame: staffFullName, branch: staffBranch } = useUserData();
 
   const [formData, setFormData] = useState({
     customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
     loanAmount: '', bankName: '', accountNumber: '',
     employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-    // --- UPDATED DOCUMENT STATE KEYS ---
     idUploaded: '', 
     utilityUploaded: '', 
     passportUploaded: '', 
@@ -105,7 +104,7 @@ export default function CompleteLoanForm() {
     return { valid: true, msg: "" };
   };
 
-useEffect(() => {
+  useEffect(() => {
     if (params.draftId) {
       const existingLoan = allLoans.find(l => l.id === params.draftId);
       if (existingLoan) {
@@ -116,16 +115,18 @@ useEffect(() => {
           bvn: existingLoan.bvn || '',
           nin: existingLoan.nin || '',
           phone: existingLoan.phone || '',
-          loanAmount: existingLoan.loanAmount || '',
+          loanAmount: existingLoan.loanAmount ? String(existingLoan.loanAmount) : '',
           bankName: existingLoan.bankName || '',
           accountNumber: existingLoan.accountNumber || '',
           loanType: existingLoan.loanType || 'Federal',
           gender: existingLoan.gender || '',
           dob: existingLoan.dob || '',
-          idUploaded: existingLoan.idCard || '',
-          utilityUploaded: existingLoan.ninHardCopy || '',
-          statementUploaded: (existingLoan as any).bankStatement || '',
-          passportUploaded: existingLoan.passportPhoto || '',
+          employerName: (existingLoan as any).employerName || '',
+          jobTitle: (existingLoan as any).jobTitle || '',
+          idUploaded: (existingLoan as any).idCard || (existingLoan as any).idImageUrl || '',
+          utilityUploaded: (existingLoan as any).ninHardCopy || (existingLoan as any).utilityBillUrl || '',
+          statementUploaded: (existingLoan as any).bankStatement || (existingLoan as any).statementUrl || '',
+          passportUploaded: (existingLoan as any).passportPhoto || (existingLoan as any).passportImageUrl || '',
           workIdUploaded: (existingLoan as any).workIdUrl || '',
           signatureUploaded: (existingLoan as any).signatureUrl || '',
         }));
@@ -133,8 +134,7 @@ useEffect(() => {
     } else {
       setCurrentLoanId(`loan_${Date.now()}`);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.draftId]);
+  }, [params.draftId, allLoans]);
 
   const handleVerifyIdentity = async () => {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
@@ -155,76 +155,69 @@ useEffect(() => {
     finally { setIsVerifying(false); }
   };
 
-const handleFinalSubmit = async () => {
-  if (isSubmitting) return;
-  setIsSubmitting(true);
+  const handleFinalSubmit = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-  const payload = {
-    customerName: formData.customerName,
-    bvn: formData.bvn,
-    nin: formData.nin,
-    phone: formData.phone,
-    loanAmount: formData.loanAmount,
-    bankName: formData.bankName,
-    accountNumber: formData.accountNumber,
-    employerName: formData.employerName,
-    jobTitle: formData.jobTitle,
-    ninImageUrl: formData.idUploaded, 
-    idImageUrl: formData.idUploaded,
-    passportImageUrl: formData.passportUploaded,
-    utilityBillUrl: formData.utilityUploaded,
-    workIdUrl: formData.workIdUploaded,
-    statementUrl: formData.statementUploaded,
-    signatureUrl: formData.signatureUploaded,
-    monthlyIncome: formData.monthlyIncome,
-    loanType: formData.loanType,
-    repaymentCycle: formData.repaymentCycle,
-    gender: formData.gender,
-    tenure: formData.tenure,
-    staffName: staffFullName || 'System',
-    branchName: staffBranch || 'Main'
-  };
+    const payload = {
+      id: currentLoanId,
+      customerName: formData.customerName,
+      bvn: formData.bvn,
+      nin: formData.nin,
+      phone: formData.phone,
+      loanAmount: formData.loanAmount,
+      bankName: formData.bankName,
+      accountNumber: formData.accountNumber,
+      employerName: formData.employerName,
+      jobTitle: formData.jobTitle,
+      ninImageUrl: formData.idUploaded, 
+      idImageUrl: formData.idUploaded,
+      passportImageUrl: formData.passportUploaded,
+      utilityBillUrl: formData.utilityUploaded,
+      workIdUrl: formData.workIdUploaded,
+      statementUrl: formData.statementUploaded,
+      signatureUrl: formData.signatureUploaded,
+      monthlyIncome: formData.monthlyIncome,
+      loanType: formData.loanType,
+      repaymentCycle: formData.repaymentCycle,
+      gender: formData.gender,
+      tenure: formData.tenure,
+      staffName: staffFullName || 'System',
+      branchName: staffBranch || 'Main'
+    };
 
-  try {
-    const response = await api.post('/loans', payload);
+    try {
+      const response = await api.post('/loans', payload);
 
-    if (response.status === 201 || response.status === 200) {
-      // We trigger the Alert first. The reset happens when they click "OK".
-      Alert.alert("Success", "Loan application submitted successfully!", [
-        { 
-          text: "OK", 
-          onPress: () => {
-            // 1. Reset the form data to initial empty strings
-            setFormData({
-              customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
-              loanAmount: '', bankName: '', accountNumber: '',
-              employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-              idUploaded: '', utilityUploaded: '', passportUploaded: '', 
-              workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
-              monthlyIncome: '₦50,000.00 - ₦100,000.00',
-              loanType: 'Federal', repaymentCycle: 'Monthly',
-              gender: '', tenure: '12 Months'
-            });
-
-            // 2. Reset the step back to the beginning
-            setStep(1);
-
-            // 3. Clear the current ID so it doesn't try to reload old data
-            setCurrentLoanId(`loan_${Date.now()}`);
-
-            // 4. Finally, navigate away
-            router.replace('/(tabs)');
-          } 
-        }
-      ]);
+      if (response.status === 201 || response.status === 200) {
+        Alert.alert("Success", "Loan application submitted successfully!", [
+          { 
+            text: "OK", 
+            onPress: () => {
+              setFormData({
+                customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
+                loanAmount: '', bankName: '', accountNumber: '',
+                employerName: '', jobTitle: '', nokName: '', nokPhone: '',
+                idUploaded: '', utilityUploaded: '', passportUploaded: '', 
+                workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
+                monthlyIncome: '₦50,000.00 - ₦100,000.00',
+                loanType: 'Federal', repaymentCycle: 'Monthly',
+                gender: '', tenure: '12 Months'
+              });
+              setStep(1);
+              setCurrentLoanId(`loan_${Date.now()}`);
+              router.replace('/(tabs)');
+            } 
+          }
+        ]);
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
+      Alert.alert("Submission Failed", errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
-    Alert.alert("Submission Failed", errorMsg);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   const Selector = ({ label, options, current, onSelect }: any) => (
     <View style={{ marginBottom: 15 }}>

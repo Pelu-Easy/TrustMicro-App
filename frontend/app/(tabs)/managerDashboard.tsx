@@ -7,9 +7,11 @@ import {
   Alert,
   FlatList,
   Linking,
+  Modal,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   Vibration,
   View
@@ -47,7 +49,6 @@ interface LoanItem {
   idImageUrl?: string;   
   passportImageUrl?: string;
   utilityBillUrl?: string;
-  // Added missing document fields
   workIdUrl?: string;
   statementUrl?: string;
   signatureUrl?: string;
@@ -80,6 +81,12 @@ export default function ManagerDashboard() {
   const [activeTab, setActiveTab] = useState<'loans' | 'team'>('loans');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // --- REJECTION MODAL STATE ---
+  const [rejectionModalVisible, setRejectionModalVisible] = useState(false);
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!token || !canManage) return;
@@ -135,15 +142,35 @@ export default function ManagerDashboard() {
   }, [canManage, fetchData]);
 
   const handleDecision = async (loanId: string, status: 'Approved' | 'Rejected') => {
-    Alert.alert("Confirm", `Set loan to ${status}?`, [
+    if (status === 'Rejected') {
+      setSelectedLoanId(loanId);
+      setRejectionReason('');
+      setRejectionModalVisible(true);
+      return;
+    }
+
+    Alert.alert("Confirm Approval", `Are you sure you want to approve this loan?`, [
       { text: "Cancel" },
-      { text: "Yes", onPress: async () => {
-          try {
-            await api.patch(`/manager/update-status/${loanId}`, { status });
-            fetchData();
-          } catch (e) { Alert.alert("Error", "Update failed"); }
-      }}
+      { text: "Approve", onPress: () => submitUpdate(loanId, 'Approved') }
     ]);
+  };
+
+  const submitUpdate = async (loanId: string, status: 'Approved' | 'Rejected', reason?: string) => {
+    setIsUpdating(true);
+    try {
+      // Corrected: changed 'rejectionReason' to 'rejection_reason' to match backend update
+      await api.patch(`/manager/update-status/${loanId}`, { 
+        status,
+        rejection_reason: reason?.trim() || null 
+      });
+      setRejectionModalVisible(false);
+      fetchData();
+      Alert.alert("Success", `Loan ${status.toLowerCase()} successfully`);
+    } catch (e) { 
+      Alert.alert("Error", "Update failed. Please try again."); 
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleStaffToggle = async (item: StaffItem) => {
@@ -174,6 +201,40 @@ export default function ManagerDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* --- REJECTION MODAL --- */}
+      <Modal visible={rejectionModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reject Application</Text>
+            <Text style={styles.modalLabel}>Please state the reason for rejection:</Text>
+            <TextInput
+              style={styles.textArea}
+              placeholder="e.g. Incomplete bank statement, Invalid ID..."
+              multiline
+              numberOfLines={4}
+              value={rejectionReason}
+              onChangeText={setRejectionReason}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.cancelBtn} 
+                onPress={() => setRejectionModalVisible(false)}
+                disabled={isUpdating}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.confirmBtn, !rejectionReason.trim() && { opacity: 0.5 }]} 
+                onPress={() => selectedLoanId && submitUpdate(selectedLoanId, 'Rejected', rejectionReason)}
+                disabled={isUpdating || !rejectionReason.trim()}
+              >
+                {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmBtnText}>Confirm Reject</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#003366" />
@@ -264,7 +325,6 @@ export default function ManagerDashboard() {
                       idImageUrl: item.idImageUrl || '',
                       passportImageUrl: item.passportImageUrl || '',
                       utilityBillUrl: item.utilityBillUrl || '',
-                      // FIXED: Added missing params for the detail view
                       workIdUrl: item.workIdUrl || '',
                       statementUrl: item.statementUrl || '',
                       signatureUrl: item.signatureUrl || ''
@@ -379,5 +439,17 @@ const styles = StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
   statusText: { fontSize: 11, color: '#64748B', fontWeight: '500' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  callBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center' }
+  callBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center' },
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#FFF', borderRadius: 20, padding: 25, elevation: 5 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#003366', marginBottom: 10 },
+  modalLabel: { fontSize: 14, color: '#64748B', marginBottom: 15 },
+  textArea: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, padding: 15, height: 100, textAlignVertical: 'top', color: '#1E293B' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#F1F5F9' },
+  cancelBtnText: { color: '#64748B', fontWeight: 'bold' },
+  confirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#EF4444' },
+  confirmBtnText: { color: '#FFF', fontWeight: 'bold' }
 });

@@ -159,13 +159,22 @@ router.get('/staff-list', async (req, res) => {
     }
 });
 
-// --- 8. UPDATE LOAN STATUS ---
+// --- 8. UPDATE LOAN STATUS (WITH REJECTION REASON) ---
 router.patch('/update-status/:id', async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, rejectionReason } = req.body;
     try {
-        const query = 'UPDATE loans SET status = $1 WHERE id = $2 RETURNING *';
-        const result = await db.query(query, [status, id]);
+        // Build the query to update both status and rejection_reason.
+        // If status is Approved, we nullify any existing rejection_reason.
+        const query = `
+            UPDATE loans 
+            SET status = $1, 
+                rejection_reason = $2 
+            WHERE id = $3 
+            RETURNING *`;
+        
+        const finalReason = status === 'Rejected' ? rejectionReason : null;
+        const result = await db.query(query, [status, finalReason, id]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Loan not found.' });

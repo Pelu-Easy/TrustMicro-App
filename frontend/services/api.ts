@@ -1,23 +1,20 @@
-// @ts-ignore
-import { AxiosStatic } from 'axios';
-import axiosImport from 'axios/dist/browser/axios.cjs';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { Alert } from 'react-native';
 import useUserData from '../store/userSignUp';
 
-const axios = axiosImport as AxiosStatic;
-
+// Render.com base URL for TrustMicro
 export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000, 
+  timeout: 15000,
 });
 
 // --- 1. REQUEST INTERCEPTOR (Attaches the Token) ---
 api.interceptors.request.use(
-  async (config) => {
+  async (config: InternalAxiosRequestConfig) => {
     const { token } = useUserData.getState();
-    if (token) {
+    if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -28,12 +25,12 @@ api.interceptors.request.use(
 // --- 2. RESPONSE INTERCEPTOR (Handles Errors & Logging) ---
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError<any>) => {
     const originalRequest = error.config;
     const status = error.response?.status;
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
 
-    // ✅ FIX: Only log "🚨 TrustMicro API Error" if it's NOT a 401 or 403
+    // Log errors only if they aren't standard Auth failures
     if (status !== 401 && status !== 403) {
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
@@ -43,18 +40,17 @@ api.interceptors.response.use(
 
     // HANDLE SESSION EXPIRY (401 or 403)
     if (status === 401 || status === 403) {
-      // Logic: If it's a login attempt, DON'T show the popup. 
       if (!isAuthRequest) {
         const { logout } = useUserData.getState();
         logout(); 
 
-        // We also silence the Alert for 401s during the background check (/users/me)
+        // Silence Alert for the background /me check, show for everything else
         if (originalRequest?.url !== '/users/me') {
-            Alert.alert(
-              "Session Expired", 
-              "Your security token is invalid or expired. Please login again.",
-              [{ text: "OK" }]
-            );
+          Alert.alert(
+            "Session Expired", 
+            "Your security token is invalid or expired. Please login again.",
+            [{ text: "OK" }]
+          );
         }
       }
       return Promise.reject(error);
@@ -72,11 +68,12 @@ api.interceptors.response.use(
       } else if (status === 500) {
         errorMessage = "Server error (500). Please contact Admin.";
       } else {
-        errorMessage = error.response.data.error || "A server error occurred.";
+        // Fallback to server's custom error message
+        errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
       }
     }
 
-    // Only alert for non-auth errors here
+    // Only alert for non-auth errors here to avoid double-alerts during login
     if (!isAuthRequest) {
         Alert.alert("Request Failed", errorMessage);
     }

@@ -1,7 +1,7 @@
 import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router'; // Added useFocusEffect
+import React, { useCallback, useEffect, useState } from 'react'; // Added React for useFocusEffect logic
 import {
   ActivityIndicator,
   Alert,
@@ -34,7 +34,7 @@ export default function Dashboard() {
 
   // STORES
   const loans = useLoanStore((state) => state.loans);
-  const fetchLoans = useLoanStore((state) => state.fetchLoans); // Use the store method
+  const fetchLoans = useLoanStore((state) => state.fetchLoans); 
   const { disbursementTarget } = useStaffStore();
   const { funame, token, email, branch, isSupervisor, role, setToken, logout } = useUserData(); 
   
@@ -73,7 +73,7 @@ export default function Dashboard() {
     );
   };
 
-  // Improved Fetch Logic using the Store's specialized method
+  // Improved Fetch Logic
   const fetchAllLoans = useCallback(async () => {
     if (!token || !email) return;
     try {
@@ -86,16 +86,22 @@ export default function Dashboard() {
     }
   }, [token, email, fetchLoans]);
 
-  // Sync effect: triggers when token is available
+  // ✅ FIX: Use useFocusEffect to refresh counts whenever this screen is viewed
+  useFocusEffect(
+    useCallback(() => {
+      if (token && token.length > 10 && email) {
+        fetchAllLoans();
+      }
+    }, [token, email, fetchAllLoans])
+  );
+
+  // Initial load logic
   useEffect(() => {
-    if (token && token.length > 10 && email) {
-      fetchAllLoans();
-    } else {
-      // If no token after initial load, stop spinner
+    if (!token || !email) {
       const timeout = setTimeout(() => setIsLoading(false), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [token, email, fetchAllLoans]);
+  }, [token, email]);
 
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
@@ -112,18 +118,17 @@ export default function Dashboard() {
   const [team, setTeam] = useState<any[]>([]);
 
   const fetchTeam = async () => {
-  try {
-    const response = await api.get('/manager/my-team');
-    setTeam(response.data);
-  } catch (error) {
-    console.error("Error fetching team:", error);
-  }
-};
+    try {
+      const response = await api.get('/manager/my-team');
+      setTeam(response.data);
+    } catch (error) {
+      console.error("Error fetching team:", error);
+    }
+  };
 
-// Fetch team only when the "Team" tab is clicked
-useEffect(() => {
-  if (activeTab === 'team') fetchTeam();
-}, [activeTab]);
+  useEffect(() => {
+    if (activeTab === 'team') fetchTeam();
+  }, [activeTab]);
 
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>
@@ -170,7 +175,7 @@ useEffect(() => {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         
         <View style={{ marginBottom: 10 }}>
-          <View style={styles.actionGrid}>
+          <div style={styles.actionGrid}>
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
@@ -197,7 +202,7 @@ useEffect(() => {
               <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Logout</Text>
             </TouchableOpacity>
-          </View>
+          </div>
         </View>
 
         {!isManagement && (
@@ -219,8 +224,8 @@ useEffect(() => {
 
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
-           <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
-           <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
+            <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
+            <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
         <View style={styles.sectionHeader}>
@@ -234,18 +239,36 @@ useEffect(() => {
             <Text style={styles.emptyText}>No loan records found.</Text>
           </View>
         ) : (
-          loans.slice(0, 5).map((loan, index) => (
+          loans.slice(0, 10).map((loan, index) => (
             <TouchableOpacity 
               key={`${loan.id}-${index}`} 
               style={styles.loanItem}
-              onPress={() => {
-                if (loan.status === 'Draft' && canOnboardLoan) {
-                  router.push({
-                    pathname: '/(tabs)/loanForm',
-                    params: { draftId: loan.id }
-                  });
-                }
-              }}
+          onPress={() => {
+            if (loan.status === 'Draft' && canOnboardLoan) {
+              router.push({
+                pathname: '/(tabs)/loanForm',
+                params: { draftId: loan.id }
+              });
+            } else if (loan.status === 'Rejected') {
+              // Show the reason, then offer to edit
+              Alert.alert(
+                "Loan Rejected",
+                `Reason: ${loan.rejection_reason || 'Please check your documentation.'}`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { 
+                    text: "Fix & Resubmit", 
+                    onPress: () => {
+                      router.push({
+                        pathname: '/(tabs)/loanForm',
+                        params: { draftId: loan.id } // We pass the ID as a draft so the form loads it
+                      });
+                    } 
+                  }
+                ]
+              );
+            }
+          }}
             >
               <View style={styles.loanInfo}>
                 <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
@@ -255,11 +278,21 @@ useEffect(() => {
                 <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
                 <View style={[
                     styles.statusBadge, 
-                    { backgroundColor: loan.status === 'Approved' ? '#DCFCE7' : loan.status === 'Draft' ? '#FEF9C3' : '#F1F5F9' }
+                    { 
+                      backgroundColor: 
+                        loan.status === 'Approved' ? '#DCFCE7' : 
+                        loan.status === 'Draft' ? '#FEF9C3' : 
+                        loan.status === 'Rejected' ? '#FEE2E2' : '#F1F5F9' 
+                    }
                 ]}>
                   <Text style={[
                     styles.statusText, 
-                    { color: loan.status === 'Approved' ? '#166534' : loan.status === 'Draft' ? '#854D0E' : '#475569' }
+                    { 
+                      color: 
+                        loan.status === 'Approved' ? '#166534' : 
+                        loan.status === 'Draft' ? '#854D0E' : 
+                        loan.status === 'Rejected' ? '#991B1B' : '#475569' 
+                    }
                   ]}>
                     {loan.status}
                   </Text>

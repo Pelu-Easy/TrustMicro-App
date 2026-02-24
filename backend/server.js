@@ -216,12 +216,17 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
 // --- 8. MANAGER DASHBOARD ROUTES ---
 
 app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, res) => {
-    const { status } = req.body;
+    const { status, rejection_reason } = req.body; // Added rejection_reason from body
     try {
-        const result = await db.query('UPDATE loans SET status = $1 WHERE id = $2 RETURNING *', [status, req.params.id]);
+        const query = 'UPDATE loans SET status = $1, rejection_reason = $2 WHERE id = $3 RETURNING *';
+        const result = await db.query(query, [status, rejection_reason || null, req.params.id]);
+        
         if (result.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
-        res.json({ message: "Status updated" });
-    } catch (err) { res.status(500).json({ error: "Update failed" }); }
+        res.json({ message: "Status updated", loan: result.rows[0] });
+    } catch (err) { 
+        console.error("Update error:", err.message);
+        res.status(500).json({ error: "Update failed" }); 
+    }
 });
 
 app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
@@ -365,6 +370,7 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     try {
+        // SELECT * will now include rejection_reason
         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Database error." }); }

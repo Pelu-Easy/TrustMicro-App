@@ -44,6 +44,7 @@ export interface Loan {
   bankStatement?: string; 
   workId?: string;
   signature?: string;
+  rejection_reason?: string;
 }
 
 interface LoanState {
