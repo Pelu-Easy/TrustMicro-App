@@ -175,7 +175,7 @@ export default function Dashboard() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         
         <View style={{ marginBottom: 10 }}>
-          <div style={styles.actionGrid}>
+          <View style={styles.actionGrid}>
             {canOnboardLoan && (
               <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
                 <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
@@ -202,7 +202,7 @@ export default function Dashboard() {
               <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Logout</Text>
             </TouchableOpacity>
-          </div>
+          </View>
         </View>
 
         {!isManagement && (
