@@ -156,68 +156,75 @@ useEffect(() => {
   };
 
 const handleFinalSubmit = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  if (isSubmitting) return;
+  setIsSubmitting(true);
 
-    const payload = {
-      customerName: formData.customerName,
-      bvn: formData.bvn,
-      nin: formData.nin,
-      phone: formData.phone,
-      loanAmount: formData.loanAmount,
-      bankName: formData.bankName,
-      accountNumber: formData.accountNumber,
-      employerName: formData.employerName,
-      jobTitle: formData.jobTitle,
-      ninImageUrl: formData.idUploaded, 
-      idImageUrl: formData.idUploaded,
-      passportImageUrl: formData.passportUploaded,
-      utilityBillUrl: formData.utilityUploaded,
-      workIdUrl: formData.workIdUploaded,
-      statementUrl: formData.statementUploaded,
-      signatureUrl: formData.signatureUploaded,
-      monthlyIncome: formData.monthlyIncome,
-      loanType: formData.loanType,
-      repaymentCycle: formData.repaymentCycle,
-      gender: formData.gender,
-      tenure: formData.tenure,
-      staffName: staffFullName || 'System',
-      branchName: staffBranch || 'Main'
-    };
-
-    try {
-      const response = await api.post('/loans', payload);
-
-      if (response.status === 201 || response.status === 200) {
-        
-        // --- SAFE STATE RESET ---
-        // This clears the local screen so the "Create Loan" button 
-        // opens a fresh form next time.
-        setFormData({
-          customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
-          loanAmount: '', bankName: '', accountNumber: '',
-          employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-          idUploaded: '', utilityUploaded: '', passportUploaded: '', 
-          workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
-          monthlyIncome: '₦50,000.00 - ₦100,000.00',
-          loanType: 'Federal', repaymentCycle: 'Monthly',
-          gender: '', tenure: '12 Months'
-        });
-
-        // This moves the user away from the form
-        Alert.alert("Success", "Loan application submitted successfully!", [
-          { text: "OK", onPress: () => router.replace('/(tabs)') }
-        ]);
-      }
-    } catch (error: any) {
-      // If there is an error (e.g., no internet), the data 
-      // stays in the form so the officer doesn't have to re-type it.
-      const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
-      Alert.alert("Submission Failed", errorMsg);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const payload = {
+    customerName: formData.customerName,
+    bvn: formData.bvn,
+    nin: formData.nin,
+    phone: formData.phone,
+    loanAmount: formData.loanAmount,
+    bankName: formData.bankName,
+    accountNumber: formData.accountNumber,
+    employerName: formData.employerName,
+    jobTitle: formData.jobTitle,
+    ninImageUrl: formData.idUploaded, 
+    idImageUrl: formData.idUploaded,
+    passportImageUrl: formData.passportUploaded,
+    utilityBillUrl: formData.utilityUploaded,
+    workIdUrl: formData.workIdUploaded,
+    statementUrl: formData.statementUploaded,
+    signatureUrl: formData.signatureUploaded,
+    monthlyIncome: formData.monthlyIncome,
+    loanType: formData.loanType,
+    repaymentCycle: formData.repaymentCycle,
+    gender: formData.gender,
+    tenure: formData.tenure,
+    staffName: staffFullName || 'System',
+    branchName: staffBranch || 'Main'
   };
+
+  try {
+    const response = await api.post('/loans', payload);
+
+    if (response.status === 201 || response.status === 200) {
+      // We trigger the Alert first. The reset happens when they click "OK".
+      Alert.alert("Success", "Loan application submitted successfully!", [
+        { 
+          text: "OK", 
+          onPress: () => {
+            // 1. Reset the form data to initial empty strings
+            setFormData({
+              customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
+              loanAmount: '', bankName: '', accountNumber: '',
+              employerName: '', jobTitle: '', nokName: '', nokPhone: '',
+              idUploaded: '', utilityUploaded: '', passportUploaded: '', 
+              workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
+              monthlyIncome: '₦50,000.00 - ₦100,000.00',
+              loanType: 'Federal', repaymentCycle: 'Monthly',
+              gender: '', tenure: '12 Months'
+            });
+
+            // 2. Reset the step back to the beginning
+            setStep(1);
+
+            // 3. Clear the current ID so it doesn't try to reload old data
+            setCurrentLoanId(`loan_${Date.now()}`);
+
+            // 4. Finally, navigate away
+            router.replace('/(tabs)');
+          } 
+        }
+      ]);
+    }
+  } catch (error: any) {
+    const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
+    Alert.alert("Submission Failed", errorMsg);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const Selector = ({ label, options, current, onSelect }: any) => (
     <View style={{ marginBottom: 15 }}>

@@ -41,7 +41,7 @@ export interface Loan {
   monthlyRepayment?: string;
   totalRepayment?: string;
   repaymentEndDate?: string;
-  bankStatement?: string; // This fixes the red underline
+  bankStatement?: string; 
   workId?: string;
   signature?: string;
 }
@@ -56,6 +56,7 @@ interface LoanState {
   fetchLoans: (email: string, token: string) => Promise<void>;
   addLoan: (loan: Loan, currentUserEmail: string) => Promise<void>;
   updateLoan: (id: string, updatedLoan: Loan) => void;
+  deleteLoan: (id: string) => void; // Added for cleanup after submission
   setTarget: (amount: number) => void; 
   clearAllData: () => void;
 }
@@ -78,8 +79,6 @@ export const useLoanStore = create<LoanState>()(
         }
 
         try {
-          // Changed to use the 'api' instance
-          // baseURL already includes /api/v1, so we just use /loans
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           
           const serverLoans = response.data;
@@ -113,7 +112,6 @@ export const useLoanStore = create<LoanState>()(
           branchName: userData.branch || 'Main Branch'
         };
         
-        // 1. Update Local State (Immediate UI response)
         set((state) => {
             const loanIndex = state.loans.findIndex((l) => l.id === loan.id);
             
@@ -126,7 +124,6 @@ export const useLoanStore = create<LoanState>()(
             }
         });
 
-        // 2. Sync with Backend
         if (ownedLoan.status !== 'Draft') {
           if (!token) {
             console.log("Cloud Sync Aborted: No valid token found.");
@@ -134,7 +131,6 @@ export const useLoanStore = create<LoanState>()(
           }
 
           try {
-            // Use the 'api' instance. Interceptors handle the Auth Header automatically.
             await api.post('/loans', ownedLoan);
             console.log("Loan successfully synced.");
           } catch (error: any) {
@@ -148,6 +144,12 @@ export const useLoanStore = create<LoanState>()(
           loans: state.loans.map((loan) =>
             loan.id === id ? updatedLoan : loan
           ),
+        })),
+
+      // New function to remove a specific loan from the local store
+      deleteLoan: (id) =>
+        set((state) => ({
+          loans: state.loans.filter((loan) => loan.id !== id),
         })),
 
       setTarget: (amount: number) =>
