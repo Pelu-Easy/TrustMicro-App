@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios/dist/browser/axios.cjs';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import useUserData from '../store/userSignUp';
 
 const { width, height } = Dimensions.get('window');
@@ -12,7 +12,6 @@ export default function LoanDetails() {
   const router = useRouter();
   const { role, isSupervisor, token } = useUserData();
   
-  // --- UPDATED PARAMS TO INCLUDE ALL 7 DOCUMENTS ---
   const { 
     id, customerName, amount, loanType, staffName, 
     phone, bankName, accountNumber,
@@ -24,7 +23,10 @@ export default function LoanDetails() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // --- ROLE PROTECTION LOGIC ---
+  // --- REJECTION REASON STATES ---
+  const [isRejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+
   const userRole = (role || '').toLowerCase();
   const actsAsManagement = isSupervisor === true || 
                             ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
@@ -32,48 +34,48 @@ export default function LoanDetails() {
   const openZoom = (uri: string) => {
     setSelectedImage(uri);
     setModalVisible(true);
-  };
+  }
 
   // --- API HANDLER ---
-  const handleAction = (decision: 'Approved' | 'Rejected') => {
-    Alert.alert(
-      "Confirm Decision",
-      `Are you sure you want to set this loan to ${decision}?`,
-      [
-        { text: "Cancel", style: "cancel" },
+  const handleAction = async (decision: 'Approved' | 'Rejected', reason?: string) => {
+    setIsSubmitting(true);
+    try {
+      const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
+      
+      await axios.patch(
+        `${API_URL}/manager/update-status/${id}`, 
         { 
-          text: "Confirm", 
-          onPress: async () => {
-            setIsSubmitting(true);
-            try {
-              const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
-              
-              await axios.patch(
-                `${API_URL}/manager/update-status/${id}`, 
-                { status: decision },
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
+            status: decision,
+            rejection_reason: reason || null 
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-              Alert.alert("Success", `Loan has been ${decision.toLowerCase()}.`, [
-                { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
-              ]);
-            } catch (error: any) {
-              const errorMsg = error.response?.data?.message || "Connection error. Try again.";
-              Alert.alert("Update Failed", errorMsg);
-            } finally {
-              setIsSubmitting(false);
-            }
-          } 
-        }
-      ]
+      Alert.alert("Success", `Loan has been ${decision.toLowerCase()}.`, [
+        { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
+      ]);
+      setRejectModalVisible(false);
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || "Connection error. Try again.";
+      Alert.alert("Update Failed", errorMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmApprove = () => {
+    Alert.alert(
+        "Confirm Approval",
+        "Are you sure you want to approve this loan?",
+        [
+            { text: "Cancel", style: "cancel" },
+            { text: "Approve", onPress: () => handleAction('Approved') }
+        ]
     );
   };
 
-  // Helper to render Document Cards with URI decoding for safety
   const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => {
-    // Decode URI in case it was encoded during navigation
     const cleanUri = typeof uri === 'string' ? decodeURIComponent(uri) : uri;
-
     return (
       <View style={styles.docCard}>
         <Text style={styles.docLabel}>{label}</Text>
@@ -146,24 +148,20 @@ export default function LoanDetails() {
           <Text style={styles.sectionTitle}>Verification Documents</Text>
           <Text style={styles.helperText}>Tap image to view full screen</Text>
           
-          {/* Documents Section */}
           <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport Uploaded" />
           <DocumentCard label="National Identity (NIN)" uri={ninImageUrl} placeholder="No NIN Image Uploaded" />
           <DocumentCard label="Government Issued ID" uri={idImageUrl} placeholder="No ID Image Uploaded" />
           <DocumentCard label="Utility Bill" uri={utilityBillUrl} placeholder="No Utility Bill Uploaded" />
-          
-          {/* Added Missing 3 Documents */}
           <DocumentCard label="Proof of Employment / Work ID" uri={workIdUrl} placeholder="No Work ID Uploaded" />
           <DocumentCard label="Bank Statement" uri={statementUrl} placeholder="No Bank Statement Uploaded" />
           <DocumentCard label="Customer Signature" uri={signatureUrl} placeholder="No Signature Uploaded" />
 
-          {/* Conditional Action Buttons: Only visible to Management */}
           {actsAsManagement ? (
             <View style={styles.actionRow}>
               <TouchableOpacity 
                 disabled={isSubmitting}
                 style={[styles.actionBtn, { backgroundColor: BRAND.danger, opacity: isSubmitting ? 0.6 : 1 }]}
-                onPress={() => handleAction('Rejected')}
+                onPress={() => setRejectModalVisible(true)}
               >
                 <Text style={styles.btnText}>Reject</Text>
               </TouchableOpacity>
@@ -171,7 +169,7 @@ export default function LoanDetails() {
               <TouchableOpacity 
                 disabled={isSubmitting}
                 style={[styles.actionBtn, { backgroundColor: BRAND.success, opacity: isSubmitting ? 0.6 : 1 }]}
-                onPress={() => handleAction('Approved')}
+                onPress={confirmApprove}
               >
                 {isSubmitting ? (
                   <ActivityIndicator color="#fff" />
@@ -188,6 +186,50 @@ export default function LoanDetails() {
           )}
         </View>
       </ScrollView>
+
+      {/* REJECTION REASON MODAL */}
+      <Modal visible={isRejectModalVisible} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+            <View style={styles.rejectModalContent}>
+                <Text style={styles.rejectTitle}>Reject Application</Text>
+                <Text style={styles.rejectSubtitle}>Please provide a reason for rejecting this loan application.</Text>
+                
+                <TextInput
+                    style={styles.reasonInput}
+                    placeholder="E.g. Incomplete documentation, poor credit history..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    numberOfLines={4}
+                    value={rejectionReason}
+                    onChangeText={setRejectionReason}
+                />
+
+                <View style={styles.modalActionRow}>
+                    <TouchableOpacity 
+                        style={styles.cancelBtn} 
+                        onPress={() => {
+                            setRejectModalVisible(false);
+                            setRejectionReason("");
+                        }}
+                    >
+                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        disabled={isSubmitting || rejectionReason.trim().length < 5}
+                        style={[styles.confirmRejectBtn, { opacity: (isSubmitting || rejectionReason.trim().length < 5) ? 0.5 : 1 }]}
+                        onPress={() => handleAction('Rejected', rejectionReason)}
+                    >
+                        {isSubmitting ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.btnText}>Confirm Reject</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+      </Modal>
 
       {/* ZOOM MODAL */}
       <Modal visible={isModalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
@@ -239,4 +281,26 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeModal: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
   fullImage: { width: width, height: height * 0.8 },
+
+  // --- REJECT MODAL STYLES ---
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  rejectModalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 25, elevation: 5 },
+  rejectTitle: { fontSize: 20, fontWeight: 'bold', color: BRAND.danger, marginBottom: 10 },
+  rejectSubtitle: { fontSize: 14, color: '#64748B', marginBottom: 20, lineHeight: 20 },
+  reasonInput: { 
+    backgroundColor: '#F8FAFC', 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0', 
+    borderRadius: 12, 
+    padding: 15, 
+    fontSize: 16, 
+    color: '#1E293B', 
+    textAlignVertical: 'top',
+    minHeight: 120,
+    marginBottom: 20 
+  },
+  modalActionRow: { flexDirection: 'row', gap: 12 },
+  cancelBtn: { flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  cancelBtnText: { color: '#64748B', fontWeight: '600' },
+  confirmRejectBtn: { flex: 2, backgroundColor: BRAND.danger, padding: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }
 });

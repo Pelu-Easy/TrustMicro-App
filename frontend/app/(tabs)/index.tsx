@@ -1,7 +1,8 @@
 import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router'; // Added useFocusEffect
-import React, { useCallback, useEffect, useState } from 'react'; // Added React for useFocusEffect logic
+import * as Notifications from 'expo-notifications';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +23,17 @@ import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
 
+// ✅ Stable notification handler configuration
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true, // ✅ Added to fix TS error
+    shouldShowList: true,   // ✅ Added to fix TS error
+  }),
+});
+
 interface StatCardProps {
   title: string;
   value: string;
@@ -40,6 +52,7 @@ export default function Dashboard() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0); 
 
   // --- ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
@@ -86,16 +99,50 @@ export default function Dashboard() {
     }
   }, [token, email, fetchLoans]);
 
-  // ✅ FIX: Use useFocusEffect to refresh counts whenever this screen is viewed
+  const fetchUnreadCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await api.get('/notifications/unread-count');
+      setUnreadCount(res.data.count || 0);
+    } catch (e) {
+      console.log("Failed to fetch unread count");
+    }
+  }, [token]);
+
+  // ✅ Notification Listeners Effect
+  useEffect(() => {
+    const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
+      fetchUnreadCount();
+      fetchAllLoans();
+    });
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/notifications');
+    });
+
+    async function requestPermissions() {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        await Notifications.requestPermissionsAsync();
+      }
+    }
+    requestPermissions();
+
+    return () => {
+      foregroundSubscription.remove();
+      responseSubscription.remove();
+    };
+  }, [fetchUnreadCount, fetchAllLoans]);
+
   useFocusEffect(
     useCallback(() => {
       if (token && token.length > 10 && email) {
         fetchAllLoans();
+        fetchUnreadCount(); 
       }
-    }, [token, email, fetchAllLoans])
+    }, [token, email, fetchAllLoans, fetchUnreadCount])
   );
 
-  // Initial load logic
   useEffect(() => {
     if (!token || !email) {
       const timeout = setTimeout(() => setIsLoading(false), 3000);
@@ -112,6 +159,7 @@ export default function Dashboard() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchAllLoans();
+    fetchUnreadCount(); 
   };
 
   const [activeTab, setActiveTab] = useState<'loans' | 'team'>('loans');
@@ -167,9 +215,26 @@ export default function Dashboard() {
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
-              <Ionicons name="person-circle-outline" size={45} color="#003366" />
-          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <TouchableOpacity 
+              style={styles.notiButton} 
+              onPress={() => router.push('/notifications')}
+            >
+              <Ionicons name="notifications-outline" size={28} color="#003366" />
+              {unreadCount > 0 && (
+                <View style={styles.badgeCircle}>
+                  <Text style={styles.badgeNumber}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
+                <Ionicons name="person-circle-outline" size={45} color="#003366" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -243,36 +308,49 @@ export default function Dashboard() {
             <TouchableOpacity 
               key={`${loan.id}-${index}`} 
               style={styles.loanItem}
-          onPress={() => {
-            if (loan.status === 'Draft' && canOnboardLoan) {
-              router.push({
-                pathname: '/(tabs)/loanForm',
-                params: { draftId: loan.id }
-              });
-            } else if (loan.status === 'Rejected') {
-              // Show the reason, then offer to edit
-              Alert.alert(
-                "Loan Rejected",
-                `Reason: ${loan.rejection_reason || 'Please check your documentation.'}`,
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { 
-                    text: "Fix & Resubmit", 
-                    onPress: () => {
-                      router.push({
-                        pathname: '/(tabs)/loanForm',
-                        params: { draftId: loan.id } // We pass the ID as a draft so the form loads it
-                      });
-                    } 
-                  }
-                ]
-              );
-            }
-          }}
+              onPress={() => {
+                if (loan.status === 'Draft' && canOnboardLoan) {
+                  router.push({
+                    pathname: '/(tabs)/loanForm',
+                    params: { draftId: loan.id }
+                  });
+                } else if (loan.status === 'Rejected') {
+                  Alert.alert(
+                    "Loan Rejected",
+                    `REASON: ${loan.rejection_reason || 'Please check your documentation for errors.'}`,
+                    [
+                      { text: "Dismiss", style: "cancel" },
+                      { 
+                        text: "Fix & Resubmit", 
+                        onPress: () => {
+                          router.push({
+                            pathname: '/(tabs)/loanForm',
+                            params: { draftId: loan.id } 
+                          });
+                        } 
+                      }
+                    ]
+                  );
+                } else {
+                  router.push({
+                    pathname: '/loanDetails',
+                    params: { ...loan }
+                  });
+                }
+              }}
             >
               <View style={styles.loanInfo}>
                 <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                 <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
+                
+                {loan.status === 'Rejected' && loan.rejection_reason && (
+                  <View style={styles.reasonInline}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={12} color="#EF4444" />
+                    <Text style={styles.reasonInlineText} numberOfLines={1}>
+                       Reason: {loan.rejection_reason}
+                    </Text>
+                  </View>
+                )}
               </View>
               <View style={styles.loanStatusArea}>
                 <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
@@ -355,5 +433,22 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, fontWeight: 'bold' },
   emptyState: { alignItems: 'center', marginTop: 30 },
-  emptyText: { color: '#94A3B8', marginTop: 10 }
+  emptyText: { color: '#94A3B8', marginTop: 10 },
+  reasonInline: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 4, backgroundColor: '#FEF2F2', padding: 4, borderRadius: 4, alignSelf: 'flex-start' },
+  reasonInlineText: { fontSize: 11, color: '#EF4444', fontWeight: '500', maxWidth: width * 0.4 },
+  notiButton: { padding: 5, position: 'relative', marginRight: 5 },
+  badgeCircle: { 
+    position: 'absolute', 
+    right: 0, 
+    top: 0, 
+    backgroundColor: '#EF4444', 
+    borderRadius: 9, 
+    width: 18, 
+    height: 18, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 2, 
+    borderColor: '#F8FAFC' 
+  },
+  badgeNumber: { color: 'white', fontSize: 10, fontWeight: 'bold' }
 });
