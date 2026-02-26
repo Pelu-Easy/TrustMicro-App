@@ -1,61 +1,58 @@
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import useUserData from '../store/userSignUp';
-// 1. Import your notification service
 import { registerForPushNotificationsAsync } from '../services/notifications';
+import useUserData from '../store/userSignUp';
 
 export default function RootLayout() {
   const { token, _hasHydrated } = useUserData();
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
+  
+  // State to track if we've handled the initial routing
+  const [isReady, setIsReady] = useState(false);
 
-  // Ensure the store is loaded AND the router has initialized its internal state
-  const isReady = _hasHydrated && !!navigationState?.key;
-
-  // --- NEW: Notification Registration Logic ---
+  // 1. Notification Logic (Independent)
   useEffect(() => {
-    // We run this as soon as the component mounts to catch the token early
     const setupNotifications = async () => {
       try {
         const pushToken = await registerForPushNotificationsAsync();
-        if (pushToken) {
-          console.log("🚀 FINAL PUSH TOKEN:", pushToken);
-        }
+        if (pushToken) console.log("🚀 FINAL PUSH TOKEN:", pushToken);
       } catch (error) {
-        console.error("Failed to register notifications:", error);
+        console.error("Notification Error:", error);
       }
     };
-
     setupNotifications();
-  }, []); 
-  // --------------------------------------------
+  }, []);
 
+  // 2. Auth & Navigation Logic
   useEffect(() => {
-    // Exit if the app isn't fully ready to handle navigation
-    if (!isReady) return;
+    // Wait until Store is hydrated AND Navigation is mounted
+    if (!_hasHydrated || !navigationState?.key) return;
 
-    const isLoggedIn = !!token;
+    const isLoggedIn = !!token && token.length > 10;
     const inAuthGroup = segments[0] === 'login' || 
                         segments[0] === 'sign_up' || 
                         segments[0] === 'forgot_password';
 
+    // Delay redirect slightly to ensure layout stability
     const timeout = setTimeout(() => {
       if (!isLoggedIn && !inAuthGroup) {
-        // Not logged in -> Go to Login
+        console.log("🔒 No token found, moving to Login");
         router.replace('/login');
       } else if (isLoggedIn && inAuthGroup) {
-        // Logged in but on Auth screen -> Go to App
+        console.log("🔓 Token found, moving to App");
         router.replace('/(tabs)');
       }
-    }, 0);
+      setIsReady(true);
+    }, 100);
 
     return () => clearTimeout(timeout);
-  }, [token, isReady, segments]);
+  }, [_hasHydrated, token, segments, navigationState?.key]);
 
-  // Loading screen while hydration or navigation is pending
-  if (!isReady) {
+  // Loading Screen: Keep this visible until hydration AND auth check are done
+  if (!_hasHydrated || !isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
         <ActivityIndicator size="large" color="#003366" />
@@ -64,12 +61,7 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: 'fade', 
-      }}
-    >
+    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="sign_up" options={{ title: 'Create Account' }} />
