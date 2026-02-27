@@ -30,7 +30,8 @@ export interface Loan {
   nokPhone: string;
   bankName: string;
   accountNumber: string;
-  status: 'Draft' | 'Pending' | 'Approved' | 'Disbursed' | 'Rejected';
+  // Updated status to include the multi-stage workflow pipeline
+  status: 'Draft' | 'Pending' | 'Approved' | 'Disbursed' | 'Rejected' | 'PENDING_CREDIT' | 'PENDING_HEAD_CREDIT' | 'PENDING_CCO' | 'PENDING_MD' | 'APPROVED_FINANCE';
   idCard: string | null;
   ninHardCopy: string | null;
   bvnHardCopy: string | null;

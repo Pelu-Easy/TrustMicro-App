@@ -6,15 +6,18 @@ import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSh
 import useUserData from '../store/userSignUp';
 
 const { width, height } = Dimensions.get('window');
-const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "#F8FAFC" };
+const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "#F8FAFC", accent: "#3B82F6" };
 
 export default function LoanDetails() {
   const router = useRouter();
-  const { role, isSupervisor, token } = useUserData();
+  const { 
+    role, isSupervisor, token, 
+    isCreditOfficer, isHeadOfCredit, isCCO, isMD 
+  } = useUserData();
   
   const { 
     id, customerName, amount, loanType, staffName, 
-    phone, bankName, accountNumber,
+    phone, bankName, accountNumber, status,
     ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl,
     workIdUrl, statementUrl, signatureUrl 
   } = useLocalSearchParams();
@@ -28,8 +31,50 @@ export default function LoanDetails() {
   const [rejectionReason, setRejectionReason] = useState("");
 
   const userRole = (role || '').toLowerCase();
-  const actsAsManagement = isSupervisor === true || 
+
+  // --- WORKFLOW LOGIC: WHO CAN ACT? ---
+  const actsAsManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD ||
                             ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
+
+  // --- CALCULATE NEXT STAGE IN PIPELINE ---
+  const getNextStatus = () => {
+    if (isSupervisor) return 'PENDING_CREDIT';
+    if (isCreditOfficer) return 'PENDING_HEAD_CREDIT';
+    if (isHeadOfCredit) return 'PENDING_CCO';
+    if (isCCO) return 'PENDING_MD';
+    if (isMD) return 'APPROVED_FINANCE'; // Final Stage
+    return 'Approved'; // Default fallback
+  };
+
+  const getButtonLabel = () => {
+    if (isMD) return "Final Approval";
+    if (isCCO) return "Forward to MD";
+    if (isHeadOfCredit) return "Forward to CCO";
+    if (isCreditOfficer) return "Forward to Head of Credit";
+    if (isSupervisor) return "Forward to Credit Dept";
+    return "Approve Loan";
+  };
+
+  // --- TIMELINE TRACKER LOGIC ---
+  const stages = [
+    { id: 'Pending', label: 'Branch Supervisor', key: 'Pending' },
+    { id: 'PENDING_CREDIT', label: 'Credit Officer', key: 'PENDING_CREDIT' },
+    { id: 'PENDING_HEAD_CREDIT', label: 'Head of Credit', key: 'PENDING_HEAD_CREDIT' },
+    { id: 'PENDING_CCO', label: 'Chief Compliance Officer', key: 'PENDING_CCO' },
+    { id: 'PENDING_MD', label: 'Managing Director', key: 'PENDING_MD' },
+    { id: 'Disbursed', label: 'Finance / Disbursement', key: 'APPROVED_FINANCE' }
+  ];
+
+  const getStageStatus = (stageId: string, currentStatus: string) => {
+    const statusOrder = ['Draft', 'Pending', 'PENDING_CREDIT', 'PENDING_HEAD_CREDIT', 'PENDING_CCO', 'PENDING_MD', 'APPROVED_FINANCE', 'Disbursed'];
+    const currentIdx = statusOrder.indexOf(currentStatus as string);
+    const stageIdx = statusOrder.indexOf(stageId);
+
+    if (currentStatus === 'Rejected') return 'rejected';
+    if (stageIdx < currentIdx) return 'completed';
+    if (stageId === currentStatus || (stageId === 'Disbursed' && currentStatus === 'APPROVED_FINANCE')) return 'active';
+    return 'upcoming';
+  };
 
   const openZoom = (uri: string) => {
     setSelectedImage(uri);
@@ -42,16 +87,19 @@ export default function LoanDetails() {
     try {
       const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
       
+      // Determine the status string to send to the backend
+      const targetStatus = decision === 'Rejected' ? 'Rejected' : getNextStatus();
+      
       await axios.patch(
         `${API_URL}/manager/update-status/${id}`, 
         { 
-            status: decision,
+            status: targetStatus,
             rejection_reason: reason || null 
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      Alert.alert("Success", `Loan has been ${decision.toLowerCase()}.`, [
+      Alert.alert("Success", `Loan has been ${decision === 'Rejected' ? 'rejected' : 'forwarded to the next stage'}.`, [
         { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
       ]);
       setRejectModalVisible(false);
@@ -66,10 +114,10 @@ export default function LoanDetails() {
   const confirmApprove = () => {
     Alert.alert(
         "Confirm Approval",
-        "Are you sure you want to approve this loan?",
+        `Are you sure you want to move this loan to the next stage?`,
         [
             { text: "Cancel", style: "cancel" },
-            { text: "Approve", onPress: () => handleAction('Approved') }
+            { text: "Confirm", onPress: () => handleAction('Approved') }
         ]
     );
   };
@@ -90,6 +138,50 @@ export default function LoanDetails() {
     );
   };
 
+  const WorkflowTimeline = () => (
+    <View style={styles.timelineCard}>
+      <Text style={styles.sectionTitle}>Loan Journey</Text>
+      <Text style={styles.helperText}>Live tracking of approval stages</Text>
+      <View style={styles.timelineContainer}>
+        {stages.map((stage, index) => {
+          const state = getStageStatus(stage.id, status as string);
+          const isLast = index === stages.length - 1;
+          
+          return (
+            <View key={stage.id} style={styles.timelineItem}>
+              <View style={styles.timelineLeft}>
+                <View style={[
+                  styles.timelineDot, 
+                  state === 'completed' && { backgroundColor: BRAND.success },
+                  state === 'active' && { backgroundColor: BRAND.accent, borderWidth: 3, borderColor: '#DBEAFE' },
+                  state === 'rejected' && { backgroundColor: BRAND.danger }
+                ]}>
+                  {state === 'completed' && <Ionicons name="checkmark" size={12} color="#fff" />}
+                  {state === 'active' && <View style={styles.pulseDot} />}
+                </View>
+                {!isLast && <View style={[styles.timelineLine, state === 'completed' && { backgroundColor: BRAND.success }]} />}
+              </View>
+              <View style={styles.timelineRight}>
+                <Text style={[
+                  styles.stageLabel, 
+                  state === 'active' && { color: BRAND.accent, fontWeight: 'bold' },
+                  state === 'upcoming' && { color: '#94A3B8' }
+                ]}>
+                  {stage.label}
+                </Text>
+                <Text style={styles.stageStatusText}>
+                  {state === 'completed' ? 'Approved & Signed' : 
+                   state === 'active' ? 'Currently Reviewing' : 
+                   state === 'rejected' ? 'Stopped here' : 'Awaiting Review'}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -102,6 +194,9 @@ export default function LoanDetails() {
         </View>
 
         <View style={styles.content}>
+          {/* Timeline Tracking */}
+          <WorkflowTimeline />
+
           {/* Customer Summary Card */}
           <View style={styles.card}>
             <Text style={styles.label}>CUSTOMER NAME</Text>
@@ -174,7 +269,7 @@ export default function LoanDetails() {
                 {isSubmitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.btnText}>Approve Loan</Text>
+                  <Text style={styles.btnText}>{getButtonLabel()}</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -269,18 +364,32 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   readOnlyBadge: { 
     flexDirection: 'row', 
+    alignSelf: 'center',
     alignItems: 'center', 
     justifyContent: 'center', 
     backgroundColor: '#E2E8F0', 
-    padding: 15, 
+    paddingHorizontal: 20,
+    paddingVertical: 12, 
     borderRadius: 12, 
-    marginTop: 20,
+    marginTop: 10,
     gap: 8
   },
   readOnlyText: { color: '#475569', fontWeight: 'bold', fontSize: 14 },
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeModal: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
   fullImage: { width: width, height: height * 0.8 },
+
+  // --- WORKFLOW TIMELINE STYLES ---
+  timelineCard: { backgroundColor: '#fff', padding: 20, borderRadius: 15, elevation: 3, marginBottom: 20 },
+  timelineContainer: { marginTop: 15 },
+  timelineItem: { flexDirection: 'row', minHeight: 50 },
+  timelineLeft: { alignItems: 'center', width: 30 },
+  timelineDot: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', zIndex: 1 },
+  timelineLine: { width: 2, flex: 1, backgroundColor: '#E2E8F0', marginVertical: -2 },
+  timelineRight: { flex: 1, paddingLeft: 15, paddingBottom: 20 },
+  stageLabel: { fontSize: 14, color: '#1E293B', fontWeight: '600' },
+  stageStatusText: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.accent },
 
   // --- REJECT MODAL STYLES ---
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },

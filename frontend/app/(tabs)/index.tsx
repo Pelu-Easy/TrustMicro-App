@@ -66,6 +66,23 @@ export default function Dashboard() {
   
   const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
 
+  // --- TRACKER LOGIC ---
+  const getStatusProgress = (status: string) => {
+    switch (status) {
+      case 'Draft': return { label: 'Saved Draft', percent: 10, color: '#94A3B8' };
+      case 'Pending': return { label: 'Supervisor Desk', percent: 25, color: '#EAB308' };
+      case 'PENDING_CREDIT': 
+      case 'PENDING_HEAD_CREDIT': return { label: 'Credit Dept', percent: 50, color: '#3B82F6' };
+      case 'PENDING_CCO':
+      case 'PENDING_MD': return { label: 'Management Review', percent: 75, color: '#8B5CF6' };
+      case 'Approved':
+      case 'APPROVED_FINANCE': return { label: 'Final Approval', percent: 90, color: '#10B981' };
+      case 'Disbursed': return { label: 'Fully Disbursed', percent: 100, color: '#059669' };
+      case 'Rejected': return { label: 'Rejected', percent: 100, color: '#EF4444' };
+      default: return { label: status, percent: 20, color: '#64748B' };
+    }
+  };
+
   // --- LOGOUT LOGIC ---
   const handleLogout = () => {
     Alert.alert(
@@ -279,9 +296,9 @@ export default function Dashboard() {
                 <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
               </View>
               <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
-              <View style={styles.progressContainer}>
+              <div style={styles.progressContainer}>
                 <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
-              </View>
+              </div>
               <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
             </View>
           </>
@@ -304,80 +321,74 @@ export default function Dashboard() {
             <Text style={styles.emptyText}>No loan records found.</Text>
           </View>
         ) : (
-          loans.slice(0, 10).map((loan, index) => (
-            <TouchableOpacity 
-              key={`${loan.id}-${index}`} 
-              style={styles.loanItem}
-              onPress={() => {
-                if (loan.status === 'Draft' && canOnboardLoan) {
-                  router.push({
-                    pathname: '/(tabs)/loanForm',
-                    params: { draftId: loan.id }
-                  });
-                } else if (loan.status === 'Rejected') {
-                  Alert.alert(
-                    "Loan Rejected",
-                    `REASON: ${loan.rejection_reason || 'Please check your documentation for errors.'}`,
-                    [
-                      { text: "Dismiss", style: "cancel" },
-                      { 
-                        text: "Fix & Resubmit", 
-                        onPress: () => {
-                          router.push({
-                            pathname: '/(tabs)/loanForm',
-                            params: { draftId: loan.id } 
-                          });
-                        } 
-                      }
-                    ]
-                  );
-                } else {
-                  router.push({
-                    pathname: '/loanDetails',
-                    params: { ...loan }
-                  });
-                }
-              }}
-            >
-              <View style={styles.loanInfo}>
-                <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
-                <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
-                
-                {loan.status === 'Rejected' && loan.rejection_reason && (
-                  <View style={styles.reasonInline}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={12} color="#EF4444" />
-                    <Text style={styles.reasonInlineText} numberOfLines={1}>
-                       Reason: {loan.rejection_reason}
-                    </Text>
+          loans.slice(0, 10).map((loan, index) => {
+            const track = getStatusProgress(loan.status);
+            return (
+              <TouchableOpacity 
+                key={`${loan.id}-${index}`} 
+                style={styles.loanItem}
+                onPress={() => {
+                  if (loan.status === 'Draft' && canOnboardLoan) {
+                    router.push({
+                      pathname: '/(tabs)/loanForm',
+                      params: { draftId: loan.id }
+                    });
+                  } else if (loan.status === 'Rejected') {
+                    Alert.alert(
+                      "Loan Rejected",
+                      `REASON: ${loan.rejection_reason || 'Please check your documentation for errors.'}`,
+                      [
+                        { text: "Dismiss", style: "cancel" },
+                        { 
+                          text: "Fix & Resubmit", 
+                          onPress: () => {
+                            router.push({
+                              pathname: '/(tabs)/loanForm',
+                              params: { draftId: loan.id } 
+                            });
+                          } 
+                        }
+                      ]
+                    );
+                  } else {
+                    router.push({
+                      pathname: '/loanDetails',
+                      params: { ...loan }
+                    });
+                  }
+                }}
+              >
+                <View style={styles.loanInfo}>
+                  <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
+                  <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
+                  
+                  {/* Status Progress Bar */}
+                  <View style={styles.miniTrackerContainer}>
+                    <View style={styles.trackerLabelRow}>
+                       <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
+                       <Text style={styles.trackerPercent}>{track.percent}%</Text>
+                    </View>
+                    <View style={styles.miniProgressBarBg}>
+                       <View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} />
+                    </View>
                   </View>
-                )}
-              </View>
-              <View style={styles.loanStatusArea}>
-                <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
-                <View style={[
-                    styles.statusBadge, 
-                    { 
-                      backgroundColor: 
-                        loan.status === 'Approved' ? '#DCFCE7' : 
-                        loan.status === 'Draft' ? '#FEF9C3' : 
-                        loan.status === 'Rejected' ? '#FEE2E2' : '#F1F5F9' 
-                    }
-                ]}>
-                  <Text style={[
-                    styles.statusText, 
-                    { 
-                      color: 
-                        loan.status === 'Approved' ? '#166534' : 
-                        loan.status === 'Draft' ? '#854D0E' : 
-                        loan.status === 'Rejected' ? '#991B1B' : '#475569' 
-                    }
-                  ]}>
-                    {loan.status}
-                  </Text>
+
+                  {loan.status === 'Rejected' && loan.rejection_reason && (
+                    <View style={styles.reasonInline}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={12} color="#EF4444" />
+                      <Text style={styles.reasonInlineText} numberOfLines={1}>
+                         Reason: {loan.rejection_reason}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))
+                <View style={styles.loanStatusArea}>
+                  <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
     </SafeAreaView>
@@ -428,7 +439,7 @@ const styles = StyleSheet.create({
   loanInfo: { flex: 1 },
   customerName: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
   loanDate: { fontSize: 12, color: '#94A3B8', marginTop: 4 },
-  loanStatusArea: { alignItems: 'flex-end' },
+  loanStatusArea: { alignItems: 'flex-end', justifyContent: 'center' },
   loanValue: { fontSize: 15, fontWeight: '700', color: '#1E293B', marginBottom: 5 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, fontWeight: 'bold' },
@@ -450,5 +461,13 @@ const styles = StyleSheet.create({
     borderWidth: 2, 
     borderColor: '#F8FAFC' 
   },
-  badgeNumber: { color: 'white', fontSize: 10, fontWeight: 'bold' }
+  badgeNumber: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  
+  // --- MINI TRACKER STYLES ---
+  miniTrackerContainer: { marginTop: 10, paddingRight: 20 },
+  trackerLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  trackerLabel: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+  trackerPercent: { fontSize: 10, color: '#94A3B8', fontWeight: 'bold' },
+  miniProgressBarBg: { height: 4, backgroundColor: '#F1F5F9', borderRadius: 2, overflow: 'hidden' },
+  miniProgressBarFill: { height: '100%', borderRadius: 2 }
 });

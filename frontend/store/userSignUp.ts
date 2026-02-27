@@ -6,7 +6,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 interface UserState {
   funame: string;
   email: string;
-  isLoggedIn: boolean; // This is the field we use for authentication status
+  isLoggedIn: boolean; 
   phone: string;
   branch: string;
   setToken: (token: string | null) => void;
@@ -17,6 +17,13 @@ interface UserState {
   token: string | null;
   isLoanOfficer: boolean;
   isSupervisor: boolean;
+  
+  // --- WORKFLOW SPECIFIC ROLES ---
+  isCreditOfficer: boolean;
+  isHeadOfCredit: boolean;
+  isCCO: boolean;
+  isMD: boolean;
+  isFinance: boolean;
   
   // --- NEW HYDRATION FIELDS ---
   _hasHydrated: boolean; 
@@ -44,6 +51,13 @@ const useUserData = create<UserState>()(
       token: null,
       isLoanOfficer: false,
       isSupervisor: false,
+
+      // --- INITIAL WORKFLOW STATE ---
+      isCreditOfficer: false,
+      isHeadOfCredit: false,
+      isCCO: false,
+      isMD: false,
+      isFinance: false,
       
       // --- INITIAL HYDRATION STATE ---
       _hasHydrated: false,
@@ -51,7 +65,7 @@ const useUserData = create<UserState>()(
 
       setToken: (newToken) => set({ 
         token: newToken, 
-        isLoggedIn: !!newToken // Automatically sets isLoggedIn to true if token exists
+        isLoggedIn: !!newToken 
       }),
 
       updateUserData: (data) => set((state) => ({
@@ -73,6 +87,11 @@ const useUserData = create<UserState>()(
           token: null,
           isLoanOfficer: false,
           isSupervisor: false,
+          isCreditOfficer: false,
+          isHeadOfCredit: false,
+          isCCO: false,
+          isMD: false,
+          isFinance: false,
         });
         // Clear storage entirely to be safe
         AsyncStorage.removeItem('trust-micro-storage');

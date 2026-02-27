@@ -1,7 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+    ActivityIndicator,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import api from '../services/api';
 
@@ -16,7 +24,7 @@ export default function NotificationsScreen() {
             const res = await api.get('/notifications');
             setNotifications(res.data);
         } catch (e) { 
-            console.error(e); 
+            console.error("Failed to load notifications:", e); 
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -25,13 +33,16 @@ export default function NotificationsScreen() {
 
     const markAsRead = async () => {
         try {
+            // Tells server all notifications for this user are now seen
             await api.patch('/notifications/mark-read');
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+            console.error("Failed to mark notifications as read:", e); 
+        }
     };
 
     useEffect(() => {
         loadNotifications();
-        markAsRead(); // Clear the count on the server when viewing the list
+        markAsRead();
     }, []);
 
     const onRefresh = () => {
@@ -42,46 +53,57 @@ export default function NotificationsScreen() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#003366" />
                 </TouchableOpacity>
                 <Text style={styles.title}>Notifications</Text>
             </View>
 
             {loading ? (
-                <ActivityIndicator size="large" color="#003366" style={{ marginTop: 50 }} />
+                <View style={styles.centered}>
+                    <ActivityIndicator size="large" color="#003366" />
+                </View>
             ) : (
                 <FlatList
                     data={notifications}
                     keyExtractor={(item: any) => item.id.toString()}
+                    contentContainerStyle={styles.listContent}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366" />
                     }
                     renderItem={({ item }) => (
-                        // Added conditional styling for unread items
-                        <View style={[styles.notifCard, !item.is_read && styles.unreadCard]}>
-                            <View style={[styles.iconCircle, { backgroundColor: item.title.includes('Approved') ? '#DCFCE7' : '#E0E7FF' }]}>
+                        <TouchableOpacity 
+                            activeOpacity={0.7}
+                            style={[styles.notifCard, !item.is_read && styles.unreadCard]}
+                        >
+                            <View style={[
+                                styles.iconCircle, 
+                                { backgroundColor: item.title.includes('Approved') || item.title.includes('Disbursed') ? '#DCFCE7' : '#E0E7FF' }
+                            ]}>
                                 <Ionicons 
-                                    name={item.title.includes('Approved') ? "checkmark-circle" : "cash-outline"} 
+                                    name={item.title.includes('Approved') ? "checkmark-circle" : "notifications-outline"} 
                                     size={20} 
                                     color={item.title.includes('Approved') ? "#166534" : "#003366"} 
                                 />
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.notifTitle}>{item.title}</Text>
+                            
+                            <View style={styles.textContainer}>
+                                <View style={styles.titleRow}>
+                                    <Text style={styles.notifTitle} numberOfLines={1}>{item.title}</Text>
+                                    {!item.is_read && <View style={styles.unreadDot} />}
+                                </View>
                                 <Text style={styles.notifBody}>{item.body}</Text>
                                 <Text style={styles.notifTime}>
-                                    {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(item.created_at).toLocaleDateString()} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </Text>
                             </View>
-                            {/* Added Unread Blue Dot indicator */}
-                            {!item.is_read && <View style={styles.unreadDot} />}
-                        </View>
+                        </TouchableOpacity>
                     )}
                     ListEmptyComponent={
-                        <View style={{ alignItems: 'center', marginTop: 100 }}>
-                            <Ionicons name="notifications-off-outline" size={50} color="#CBD5E1" />
-                            <Text style={{ color: '#94A3B8', marginTop: 10 }}>No notifications yet</Text>
+                        <View style={styles.emptyState}>
+                            <Ionicons name="notifications-off-outline" size={64} color="#CBD5E1" />
+                            <Text style={styles.emptyText}>No notifications yet</Text>
+                            <Text style={styles.emptySubtext}>Your loan updates will appear here.</Text>
                         </View>
                     }
                 />
@@ -92,33 +114,63 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F8FAFC' },
-    header: { flexDirection: 'row', alignItems: 'center', padding: 20, gap: 15 },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    header: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        paddingHorizontal: 20, 
+        paddingVertical: 15,
+        backgroundColor: '#FFF',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9'
+    },
+    backButton: { marginRight: 15 },
     title: { fontSize: 20, fontWeight: 'bold', color: '#003366' },
+    listContent: { paddingVertical: 15 },
     notifCard: { 
         flexDirection: 'row', 
         backgroundColor: '#fff', 
-        marginHorizontal: 20, 
-        marginBottom: 10, 
-        padding: 15, 
-        borderRadius: 12, 
+        marginHorizontal: 16, 
+        marginBottom: 12, 
+        padding: 16, 
+        borderRadius: 16, 
         gap: 12,
         borderWidth: 1,
         borderColor: '#F1F5F9',
-        alignItems: 'center'
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
     },
-    // New styles for unread states
     unreadCard: { 
         backgroundColor: '#F0F7FF', 
         borderColor: '#BFDBFE' 
     },
+    textContainer: { flex: 1 },
+    titleRow: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: 4 
+    },
     unreadDot: { 
-        width: 10, 
-        height: 10, 
-        borderRadius: 5, 
+        width: 8, 
+        height: 8, 
+        borderRadius: 4, 
         backgroundColor: '#3B82F6' 
     },
-    iconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    notifTitle: { fontWeight: 'bold', color: '#1E293B', fontSize: 15 },
-    notifBody: { color: '#64748B', fontSize: 13, marginTop: 2 },
-    notifTime: { fontSize: 10, color: '#94A3B8', marginTop: 5 }
+    iconCircle: { 
+        width: 44, 
+        height: 44, 
+        borderRadius: 22, 
+        justifyContent: 'center', 
+        alignItems: 'center' 
+    },
+    notifTitle: { fontWeight: 'bold', color: '#1E293B', fontSize: 15, flex: 1, paddingRight: 10 },
+    notifBody: { color: '#64748B', fontSize: 13, lineHeight: 18 },
+    notifTime: { fontSize: 11, color: '#94A3B8', marginTop: 8 },
+    emptyState: { alignItems: 'center', marginTop: 100, paddingHorizontal: 40 },
+    emptyText: { color: '#475569', fontSize: 18, fontWeight: 'bold', marginTop: 16 },
+    emptySubtext: { color: '#94A3B8', fontSize: 14, textAlign: 'center', marginTop: 8 }
 });
