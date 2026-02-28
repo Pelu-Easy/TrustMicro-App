@@ -3,6 +3,8 @@ import axios from 'axios/dist/browser/axios.cjs';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// Note: Ensure @react-native-segmented-control/segmented-control is installed
+import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import useUserData from '../../store/userSignUp';
 
 const BRAND = { primary: "#003366", accent: "#2E7D32", bg: "#F8FAFC", card: "#FFFFFF" };
@@ -10,19 +12,24 @@ const BRAND = { primary: "#003366", accent: "#2E7D32", bg: "#F8FAFC", card: "#FF
 export default function ManagerDashboard() {
   const { 
     token, funame, branch, 
-    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD 
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD
+    // Assuming 'cfo' is added to userSignUp store
+    // , isCFO 
   } = useUserData();
   const router = useRouter();
 
-  const [pendingLoans, setPendingLoans] = useState([]);
+  const [loans, setLoans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // NEW STATE: Control for toggling between views
+  const [selectedIndex, setSelectedIndex] = useState(0); 
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
   const getDashboardTitle = () => {
     if (isMD) return "Managing Director's Desk";
     if (isCCO) return "CCO Approval Basket";
     if (isHeadOfCredit) return "Credit Management Portal";
+    // if (isCFO) return "Finance/Treasury Dashboard";
     if (isCreditOfficer) return "Credit Review Basket";
     if (isSupervisor) return "Branch Supervisor Portal";
     return "Management Dashboard";
@@ -30,7 +37,7 @@ export default function ManagerDashboard() {
 
   // --- WORKFLOW: GET RELEVANT STATUS FILTER ---
   const getTargetStatus = () => {
-    if (isSupervisor) return 'Pending'; // Or PENDING_SUPERVISOR depending on your API
+    if (isSupervisor) return 'Pending';
     if (isCreditOfficer) return 'PENDING_CREDIT';
     if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
     if (isCCO) return 'PENDING_CCO';
@@ -39,30 +46,42 @@ export default function ManagerDashboard() {
   };
 
   const fetchData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const response = await axios.get('https://trustmicro-app.onrender.com/api/v1/manager/all-loans', {
+      let endpoint = 'https://trustmicro-app.onrender.com/api/v1/manager/all-loans';
+      
+      // NEW LOGIC: Switch endpoint based on tab
+      if (selectedIndex === 1) {
+        endpoint = 'https://trustmicro-app.onrender.com/api/v1/manager/approved-loans';
+      }
+
+      const response = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      const targetStatus = getTargetStatus();
+      if (selectedIndex === 0) {
+        const targetStatus = getTargetStatus();
+        // Filter loans based on the specific stage this user handles
+        const workBasket = response.data.filter((loan: any) => 
+          loan.status === targetStatus
+        );
+        setLoans(workBasket);
+      } else {
+        // Already filtered to 'Approved' by backend
+        setLoans(response.data);
+      }
       
-      // Filter loans based on the specific stage this user handles
-      const workBasket = response.data.filter((loan: any) => 
-        loan.status === targetStatus
-      );
-
-      setPendingLoans(workBasket);
     } catch (error) {
       console.error("Fetch Error:", error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD]);
+  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, selectedIndex]); // Refetch when tab changes
 
   const onRefresh = () => {
     setIsRefreshing(true);
@@ -79,8 +98,8 @@ export default function ManagerDashboard() {
     >
       <View style={styles.cardHeader}>
         <Text style={styles.customerName}>{item.customerName}</Text>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{item.status}</Text>
+        <View style={[styles.statusBadge, item.status === 'Approved' && {backgroundColor: '#D1FAE5'}]}>
+          <Text style={[styles.statusText, item.status === 'Approved' && {color: BRAND.accent}]}>{item.status}</Text>
         </View>
       </View>
       
@@ -106,25 +125,40 @@ export default function ManagerDashboard() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.welcomeText}>Welcome, {funame.split(' ')[0]}</Text>
+          <Text style={styles.welcomeText}>Welcome, {funame?.split(' ')[0]}</Text>
           <Text style={styles.titleText}>{getDashboardTitle()}</Text>
         </View>
         <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/(tabs)/profile')}>
            <View style={styles.avatarMini}>
-             <Text style={styles.avatarText}>{funame.charAt(0)}</Text>
+             <Text style={styles.avatarText}>{funame?.charAt(0)}</Text>
            </View>
         </TouchableOpacity>
       </View>
 
+      {/* NEW: SEGMENTED CONTROL FOR TOGGLING VIEWS */}
+      <View style={styles.segmentContainer}>
+        <SegmentedControl
+          values={['Pending', 'Approved Loans']}
+          selectedIndex={selectedIndex}
+          onChange={(event) => {
+            setSelectedIndex(event.nativeEvent.selectedSegmentIndex);
+          }}
+          tintColor={BRAND.primary}
+          backgroundColor="#E2E8F0"
+          fontStyle={{color: '#475569'}}
+          activeFontStyle={{color: '#FFFFFF', fontWeight: 'bold'}}
+        />
+      </View>
+
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Pending Tasks</Text>
-          <Text style={styles.statValue}>{pendingLoans.length}</Text>
+          <Text style={styles.statLabel}>{selectedIndex === 0 ? "Pending Tasks" : "Total Approved"}</Text>
+          <Text style={styles.statValue}>{loans.length}</Text>
         </View>
         <View style={[styles.statItem, { borderLeftWidth: 1, borderColor: '#E2E8F0' }]}>
           <Text style={styles.statLabel}>Current Stage</Text>
           <Text style={[styles.statValue, { fontSize: 14, color: BRAND.accent }]}>
-             {isMD ? "Final Level" : "Reviewing"}
+             {selectedIndex === 0 ? (isMD ? "Final Level" : "Reviewing") : "Finalized"}
           </Text>
         </View>
       </View>
@@ -132,11 +166,11 @@ export default function ManagerDashboard() {
       {isLoading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={BRAND.primary} />
-          <Text style={styles.loaderText}>Loading Work Basket...</Text>
+          <Text style={styles.loaderText}>Loading {selectedIndex === 0 ? 'Work Basket' : 'Approved Loans'}...</Text>
         </View>
       ) : (
         <FlatList
-          data={pendingLoans}
+          data={loans}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderLoanItem}
           contentContainerStyle={styles.listContent}
@@ -147,7 +181,7 @@ export default function ManagerDashboard() {
             <View style={styles.emptyContainer}>
               <Ionicons name="checkmark-circle-outline" size={80} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>All caught up!</Text>
-              <Text style={styles.emptySubtitle}>No pending loans require your attention in the {getDashboardTitle()}.</Text>
+              <Text style={styles.emptySubtitle}>No {selectedIndex === 0 ? 'pending' : 'approved'} loans require your attention.</Text>
             </View>
           }
         />
@@ -171,11 +205,17 @@ const styles = StyleSheet.create({
   avatarMini: { width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.primary, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFF', fontWeight: 'bold' },
   profileBtn: { padding: 5 },
+  // NEW STYLE
+  segmentContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: BRAND.card,
+  },
   statsBar: { 
     flexDirection: 'row', 
     backgroundColor: BRAND.card, 
     marginHorizontal: 20, 
-    marginTop: -10, 
+    marginTop: 10, 
     borderRadius: 15, 
     padding: 15,
     elevation: 4,

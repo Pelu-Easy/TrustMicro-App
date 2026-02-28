@@ -74,6 +74,30 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+// --- MANAGEMENT AUTHORIZATION MIDDLEWARE ---
+const isManagement = (req, res, next) => {
+    if (!req.user) {
+        return res.status(403).json({ error: "Access Denied: No user data" });
+    }
+
+    const role = (req.user.role || "").toLowerCase();
+    const unit = (req.user.unit || "").toLowerCase();
+    const isSupFlag = req.user.is_supervisor;
+
+    const managementUnits = ['cco', 'md', 'head of credit', 'cfo', 'admin', 'super admin', 'manager', 'supervisor'];
+    const hasManagementAccess = 
+        isSupFlag == 1 || 
+        isSupFlag === true || 
+        managementUnits.includes(role) ||
+        managementUnits.includes(unit);
+
+    if (hasManagementAccess) {
+        next();
+    } else {
+        res.status(403).json({ error: "Access Denied: Management privileges required" });
+    }
+};
+
 // --- 5. AUTH & SECURITY ---
 
 const handleLogin = async (req, res) => {
@@ -113,13 +137,13 @@ const handleLogin = async (req, res) => {
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
 
-        // Added 'unit' to the JWT payload
         const token = jwt.sign({ 
             id: user.id, 
             email: user.email, 
             role: user.role, 
             unit: user.unit,
-            full_name: user.full_name 
+            full_name: user.full_name,
+            is_supervisor: user.is_supervisor
         }, JWT_SECRET, { expiresIn: '12h' });
 
         res.json({ 
@@ -235,7 +259,7 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
 
 // --- 8. MANAGER DASHBOARD ROUTES ---
 
-app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, res) => {
+app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, async (req, res) => {
     const { status, rejection_reason } = req.body; 
     try {
         const query = 'UPDATE loans SET status = $1, rejection_reason = $2 WHERE id = $3 RETURNING *';
@@ -272,7 +296,7 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, re
     }
 });
 
-app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
+app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req, res) => {
     const supervisorName = req.user.full_name; 
     const userRole = req.user.role?.toLowerCase();
     const userUnit = req.user.unit?.toLowerCase();
@@ -281,8 +305,9 @@ app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
         let query;
         let params = [];
 
-        // Updated logic: Admin, Super Admin, CCO, and MD can see everything
-        if (userRole === 'super admin' || userRole === 'admin' || userUnit === 'cco' || userUnit === 'md') {
+        const isFullAccess = ['super admin', 'admin'].includes(userRole) || ['cco', 'md', 'head of credit', 'cfo'].includes(userUnit);
+
+        if (isFullAccess) {
             query = `
                 SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
                 FROM loans l
@@ -306,14 +331,32 @@ app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     }
 });
 
-app.get('/api/v1/manager/staff-list', authenticateToken, async (req, res) => {
+// --- NEW ROUTE: GET ALL APPROVED LOANS ---
+app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
+    try {
+        const query = `
+            SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
+            FROM loans l
+            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+            WHERE l.status = 'Approved'
+            ORDER BY l."submittedDate" DESC`;
+        
+        const result = await db.query(query);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Approved loans fetch error:", err.message);
+        res.status(500).json({ error: "Failed to fetch approved loans" });
+    }
+});
+
+app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, phone_no, role, unit, branch, is_active FROM staff_users ORDER BY full_name ASC');
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
 
-app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res) => {
+app.post('/api/v1/manager/reactivate-staff', authenticateToken, isManagement, async (req, res) => {
     const { staffEmail } = req.body;
     try {
         await db.query('UPDATE staff_users SET is_active = true, failed_attempts = 0 WHERE LOWER(TRIM(email)) = $1', [staffEmail.trim().toLowerCase()]);
@@ -323,14 +366,13 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
 
 const handleGetSupervisors = async (req, res) => {
     try {
-        // Expanded to include Credit Units and higher management
         const query = `
             SELECT id, full_name, email, role, branch, unit 
             FROM staff_users 
             WHERE role ILIKE 'Manager' 
                OR role ILIKE 'Admin' 
                OR role ILIKE 'Super Admin'
-               OR unit IN ('Head of Credit', 'CCO', 'MD', 'Supervisor')
+               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor')
             ORDER BY full_name ASC`;
         
         const result = await db.query(query);
@@ -341,7 +383,7 @@ const handleGetSupervisors = async (req, res) => {
     }
 };
 
-app.get('/api/v1/manager/supervisors', handleGetSupervisors);
+app.get('/api/v1/manager/supervisors', authenticateToken, handleGetSupervisors);
 app.get('/manager/supervisors', handleGetSupervisors);
 
 // --- 9. LOAN & USER ROUTES ---

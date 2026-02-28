@@ -7,7 +7,7 @@ export default function TabLayout() {
 
   const userRole = role?.toLowerCase() || '';
 
-  // UPDATED: Added 'head of credit', 'hoc', 'cco', and 'md' to management check
+  // UPDATED: Added 'cfo' to management check to allow access to approvals/finance
   const isManagement = 
     isSupervisor === true || 
     userRole === 'manager' || 
@@ -17,7 +17,8 @@ export default function TabLayout() {
     userRole === 'head of credit' || 
     userRole === 'hoc' ||
     userRole === 'cco' ||
-    userRole === 'md';
+    userRole === 'md' ||
+    userRole === 'cfo'; // New role added
 
   return (
     <Tabs

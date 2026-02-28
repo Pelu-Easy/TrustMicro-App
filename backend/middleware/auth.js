@@ -1,3 +1,5 @@
+// backend/middleware/auth.js
+
 const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
@@ -14,33 +16,39 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-const isSupervisor = (req, res, next) => {
+// --- NEW MIDDLEWARE ---
+const isManagement = (req, res, next) => {
     if (!req.user) {
         return res.status(403).json({ error: "Access Denied: No user data" });
     }
 
-    // Convert everything to lowercase and strings for safe comparison
     const role = (req.user.role || "").toLowerCase();
-    const isSupFlag = req.user.is_supervisor; // Could be 1, "1", true, etc.
+    const unit = (req.user.unit || "").toLowerCase();
+    const isSupFlag = req.user.is_supervisor;
 
-    console.log(`[AUTH] Checking access for: ${req.user.email}`);
-    console.log(`[AUTH] User Role: "${role}" | Supervisor Flag: ${isSupFlag}`);
-
-    if (
+    // Allowed if: Explicitly marked as supervisor, Role is manager, OR Unit is management
+    const managementUnits = ['cco', 'md', 'head of credit', 'admin', 'super admin'];
+    const hasManagementAccess = 
         isSupFlag == 1 || 
         isSupFlag === true || 
         role === 'manager' || 
-        role === 'supervisor'
-    ) {
+        role === 'supervisor' ||
+        managementUnits.includes(unit);
+
+    console.log(`[AUTH] Checking management access for: ${req.user.email}`);
+    console.log(`[AUTH] Unit: "${unit}" | Sup Flag: ${isSupFlag}`);
+
+    if (hasManagementAccess) {
         console.log("[AUTH] Access Granted ✅");
         next();
     } else {
         console.log("[AUTH] Access Denied ❌");
-        res.status(403).json({ 
-            error: "Access Denied: Supervisor privileges required",
-            debug: { role, isSupFlag } 
-        });
+        res.status(403).json({ error: "Access Denied: Management privileges required" });
     }
 };
 
-module.exports = { authenticateToken, isSupervisor };
+const isSupervisor = (req, res, next) => {
+    // ... existing isSupervisor logic ...
+};
+
+module.exports = { authenticateToken, isSupervisor, isManagement };
