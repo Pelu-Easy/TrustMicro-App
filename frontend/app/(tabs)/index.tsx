@@ -23,14 +23,13 @@ import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
 
-// ✅ Stable notification handler configuration
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowBanner: true, // ✅ Added to fix TS error
-    shouldShowList: true,   // ✅ Added to fix TS error
+    shouldShowBanner: true, 
+    shouldShowList: true,   
   }),
 });
 
@@ -57,14 +56,29 @@ export default function Dashboard() {
   // --- ROLE LOGIC ---
   const userRole = role?.toLowerCase() || '';
   
-  const isManagement = 
-    isSupervisor === true || 
-    userRole === 'manager' || 
-    userRole === 'supervisor' || 
-    userRole === 'admin' ||
-    userRole === 'super admin';
+  const isCreditOfficer = userRole === 'credit officer';
+  const isHeadOfCredit = userRole === 'head of credit';
+  const isCCO = userRole === 'cco' || userRole === 'chief commercial officer';
+  const isMD = userRole === 'md' || userRole === 'managing director';
+  const isFinance = userRole === 'finance' || userRole === 'disbursement';
+
+  // Define who is part of the Approval Workflow
+  const isWorkflowUser = ['credit officer', 'head of credit', 'cco', 'chief commercial officer', 'md', 'managing director', 'finance', 'disbursement', 'manager', 'supervisor'].includes(userRole) || isSupervisor === true;
+
+  const isManagement = isSupervisor === true || userRole === 'manager' || userRole === 'supervisor' || userRole === 'admin' || isWorkflowUser;
   
   const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
+
+  // Helper to determine if a loan needs this specific user's attention
+  const isMyTask = (loanStatus: string) => {
+    if (isCreditOfficer) return loanStatus === 'PENDING_CREDIT';
+    if (isHeadOfCredit) return loanStatus === 'PENDING_HEAD_CREDIT';
+    if (isCCO) return loanStatus === 'PENDING_CCO';
+    if (isMD) return loanStatus === 'PENDING_MD';
+    if (isFinance) return loanStatus === 'APPROVED_FINANCE';
+    if (isSupervisor || userRole === 'manager' || userRole === 'supervisor') return loanStatus === 'Pending';
+    return false;
+  };
 
   // --- TRACKER LOGIC ---
   const getStatusProgress = (status: string) => {
@@ -83,27 +97,13 @@ export default function Dashboard() {
     }
   };
 
-  // --- LOGOUT LOGIC ---
   const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Logout", 
-          style: "destructive",
-          onPress: () => {
-            setToken(null);
-            if(logout) logout(); 
-            router.replace('/login');
-          } 
-        }
-      ]
-    );
+    Alert.alert("Logout", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Logout", style: "destructive", onPress: () => { setToken(null); if(logout) logout(); router.replace('/login'); } }
+    ]);
   };
 
-  // Improved Fetch Logic
   const fetchAllLoans = useCallback(async () => {
     if (!token || !email) return;
     try {
@@ -126,25 +126,14 @@ export default function Dashboard() {
     }
   }, [token]);
 
-  // ✅ Notification Listeners Effect
   useEffect(() => {
     const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
       fetchUnreadCount();
       fetchAllLoans();
     });
-
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
       router.push('/notifications');
     });
-
-    async function requestPermissions() {
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status !== 'granted') {
-        await Notifications.requestPermissionsAsync();
-      }
-    }
-    requestPermissions();
-
     return () => {
       foregroundSubscription.remove();
       responseSubscription.remove();
@@ -159,13 +148,6 @@ export default function Dashboard() {
       }
     }, [token, email, fetchAllLoans, fetchUnreadCount])
   );
-
-  useEffect(() => {
-    if (!token || !email) {
-      const timeout = setTimeout(() => setIsLoading(false), 3000);
-      return () => clearTimeout(timeout);
-    }
-  }, [token, email]);
 
   const totalDisbursed = loans
     .filter(l => l.status === 'Disbursed')
@@ -183,6 +165,7 @@ export default function Dashboard() {
   const [team, setTeam] = useState<any[]>([]);
 
   const fetchTeam = async () => {
+    if (userRole !== 'manager' && userRole !== 'supervisor' && !isSupervisor) return;
     try {
       const response = await api.get('/manager/my-team');
       setTeam(response.data);
@@ -193,7 +176,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (activeTab === 'team') fetchTeam();
-  }, [activeTab]);
+  }, [activeTab, userRole]);
 
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>
@@ -219,9 +202,7 @@ export default function Dashboard() {
     <SafeAreaView style={styles.container}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366" />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366" />}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
@@ -232,22 +213,15 @@ export default function Dashboard() {
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
             </View>
           </View>
-
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <TouchableOpacity 
-              style={styles.notiButton} 
-              onPress={() => router.push('/notifications')}
-            >
+            <TouchableOpacity style={styles.notiButton} onPress={() => router.push('/notifications')}>
               <Ionicons name="notifications-outline" size={28} color="#003366" />
               {unreadCount > 0 && (
                 <View style={styles.badgeCircle}>
-                  <Text style={styles.badgeNumber}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
+                  <Text style={styles.badgeNumber}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
-
             <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
                 <Ionicons name="person-circle-outline" size={45} color="#003366" />
             </TouchableOpacity>
@@ -255,53 +229,30 @@ export default function Dashboard() {
         </View>
 
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        
-        <View style={{ marginBottom: 10 }}>
-          <View style={styles.actionGrid}>
-            {canOnboardLoan && (
-              <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
-                <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
-                <Text style={styles.actionBtnText}>New Loan</Text>
-              </TouchableOpacity>
-            )}
-            
-            {isManagement && (
-              <TouchableOpacity 
-                style={[styles.actionBtn, { backgroundColor: '#10B981' }]} 
-                onPress={() => router.push('/(tabs)/managerDashboard')}
-              >
-                <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
-                <Text style={styles.actionBtnText}>Approvals</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}>
-              <View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>Reports</Text>
+        <View style={styles.actionGrid}>
+          {canOnboardLoan && (
+            <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
+              <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>New Loan</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}>
-              <View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>Logout</Text>
+          )}
+          {isManagement && (
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/(tabs)/managerDashboard')}>
+              <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
+              <Text style={styles.actionBtnText}>Approvals</Text>
             </TouchableOpacity>
-          </View>
+          )}
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}><View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Reports</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}><View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Logout</Text></TouchableOpacity>
         </View>
 
         {!isManagement && (
-          <>
-            <Text style={styles.sectionTitle}>Target Tracking</Text>
-            <View style={styles.targetCard}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} />
-                <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
-              </View>
-              <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
-              <View style={styles.progressContainer}>
-                <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
-              </View>
-              <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
-            </View>
-          </>
+          <View style={styles.targetCard}>
+            <View style={styles.cardHeader}><Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} /><Text style={styles.cardTitle}>Monthly Disbursement Goal</Text></View>
+            <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
+            <View style={styles.progressContainer}><View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} /></View>
+            <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
+          </View>
         )}
 
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
@@ -311,76 +262,40 @@ export default function Dashboard() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Applications</Text>
+          <Text style={styles.sectionTitle}>{isWorkflowUser ? "Pending My Review" : "Recent Applications"}</Text>
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
         </View>
 
         {loans.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyText}>No loan records found.</Text>
-          </View>
+          <View style={styles.emptyState}><Ionicons name="folder-open-outline" size={48} color="#CBD5E1" /><Text style={styles.emptyText}>No loan records found.</Text></View>
         ) : (
-          loans.slice(0, 10).map((loan, index) => {
+          loans
+          .filter(l => isWorkflowUser ? isMyTask(l.status) : true) 
+          .slice(0, 15).map((loan, index) => {
             const track = getStatusProgress(loan.status);
             return (
-              <TouchableOpacity 
-                key={`${loan.id}-${index}`} 
-                style={styles.loanItem}
-                onPress={() => {
-                  if (loan.status === 'Draft' && canOnboardLoan) {
-                    router.push({
-                      pathname: '/(tabs)/loanForm',
-                      params: { draftId: loan.id }
-                    });
-                  } else if (loan.status === 'Rejected') {
-                    Alert.alert(
-                      "Loan Rejected",
-                      `REASON: ${loan.rejection_reason || 'Please check your documentation for errors.'}`,
-                      [
-                        { text: "Dismiss", style: "cancel" },
-                        { 
-                          text: "Fix & Resubmit", 
-                          onPress: () => {
-                            router.push({
-                              pathname: '/(tabs)/loanForm',
-                              params: { draftId: loan.id } 
-                            });
-                          } 
-                        }
-                      ]
-                    );
-                  } else {
-                    router.push({
-                      pathname: '/loanDetails',
-                      params: { ...loan }
-                    });
-                  }
-                }}
-              >
+              <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {
+                if (loan.status === 'Draft' && canOnboardLoan) {
+                  router.push({ pathname: '/(tabs)/loanForm', params: { draftId: loan.id } });
+                } else if (loan.status === 'Rejected') {
+                  Alert.alert("Loan Rejected", `REASON: ${loan.rejection_reason || 'Check docs.'}`, [
+                    { text: "Dismiss", style: "cancel" },
+                    { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/(tabs)/loanForm', params: { draftId: loan.id } }) }
+                  ]);
+                } else {
+                  router.push({ pathname: '/loanDetails', params: { ...loan } });
+                }
+              }}>
                 <View style={styles.loanInfo}>
                   <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
-                  
-                  {/* Status Progress Bar */}
                   <View style={styles.miniTrackerContainer}>
                     <View style={styles.trackerLabelRow}>
                        <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                        <Text style={styles.trackerPercent}>{track.percent}%</Text>
                     </View>
-                    <View style={styles.miniProgressBarBg}>
-                       <View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} />
-                    </View>
+                    <View style={styles.miniProgressBarBg}><View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} /></View>
                   </View>
-
-                  {loan.status === 'Rejected' && loan.rejection_reason && (
-                    <View style={styles.reasonInline}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={12} color="#EF4444" />
-                      <Text style={styles.reasonInlineText} numberOfLines={1}>
-                         Reason: {loan.rejection_reason}
-                      </Text>
-                    </View>
-                  )}
                 </View>
                 <View style={styles.loanStatusArea}>
                   <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
@@ -462,8 +377,6 @@ const styles = StyleSheet.create({
     borderColor: '#F8FAFC' 
   },
   badgeNumber: { color: 'white', fontSize: 10, fontWeight: 'bold' },
-  
-  // --- MINI TRACKER STYLES ---
   miniTrackerContainer: { marginTop: 10, paddingRight: 20 },
   trackerLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   trackerLabel: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },

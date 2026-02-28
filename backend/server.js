@@ -4,10 +4,10 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { Expo } = require('expo-server-sdk'); // Import Expo SDK
+const { Expo } = require('expo-server-sdk');
 
 const app = express();
-const expo = new Expo(); // Initialize Expo
+const expo = new Expo();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
@@ -26,7 +26,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Log requests for debugging production traffic
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     next();
@@ -49,7 +48,7 @@ const sendPushNotification = async (targetExpoToken, title, body, data = {}) => 
         sound: 'default',
         title: title,
         body: body,
-        data: data, // Integrated: Allows frontend to handle deep-linking
+        data: data,
     }];
     try {
         await expo.sendPushNotificationsAsync(messages);
@@ -114,8 +113,26 @@ const handleLogin = async (req, res) => {
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
 
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, full_name: user.full_name }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role, branch: user.branch } });
+        // Added 'unit' to the JWT payload
+        const token = jwt.sign({ 
+            id: user.id, 
+            email: user.email, 
+            role: user.role, 
+            unit: user.unit,
+            full_name: user.full_name 
+        }, JWT_SECRET, { expiresIn: '12h' });
+
+        res.json({ 
+            token, 
+            user: { 
+                id: user.id, 
+                full_name: user.full_name, 
+                email: user.email, 
+                role: user.role, 
+                unit: user.unit,
+                branch: user.branch 
+            } 
+        });
     } catch (e) { 
         await client.query('ROLLBACK');
         res.status(500).json({ error: "Internal Server Error" }); 
@@ -123,15 +140,16 @@ const handleLogin = async (req, res) => {
 };
 
 const handleSignup = async (req, res) => {
-    const { full_name, email, phone_no, branch, password, role, supervisor_name } = req.body;
+    const { full_name, email, phone_no, branch, password, role, supervisor_name, unit, is_loan_officer } = req.body;
     
     try {
         const hash = await bcrypt.hash(password, 10);
         const query = `
             INSERT INTO staff_users (
                 full_name, email, phone_no, password_hash, 
-                role, branch, supervisor_name, is_active, failed_attempts
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`;
+                role, branch, supervisor_name, is_active, failed_attempts,
+                unit, is_loan_officer
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`;
         
         await db.query(query, [
             full_name, 
@@ -142,7 +160,9 @@ const handleSignup = async (req, res) => {
             branch, 
             supervisor_name, 
             true, 
-            0
+            0,
+            unit || 'Operations',
+            is_loan_officer || false
         ]);
 
         res.status(201).json({ message: "Staff created successfully" });
@@ -189,7 +209,6 @@ app.get('/api/v1/notifications', authenticateToken, async (req, res) => {
     }
 });
 
-// Get count of unread notifications
 app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
     try {
         const result = await db.query(
@@ -202,7 +221,6 @@ app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res
     }
 });
 
-// Mark all as read (call this when opening the Notification Screen)
 app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res) => {
     try {
         await db.query(
@@ -227,7 +245,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, re
         
         const updatedLoan = result.rows[0];
 
-        // Notify Staff of Status Change (Manager -> Staff)
         const staffRes = await db.query(
             "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))",
             [updatedLoan.createdByEmail]
@@ -244,7 +261,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, re
             );
 
             if (staff.push_token) {
-                // Pass data so frontend knows which loan was updated
                 sendPushNotification(staff.push_token, title, body, { loanId: updatedLoan.id, type: 'STATUS_UPDATE' });
             }
         }
@@ -259,12 +275,14 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, re
 app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
     const supervisorName = req.user.full_name; 
     const userRole = req.user.role?.toLowerCase();
+    const userUnit = req.user.unit?.toLowerCase();
 
     try {
         let query;
         let params = [];
 
-        if (userRole === 'super admin' || userRole === 'admin') {
+        // Updated logic: Admin, Super Admin, CCO, and MD can see everything
+        if (userRole === 'super admin' || userRole === 'admin' || userUnit === 'cco' || userUnit === 'md') {
             query = `
                 SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
                 FROM loans l
@@ -290,7 +308,7 @@ app.get('/api/v1/manager/all-loans', authenticateToken, async (req, res) => {
 
 app.get('/api/v1/manager/staff-list', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query('SELECT id, full_name, email, phone_no, role, branch, is_active FROM staff_users ORDER BY full_name ASC');
+        const result = await db.query('SELECT id, full_name, email, phone_no, role, unit, branch, is_active FROM staff_users ORDER BY full_name ASC');
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
@@ -305,10 +323,14 @@ app.post('/api/v1/manager/reactivate-staff', authenticateToken, async (req, res)
 
 const handleGetSupervisors = async (req, res) => {
     try {
+        // Expanded to include Credit Units and higher management
         const query = `
-            SELECT id, full_name, email, role, branch 
+            SELECT id, full_name, email, role, branch, unit 
             FROM staff_users 
-            WHERE role ILIKE 'Manager' OR role ILIKE 'Admin' OR role ILIKE 'Super Admin'
+            WHERE role ILIKE 'Manager' 
+               OR role ILIKE 'Admin' 
+               OR role ILIKE 'Super Admin'
+               OR unit IN ('Head of Credit', 'CCO', 'MD', 'Supervisor')
             ORDER BY full_name ASC`;
         
         const result = await db.query(query);
@@ -361,7 +383,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         await db.query(query, values);
 
-        // Notify Supervisor (Staff -> Manager)
         if (supervisorName) {
             const supervisor = await db.query(
                 "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", 
@@ -401,7 +422,7 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
 
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query('SELECT id, full_name, email, role, branch FROM staff_users WHERE id = $1', [req.user.id]);
+        const result = await db.query('SELECT id, full_name, email, role, unit, branch FROM staff_users WHERE id = $1', [req.user.id]);
         res.json(result.rows[0]);
     } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });

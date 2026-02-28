@@ -42,9 +42,27 @@ export default function SignUpScreen() {
   const [errors, setErrors] = useState<any>({});
 
   const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services", "Sales"];
-  const units = ["Cashier", "Internal Control", "IT Support", "Loans", "Credit Analyst", "Admin Officer", "Customer Experience"];
+  
+  // UPDATED ROLES LIST based on server.js changes
+  const units = [
+    "Credit Officer", 
+    "Supervisor", 
+    "Head of Credit", 
+    "CCO", 
+    "MD", 
+    "Finance", 
+    "Disbursement",
+    "Cashier", 
+    "Internal Control", 
+    "IT Support", 
+    "Admin Officer", 
+    "Customer Experience"
+  ];
 
   const isMarketingOrSales = formData.department === "Marketing" || formData.department === "Sales";
+  
+  // Dynamic validation: Supervisor is required for Credit Officers or General Staff
+  const needsSupervisor = formData.unit === "Credit Officer" || (!formData.isSupervisor && formData.unit !== "MD" && formData.unit !== "CCO");
 
   useEffect(() => {
     const fetchSupervisors = async () => {
@@ -66,9 +84,17 @@ export default function SignUpScreen() {
     }
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
-      if (field === 'department' && value !== "Marketing" && value !== "Sales") {
+      
+      // Auto-set isLoanOfficer if role is Credit Officer
+      if (field === 'unit' && value === "Credit Officer") {
+        newData.isLoanOfficer = true;
+      }
+      
+      // Reset isLoanOfficer if role changes away from Credit Officer or Mkt/Sales
+      if (field === 'unit' && value !== "Credit Officer" && !isMarketingOrSales) {
         newData.isLoanOfficer = false;
       }
+
       return newData;
     });
   };
@@ -81,7 +107,13 @@ export default function SignUpScreen() {
     if (!validateEmail(formData.email)) currentErrors.email = "Enter a valid corporate email";
     if (formData.phone.trim().length !== 11) currentErrors.phone = "Phone must be 11 digits";
     if (!formData.department) currentErrors.department = "Please select a department";
-    if (!formData.isSupervisor && !formData.supervisor) currentErrors.supervisor = "Please select a supervisor";
+    if (!formData.unit) currentErrors.unit = "Please select a Unit/Role";
+    
+    // Only validate supervisor if the role requires one
+    if (needsSupervisor && !formData.isSupervisor && !formData.supervisor) {
+        currentErrors.supervisor = "Please select a supervisor";
+    }
+    
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
     if (formData.password !== formData.confirmPassword) currentErrors.confirmPassword = "Passwords do not match";
 
@@ -92,7 +124,6 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      // Clean data before sending
       const payload = {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -101,8 +132,9 @@ export default function SignUpScreen() {
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
-        supervisor_name: formData.supervisor, 
-        role: formData.isSupervisor ? 'Manager' : 'Officer',
+        // Map based on checkbox selection
+        supervisor_name: formData.isSupervisor ? 'N/A' : formData.supervisor, 
+        role: formData.isSupervisor ? 'Manager' : formData.unit,
         is_loan_officer: formData.isLoanOfficer,
         is_active: true 
       };
@@ -117,7 +149,6 @@ export default function SignUpScreen() {
       );
     } catch (error: any) {
       setIsLoading(false);
-      // The logic below captures the "Email already registered" message from the backend
       const serverError = error.response?.data?.error || "Registration failed. Please try again.";
       Alert.alert("Registration Issue", serverError);
     }
@@ -193,30 +224,43 @@ export default function SignUpScreen() {
 
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={styles.label}>Supervisor</Text>
-                <TouchableOpacity 
-                    style={[styles.pickerTrigger, errors.supervisor && styles.inputError]} 
-                    onPress={() => setShowSupModal(true)}
-                >
-                  <Text style={[styles.triggerText, !formData.supervisor && { color: '#94A3B8' }]} numberOfLines={1}>
-                    {formData.supervisor || "Select..."}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Unit / Role</Text>
-                <TouchableOpacity style={styles.pickerTrigger} onPress={() => setShowUnitModal(true)}>
+                <TouchableOpacity style={[styles.pickerTrigger, errors.unit && styles.inputError]} onPress={() => setShowUnitModal(true)}>
                   <Text style={[styles.triggerText, !formData.unit && { color: '#94A3B8' }]} numberOfLines={1}>
                     {formData.unit || "Select..."}
                   </Text>
                 </TouchableOpacity>
+                <ErrorMsg name="unit" />
+              </View>
+              
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Supervisor</Text>
+                <TouchableOpacity 
+                    disabled={!needsSupervisor || formData.isSupervisor}
+                    style={[
+                        styles.pickerTrigger, 
+                        errors.supervisor && styles.inputError,
+                        (!needsSupervisor || formData.isSupervisor) && { backgroundColor: '#F1F5F9' }
+                    ]} 
+                    onPress={() => setShowSupModal(true)}
+                >
+                  <Text style={[styles.triggerText, (!formData.supervisor || !needsSupervisor) && { color: '#94A3B8' }]} numberOfLines={1}>
+                    {formData.isSupervisor ? "N/A" : (formData.supervisor || "Select...")}
+                  </Text>
+                </TouchableOpacity>
+                <ErrorMsg name="supervisor" />
               </View>
             </View>
 
             <View style={styles.checkboxContainer}>
-              <View style={[styles.checkboxRow, !isMarketingOrSales && { opacity: 0.4 }]}>
-                <Checkbox value={formData.isLoanOfficer} onValueChange={(v) => updateField('isLoanOfficer', v)} color="#003366" disabled={!isMarketingOrSales} />
-                <Text style={[styles.checkboxLabel, !isMarketingOrSales && { color: '#94A3B8' }]}>Is Loan Officer?</Text>
+              <View style={[styles.checkboxRow, !isMarketingOrSales && formData.unit !== "Credit Officer" && { opacity: 0.4 }]}>
+                <Checkbox 
+                    value={formData.isLoanOfficer} 
+                    onValueChange={(v) => updateField('isLoanOfficer', v)} 
+                    color="#003366" 
+                    disabled={!isMarketingOrSales && formData.unit !== "Credit Officer"} 
+                />
+                <Text style={[styles.checkboxLabel, !isMarketingOrSales && formData.unit !== "Credit Officer" && { color: '#94A3B8' }]}>Is Loan Officer?</Text>
               </View>
               <View style={styles.checkboxRow}>
                 <Checkbox value={formData.isSupervisor} onValueChange={(v) => updateField('isSupervisor', v)} color="#003366" />
@@ -290,7 +334,7 @@ export default function SignUpScreen() {
 
           <Modal visible={showUnitModal} transparent animationType="fade">
             <View style={styles.modalOverlay}><View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Unit</Text>
+                <Text style={styles.modalTitle}>Select Unit / Role</Text>
                 <FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (
                     <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(false); }}>
                       <Text style={[styles.modalItemText, formData.unit === item && styles.selectedText]}>{item}</Text>

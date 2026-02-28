@@ -28,6 +28,7 @@ const BRAND = {
   border: "#E2E8F0" 
 };
 
+// --- LOAN LIMITS CONFIGURATION ---
 const LOAN_LIMITS: Record<string, number> = {
   'Federal': 1000000,
   'State': 500000,
@@ -96,10 +97,12 @@ export default function CompleteLoanForm() {
     }
   };
 
+  // --- UPDATED VALIDATION LOGIC ---
   const validateAmount = () => {
     const amount = parseFloat(formData.loanAmount);
-    const limit = LOAN_LIMITS[formData.loanType];
-    if (isNaN(amount)) return { valid: false, msg: "Please enter a valid amount." };
+    const limit = LOAN_LIMITS[formData.loanType] || 0;
+    
+    if (isNaN(amount) || amount <= 0) return { valid: false, msg: "Please enter a valid amount." };
     if (amount > limit) return { valid: false, msg: `Limit for ${formData.loanType} is ₦${limit.toLocaleString()}.` };
     return { valid: true, msg: "" };
   };
@@ -140,6 +143,7 @@ export default function CompleteLoanForm() {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
     try {
+      // In production, this would hit your actual API
       const response = await fetch('https://trustmicro.free.beeceptor.com/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,7 +169,7 @@ export default function CompleteLoanForm() {
       bvn: formData.bvn,
       nin: formData.nin,
       phone: formData.phone,
-      loanAmount: formData.loanAmount,
+      loanAmount: parseFloat(formData.loanAmount),
       bankName: formData.bankName,
       accountNumber: formData.accountNumber,
       employerName: formData.employerName,
@@ -183,17 +187,19 @@ export default function CompleteLoanForm() {
       gender: formData.gender,
       tenure: formData.tenure,
       staffName: staffFullName || 'System',
-      branchName: staffBranch || 'Main'
+      branchName: staffBranch || 'Main',
+      status: 'Pending' 
     };
 
     try {
       const response = await api.post('/loans', payload);
 
       if (response.status === 201 || response.status === 200) {
-        Alert.alert("Success", "Loan application submitted successfully!", [
+        Alert.alert("Success", "Loan application submitted successfully and sent for review!", [
           { 
             text: "OK", 
             onPress: () => {
+              // Reset Form
               setFormData({
                 customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
                 loanAmount: '', bankName: '', accountNumber: '',
@@ -303,8 +309,17 @@ export default function CompleteLoanForm() {
             <Text style={styles.title}>Financials</Text>
             <Selector label="Monthly Income Range *" options={['₦50,000.00 - ₦100,000.00', '₦110,000.00 - ₦200,000.00', '₦210,000.00 - ₦350,000.00', '₦360,000.00 and above']} current={formData.monthlyIncome} onSelect={(v: string) => updateData('monthlyIncome', v)} />
             <Selector label="Loan Type *" options={['Federal', 'State', 'Private']} current={formData.loanType} onSelect={(v: string) => updateData('loanType', v)} />
+            
             <Text style={styles.label}>Requested Loan Amount *</Text>
-            <TextInput style={[styles.input, !validateAmount().valid && {borderColor: BRAND.danger}]} value={formData.loanAmount} onChangeText={v=>updateData('loanAmount',v)} keyboardType="numeric" placeholder={`Max: ₦${LOAN_LIMITS[formData.loanType].toLocaleString()}`} />
+            <TextInput 
+              style={[styles.input, !validateAmount().valid && {borderColor: BRAND.danger}]} 
+              value={formData.loanAmount} 
+              onChangeText={v=>updateData('loanAmount',v)} 
+              keyboardType="numeric" 
+              // DYNAMIC LIMIT DISPLAY
+              placeholder={`Max: ₦${LOAN_LIMITS[formData.loanType]?.toLocaleString() || 0}`} 
+            />
+            
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(2)}><Text>Back</Text></TouchableOpacity>
                 <TouchableOpacity style={styles.primaryBtn} onPress={() => validateAmount().valid ? setStep(4) : Alert.alert("Error", validateAmount().msg)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
