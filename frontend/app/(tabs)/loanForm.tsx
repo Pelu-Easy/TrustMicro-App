@@ -61,7 +61,19 @@ export default function CompleteLoanForm() {
   const [currentLoanId, setCurrentLoanId] = useState<string>('');
 
   const { loans: allLoans } = useLoanStore();
-  const { funame: staffFullName, branch: staffBranch } = useUserData();
+  const { funame: staffFullName, branch: staffBranch, role, isSupervisor } = useUserData();
+
+  // --- SAFETY CHECK: REDIRECT MANAGEMENT USERS ---
+  useEffect(() => {
+    const userRole = role?.toLowerCase() || '';
+    const isManagement = 
+      isSupervisor === true || 
+      ['manager', 'supervisor', 'admin', 'super admin', 'head of credit', 'hoc', 'cco', 'md'].includes(userRole);
+
+    if (isManagement) {
+      router.replace('/(tabs)'); // Redirect to Home
+    }
+  }, [role, isSupervisor]);
 
   const [formData, setFormData] = useState({
     customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
@@ -97,7 +109,6 @@ export default function CompleteLoanForm() {
     }
   };
 
-  // --- UPDATED VALIDATION LOGIC ---
   const validateAmount = () => {
     const amount = parseFloat(formData.loanAmount);
     const limit = LOAN_LIMITS[formData.loanType] || 0;
@@ -143,7 +154,6 @@ export default function CompleteLoanForm() {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
     try {
-      // In production, this would hit your actual API
       const response = await fetch('https://trustmicro.free.beeceptor.com/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,7 +209,6 @@ export default function CompleteLoanForm() {
           { 
             text: "OK", 
             onPress: () => {
-              // Reset Form
               setFormData({
                 customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
                 loanAmount: '', bankName: '', accountNumber: '',
@@ -316,7 +325,6 @@ export default function CompleteLoanForm() {
               value={formData.loanAmount} 
               onChangeText={v=>updateData('loanAmount',v)} 
               keyboardType="numeric" 
-              // DYNAMIC LIMIT DISPLAY
               placeholder={`Max: ₦${LOAN_LIMITS[formData.loanType]?.toLocaleString() || 0}`} 
             />
             
