@@ -34,6 +34,7 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
 
+    // Log errors for debugging (except common auth ones)
     if (status !== 401 && status !== 403) {
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
@@ -41,11 +42,12 @@ api.interceptors.response.use(
       console.groupEnd();
     }
 
-    if (status === 401 || status === 403) {
+    // --- HANDLE 401: UNAUTHORIZED (Token Expired/Invalid) ---
+    if (status === 401) {
       if (!isAuthRequest) {
         const { logout } = useUserData.getState();
         logout(); 
-
+        
         if (originalRequest?.url !== '/users/me') {
           Alert.alert(
             "Session Expired", 
@@ -57,6 +59,17 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // --- HANDLE 403: FORBIDDEN (No Permission, but logged in) ---
+    if (status === 403) {
+      Alert.alert(
+        "Permission Denied",
+        "You do not have the required role to access this feature.",
+        [{ text: "Back" }]
+      );
+      return Promise.reject(error);
+    }
+
+    // --- HANDLE OTHER ERRORS ---
     let errorMessage = "Network Error: Please check your internet connection.";
     
     if (error.code === 'ECONNABORTED') {
@@ -65,6 +78,7 @@ api.interceptors.response.use(
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }
 
+    // Don't show generic alert for Auth requests as they handle their own UI
     if (!isAuthRequest) {
         Alert.alert("Request Failed", errorMessage);
     }
