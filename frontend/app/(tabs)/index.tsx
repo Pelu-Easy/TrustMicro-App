@@ -296,9 +296,9 @@ export default function Dashboard() {
                 <Text style={styles.cardTitle}>Monthly Disbursement Goal</Text>
               </View>
               <Text style={styles.amountText}>₦{totalDisbursed.toLocaleString()}</Text>
-              <div style={styles.progressContainer}>
+              <View style={styles.progressContainer}>
                 <View style={[styles.progressBar, { width: `${disbursementProgress * 100}%` }]} />
-              </div>
+              </View>
               <Text style={styles.targetGoal}>Goal: ₦{(disbursementTarget / 1000000).toFixed(1)}M</Text>
             </View>
           </>
