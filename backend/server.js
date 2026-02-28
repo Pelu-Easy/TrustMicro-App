@@ -39,7 +39,7 @@ const db = new Pool({
 });
 
 // --- 3. HELPER FUNCTIONS ---
-const sendPushNotification = async (targetExpoToken, title, body) => {
+const sendPushNotification = async (targetExpoToken, title, body, data = {}) => {
     if (!Expo.isExpoPushToken(targetExpoToken)) {
         console.error(`Push token ${targetExpoToken} is not a valid Expo push token`);
         return;
@@ -49,6 +49,7 @@ const sendPushNotification = async (targetExpoToken, title, body) => {
         sound: 'default',
         title: title,
         body: body,
+        data: data, // Integrated: Allows frontend to handle deep-linking
     }];
     try {
         await expo.sendPushNotificationsAsync(messages);
@@ -213,16 +214,42 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
         res.status(500).json({ error: "Failed to update status" });
     }
 });
+
 // --- 8. MANAGER DASHBOARD ROUTES ---
 
 app.patch('/api/v1/manager/update-status/:id', authenticateToken, async (req, res) => {
-    const { status, rejection_reason } = req.body; // Added rejection_reason from body
+    const { status, rejection_reason } = req.body; 
     try {
         const query = 'UPDATE loans SET status = $1, rejection_reason = $2 WHERE id = $3 RETURNING *';
         const result = await db.query(query, [status, rejection_reason || null, req.params.id]);
         
         if (result.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
-        res.json({ message: "Status updated", loan: result.rows[0] });
+        
+        const updatedLoan = result.rows[0];
+
+        // Notify Staff of Status Change (Manager -> Staff)
+        const staffRes = await db.query(
+            "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))",
+            [updatedLoan.createdByEmail]
+        );
+
+        if (staffRes.rows[0]) {
+            const staff = staffRes.rows[0];
+            const title = `Loan Update: ${status} 📢`;
+            const body = `The loan for ${updatedLoan.customerName} has been ${status.toLowerCase()}.`;
+
+            await db.query(
+                "INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)",
+                [staff.id, title, body]
+            );
+
+            if (staff.push_token) {
+                // Pass data so frontend knows which loan was updated
+                sendPushNotification(staff.push_token, title, body, { loanId: updatedLoan.id, type: 'STATUS_UPDATE' });
+            }
+        }
+
+        res.json({ message: "Status updated", loan: updatedLoan });
     } catch (err) { 
         console.error("Update error:", err.message);
         res.status(500).json({ error: "Update failed" }); 
@@ -313,7 +340,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 
     try {
-        // Find supervisor's info
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE LOWER(TRIM(email)) = $1", [tokenEmail]);
         const supervisorName = staffRes.rows[0]?.supervisor_name;
 
@@ -335,7 +361,7 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         await db.query(query, values);
 
-        // TRIGGER NOTIFICATION & SAVE TO HISTORY
+        // Notify Supervisor (Staff -> Manager)
         if (supervisorName) {
             const supervisor = await db.query(
                 "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", 
@@ -348,15 +374,13 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
                 const supervisorId = supervisor.rows[0].id;
                 const pushToken = supervisor.rows[0].push_token;
 
-                // Save to History Table
                 await db.query(
                     "INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)",
                     [supervisorId, title, body]
                 );
 
-                // Send the actual Ping if token exists
                 if (pushToken) {
-                    sendPushNotification(pushToken, title, body);
+                    sendPushNotification(pushToken, title, body, { loanId: uniqueId, type: 'NEW_LOAN' });
                 }
             }
         }
@@ -370,7 +394,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     try {
-        // SELECT * will now include rejection_reason
         const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Database error." }); }

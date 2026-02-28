@@ -1,6 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../server'); // Import the PG pool from your server.js
+const { Expo } = require('expo-server-sdk');
+const expo = new Expo();
+
+// Helper for sending notifications within the router
+const sendPushNotification = async (targetExpoToken, title, body, data = {}) => {
+    if (!Expo.isExpoPushToken(targetExpoToken)) return;
+    try {
+        await expo.sendPushNotificationsAsync([{
+            to: targetExpoToken,
+            sound: 'default',
+            title,
+            body,
+            data,
+        }]);
+    } catch (error) {
+        console.error("Notification delivery error:", error);
+    }
+};
 
 // --- 1. GET MANAGER DASHBOARD STATS ---
 router.get('/loan-stats', async (req, res) => {
@@ -159,13 +177,11 @@ router.get('/staff-list', async (req, res) => {
     }
 });
 
-// --- 8. UPDATE LOAN STATUS (WITH REJECTION REASON) ---
+// --- 8. UPDATE LOAN STATUS (WITH PUSH NOTIFICATIONS) ---
 router.patch('/update-status/:id', async (req, res) => {
     const { id } = req.params;
-    const { status, rejectionReason } = req.body;
+    const { status, rejection_reason } = req.body;
     try {
-        // Build the query to update both status and rejection_reason.
-        // If status is Approved, we nullify any existing rejection_reason.
         const query = `
             UPDATE loans 
             SET status = $1, 
@@ -173,13 +189,43 @@ router.patch('/update-status/:id', async (req, res) => {
             WHERE id = $3 
             RETURNING *`;
         
-        const finalReason = status === 'Rejected' ? rejectionReason : null;
+        const finalReason = status === 'Rejected' ? rejection_reason : null;
         const result = await db.query(query, [status, finalReason, id]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Loan not found.' });
         }
-        res.json({ message: `Loan status updated to ${status}`, loan: result.rows[0] });
+
+        const updatedLoan = result.rows[0];
+
+        // --- PUSH NOTIFICATION LOGIC ---
+        const staffRes = await db.query(
+            "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))",
+            [updatedLoan.createdByEmail]
+        );
+
+        if (staffRes.rows[0]) {
+            const staff = staffRes.rows[0];
+            const title = `Loan Journey Update 📢`;
+            const body = `Your loan application for ${updatedLoan.customerName} has moved to: ${status.replace(/_/g, ' ')}`;
+
+            // Save to Notification History
+            await db.query(
+                "INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)",
+                [staff.id, title, body]
+            );
+
+            // Send Real-time Push
+            if (staff.push_token) {
+                sendPushNotification(staff.push_token, title, body, { 
+                    loanId: updatedLoan.id, 
+                    type: 'STATUS_UPDATE',
+                    status: status 
+                });
+            }
+        }
+
+        res.json({ message: `Loan status updated to ${status}`, loan: updatedLoan });
     } catch (error) {
         console.error('Error updating status:', error.message);
         res.status(500).json({ error: 'Database update failed.' });
