@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios/dist/browser/axios.cjs';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react'; // Added useRef
 import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import api from '../../services/api'; // Use our secure instance
 // Note: Ensure @react-native-segmented-control/segmented-control is installed
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import useUserData from '../../store/userSignUp';
@@ -13,15 +13,12 @@ export default function ManagerDashboard() {
   const { 
     token, funame, branch, 
     isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD
-    // Assuming 'cfo' is added to userSignUp store
-    // , isCFO 
   } = useUserData();
   const router = useRouter();
 
   const [loans, setLoans] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // NEW STATE: Control for toggling between views
   const [selectedIndex, setSelectedIndex] = useState(0); 
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
@@ -29,7 +26,6 @@ export default function ManagerDashboard() {
     if (isMD) return "Managing Director's Desk";
     if (isCCO) return "CCO Approval Basket";
     if (isHeadOfCredit) return "Credit Management Portal";
-    // if (isCFO) return "Finance/Treasury Dashboard";
     if (isCreditOfficer) return "Credit Review Basket";
     if (isSupervisor) return "Branch Supervisor Portal";
     return "Management Dashboard";
@@ -46,33 +42,33 @@ export default function ManagerDashboard() {
   };
 
   const fetchData = useCallback(async () => {
+    // If no token exists, don't even try to fetch
+    if (!token) return;
+
     setIsLoading(true);
     try {
-      let endpoint = 'https://trustmicro-app.onrender.com/api/v1/manager/all-loans';
+      let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
       
-      // NEW LOGIC: Switch endpoint based on tab
-      if (selectedIndex === 1) {
-        endpoint = 'https://trustmicro-app.onrender.com/api/v1/manager/approved-loans';
-      }
-
-      const response = await axios.get(endpoint, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // Use our centralized 'api' instance
+      const response = await api.get(endpoint);
       
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
-        // Filter loans based on the specific stage this user handles
         const workBasket = response.data.filter((loan: any) => 
           loan.status === targetStatus
         );
         setLoans(workBasket);
       } else {
-        // Already filtered to 'Approved' by backend
         setLoans(response.data);
       }
       
-    } catch (error) {
-      console.error("Fetch Error:", error);
+    } catch (error: any) {
+      // --- SILENTLY HANDLE 401 DURING LOGOUT ---
+      if (error.response?.status === 401 || !token) {
+        console.log("Request aborted due to logout or expired token.");
+        return; // Do not console.error or alert
+      }
+      console.error("Dashboard Fetch Error:", error.message);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -80,14 +76,20 @@ export default function ManagerDashboard() {
   }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData, selectedIndex]); // Refetch when tab changes
+    // Only fetch if token exists
+    if (token) {
+      fetchData();
+    }
+  }, [fetchData, selectedIndex, token]); // Added token dependency
 
   const onRefresh = () => {
+    if (!token) return;
     setIsRefreshing(true);
     fetchData();
   };
 
+  // ... renderLoanItem and return statement remain unchanged ...
+// ...
   const renderLoanItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.loanCard}
