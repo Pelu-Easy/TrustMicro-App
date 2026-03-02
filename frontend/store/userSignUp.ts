@@ -69,10 +69,24 @@ const useUserData = create<UserState>()(
         isLoggedIn: !!newToken 
       }),
 
-      updateUserData: (data) => set((state) => ({
-        ...state,
-        ...data,
-      })),
+      // --- IMPROVED ROLE MAPPING ACTION ---
+      updateUserData: (data) => set((state) => {
+        // Create the potential new state
+        let newState = { ...state, ...data };
+
+        // If the update contains a new role string, recalculate boolean flags
+        if (data.role) {
+          // Map the backend role string to the frontend boolean flags
+          newState.isHeadOfCredit = data.role === 'HEAD_OF_CREDIT';
+          newState.isCreditOfficer = data.role === 'CREDIT_OFFICER';
+          newState.isCCO = data.role === 'CCO';
+          newState.isMD = data.role === 'MD';
+          newState.isFinance = data.role === 'FINANCE';
+          // Add other role mappings here as needed
+        }
+        
+        return newState;
+      }),
 
       logout: () => {
         set({

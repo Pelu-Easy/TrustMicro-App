@@ -11,7 +11,8 @@ export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  // --- UPDATED: Increased timeout for slower connections ---
+  timeout: 30000, 
 });
 
 // --- 1. REQUEST INTERCEPTOR (Attaches the Token) ---
@@ -39,6 +40,7 @@ api.interceptors.response.use(
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
       console.log('Status:', status);
+      console.log('Code:', error.code); // Added code for debugging timeouts
       console.groupEnd();
     }
 
@@ -85,10 +87,11 @@ api.interceptors.response.use(
     }
 
     // --- HANDLE OTHER ERRORS ---
-    let errorMessage = "Network Error: Please check your internet connection.";
+    let errorMessage = "A network error occurred. Please check your internet connection.";
     
-    if (error.code === 'ECONNABORTED') {
-      errorMessage = "The server is taking too long to respond.";
+    // --- UPDATED: Specific handling for SocketTimeoutException ---
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      errorMessage = "The server is taking too long to respond. Please try again.";
     } else if (error.response) {
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }
