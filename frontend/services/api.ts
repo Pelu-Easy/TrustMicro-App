@@ -46,6 +46,7 @@ api.interceptors.response.use(
     if (status === 401) {
       if (!isAuthRequest) {
         const { logout } = useUserData.getState();
+        console.warn("Session expired (401), clearing user data...");
         logout(); 
         
         if (originalRequest?.url !== '/users/me') {
@@ -59,13 +60,27 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // --- HANDLE 403: FORBIDDEN (No Permission, but logged in) ---
+    // --- HANDLE 403: FORBIDDEN (Expired Token or No Permission) ---
     if (status === 403) {
-      Alert.alert(
-        "Permission Denied",
-        "You do not have the required role to access this feature.",
-        [{ text: "Back" }]
-      );
+      const { logout } = useUserData.getState();
+      
+      // If the error comes from a general data fetch, it's likely an expired token
+      if (!isAuthRequest) {
+        console.warn("Forbidden/Expired (403), logging out...");
+        logout();
+        Alert.alert(
+          "Session Expired",
+          "Your session has timed out for security. Please login again.",
+          [{ text: "OK" }]
+        );
+      } else {
+        // If it happens during an active session on a specific restricted route
+        Alert.alert(
+          "Permission Denied",
+          "You do not have the required role to access this feature.",
+          [{ text: "Back" }]
+        );
+      }
       return Promise.reject(error);
     }
 

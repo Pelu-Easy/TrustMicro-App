@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import api from '../services/api'; // Use the centralized API instance
+import api from '../services/api';
 import useUserData from './userSignUp';
 
 export interface Loan {
@@ -30,7 +31,6 @@ export interface Loan {
   nokPhone: string;
   bankName: string;
   accountNumber: string;
-  // Updated status to include the multi-stage workflow pipeline
   status: 'Draft' | 'Pending' | 'Approved' | 'Disbursed' | 'Rejected' | 'PENDING_CREDIT' | 'PENDING_HEAD_CREDIT' | 'PENDING_CCO' | 'PENDING_MD' | 'APPROVED_FINANCE';
   idCard: string | null;
   ninHardCopy: string | null;
@@ -58,7 +58,7 @@ interface LoanState {
   fetchLoans: (email: string, token: string) => Promise<void>;
   addLoan: (loan: Loan, currentUserEmail: string) => Promise<void>;
   updateLoan: (id: string, updatedLoan: Loan) => void;
-  deleteLoan: (id: string) => void; // Added for cleanup after submission
+  deleteLoan: (id: string) => void;
   setTarget: (amount: number) => void; 
   clearAllData: () => void;
 }
@@ -75,14 +75,10 @@ export const useLoanStore = create<LoanState>()(
       setLoans: (newLoans) => set({ loans: newLoans }),
 
       fetchLoans: async (email, token) => {
-        if (!email || !token) {
-          console.log("Fetch postponed: Missing email or token");
-          return;
-        }
+        if (!email || !token) return;
 
         try {
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
-          
           const serverLoans = response.data;
           const localDrafts = get().loans.filter(l => l.status === 'Draft');
           const mergedLoans = [...localDrafts];
@@ -98,6 +94,11 @@ export const useLoanStore = create<LoanState>()(
 
           set({ loans: mergedLoans });
         } catch (error: any) {
+          // --- PERMANENT SOLUTION FOR 403 ERROR ---
+          if (error.response && error.response.status === 403) {
+            Alert.alert("Session Expired", "Your session has timed out. Please login again.");
+            useUserData.getState().clearUserData(); // Log user out
+          }
           console.error("Fetch failed:", error.message);
         }
       },
@@ -116,7 +117,6 @@ export const useLoanStore = create<LoanState>()(
         
         set((state) => {
             const loanIndex = state.loans.findIndex((l) => l.id === loan.id);
-            
             if (loanIndex !== -1) {
                 const updatedLoans = [...state.loans];
                 updatedLoans[loanIndex] = ownedLoan;
@@ -127,15 +127,17 @@ export const useLoanStore = create<LoanState>()(
         });
 
         if (ownedLoan.status !== 'Draft') {
-          if (!token) {
-            console.log("Cloud Sync Aborted: No valid token found.");
-            return;
-          }
+          if (!token) return;
 
           try {
             await api.post('/loans', ownedLoan);
             console.log("Loan successfully synced.");
           } catch (error: any) {
+            // --- PERMANENT SOLUTION FOR 403 ERROR ---
+            if (error.response && error.response.status === 403) {
+              Alert.alert("Session Expired", "Please log in again to sync your data.");
+              useUserData.getState().clearUserData();
+            }
             console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
           }
         }
@@ -148,7 +150,6 @@ export const useLoanStore = create<LoanState>()(
           ),
         })),
 
-      // New function to remove a specific loan from the local store
       deleteLoan: (id) =>
         set((state) => ({
           loans: state.loans.filter((loan) => loan.id !== id),

@@ -32,6 +32,7 @@ interface UserState {
   // Actions
   updateUserData: (data: Partial<UserState>) => void;
   logout: () => void;
+  clearUserData: () => void; // Added to match the call in useLoanStore
 }
 
 // 2. Create the store
@@ -94,6 +95,30 @@ const useUserData = create<UserState>()(
           isFinance: false,
         });
         // Clear storage entirely to be safe
+        AsyncStorage.removeItem('trust-micro-storage');
+      },
+
+      // Added clearUserData function to point to logout logic
+      clearUserData: () => {
+        set({
+          funame: '',
+          email: '',
+          isLoggedIn: false,
+          phone: '',
+          branch: '',
+          department: '',
+          unit: '',
+          supervisor: '',
+          role: null,
+          token: null,
+          isLoanOfficer: false,
+          isSupervisor: false,
+          isCreditOfficer: false,
+          isHeadOfCredit: false,
+          isCCO: false,
+          isMD: false,
+          isFinance: false,
+        });
         AsyncStorage.removeItem('trust-micro-storage');
       },
     }),
