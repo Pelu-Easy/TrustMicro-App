@@ -1,8 +1,11 @@
 import { Stack, usePathname, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
 import { registerForPushNotificationsAsync } from '../services/notifications';
 import useUserData from '../store/userSignUp';
+
+// Keep the splash screen visible until we've decided where to go
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const { token, _hasHydrated, isSupervisor } = useUserData();
@@ -21,44 +24,41 @@ export default function RootLayout() {
 
   useEffect(() => {
     // 1. Wait for hydration and for the Root Navigation to be fully mounted
-    if (!_hasHydrated || !navigationState?.key) return;
+    const isNavigationMounted = !!navigationState?.key;
+    if (!_hasHydrated || !isNavigationMounted) return;
 
     const isLoggedIn = !!token && token.length > 10;
-    
-    // Check current location logic
     const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
-    
-    // Using pathname is cleaner for checking the absolute root "/"
     const isAtRoot = pathname === '/' || segments.length === 0; 
 
-    // 2. Routing Logic
-    if (!isLoggedIn) {
-      if (!inAuthGroup) {
-        // Use a small delay or setImmediate to ensure the layout is painted
-        router.replace('/login');
-      }
-    } else {
-      // If logged in but on auth screens or app entry, redirect to correct dashboard
-      if (inAuthGroup || isAtRoot) {
-        if (isSupervisor) {
-          router.replace('/(tabs)/managerDashboard');
-        } else {
-          router.replace('/(tabs)');
+    // 2. Use a micro-task delay to ensure the Stack is actually in the view hierarchy
+    const timeout = setTimeout(() => {
+      if (!isLoggedIn) {
+        if (!inAuthGroup) {
+          router.replace('/login');
+        }
+      } else {
+        if (inAuthGroup || isAtRoot) {
+          if (isSupervisor) {
+            router.replace('/(tabs)/managerDashboard');
+          } else {
+            router.replace('/(tabs)');
+          }
         }
       }
-    }
 
-    setIsReady(true);
+      // 3. Mark the app as ready and dismiss splash screen
+      setIsReady(true);
+      SplashScreen.hideAsync();
+    }, 0);
+
+    return () => clearTimeout(timeout);
   }, [_hasHydrated, token, segments, pathname, navigationState?.key, isSupervisor]);
 
-  // Loading Screen: Prevent "Attempted to navigate before mounting"
-  if (!_hasHydrated || !navigationState?.key || !isReady) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
-        <ActivityIndicator size="large" color="#003366" />
-        <Text style={{ marginTop: 10, color: '#003366', fontWeight: '500' }}>Initializing TrustMicro...</Text>
-      </View>
-    );
+  // Gate: While not ready, return null so the native Splash Screen stays visible.
+  // This prevents the "Attempted to navigate before mounting" error.
+  if (!isReady || !navigationState?.key) {
+    return null;
   }
 
   return (
