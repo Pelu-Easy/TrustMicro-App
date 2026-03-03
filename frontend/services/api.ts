@@ -72,9 +72,11 @@ api.interceptors.response.use(
     // --- HANDLE OTHER ERRORS ---
     let errorMessage = "A network error occurred. Please check your internet connection.";
     
-    // --- Specific handling for timeouts ---
+    // --- Specific handling for timeouts and network refusals ---
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       errorMessage = "The server is taking too long to respond. Please try again.";
+    } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      errorMessage = "Cannot connect to server. It may be waking up. Please try again in 30 seconds.";
     } else if (error.response) {
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }

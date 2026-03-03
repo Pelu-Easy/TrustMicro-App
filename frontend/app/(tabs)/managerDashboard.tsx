@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import api from '../../services/api';
 import useUserData from '../../store/userSignUp';
 
@@ -83,6 +83,7 @@ export default function ManagerDashboard() {
       // Index 0: Work Basket (needs attention), Index 1: History/Approved
       let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
       
+      // Axios call via api service with specific error trapping for Network issues
       const response = await api.get(endpoint);
       const allFetchedLoans = response.data || [];
       
@@ -104,6 +105,14 @@ export default function ManagerDashboard() {
       
     } catch (error: any) {
       console.error("Dashboard Fetch Error:", error.message);
+      
+      // Handling the ERR_NETWORK specifically for the user
+      if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+        Alert.alert(
+          "Connection Problem", 
+          "The server is taking too long to wake up or your internet is unstable. Please pull to refresh in a few seconds."
+        );
+      }
       setLoans([]); 
     } finally {
       setIsLoading(false);

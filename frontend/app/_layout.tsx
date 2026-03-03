@@ -1,74 +1,121 @@
 import { Stack, usePathname, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { registerForPushNotificationsAsync } from '../services/notifications';
 import useUserData from '../store/userSignUp';
 
-// Keep the splash screen visible until we've decided where to go
-SplashScreen.preventAutoHideAsync();
+let notificationInitialized = false;
 
 export default function RootLayout() {
-  const { token, _hasHydrated, isSupervisor } = useUserData();
+  const { 
+    token, _hasHydrated, role,
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD 
+  } = useUserData();
   
-  // Professional fix: cast as string[] to stop the "red underline" on .length or [0]
-  const segments = useSegments() as string[]; 
+  const segments = useSegments() as string[];
   const pathname = usePathname();
-  
   const router = useRouter();
   const navigationState = useRootNavigationState();
+  
   const [isReady, setIsReady] = useState(false);
+  const navigationAttempted = useRef(false);
 
   useEffect(() => {
-    registerForPushNotificationsAsync().catch(err => console.log("Notification Error:", err));
+    if (!notificationInitialized) {
+      notificationInitialized = true;
+      registerForPushNotificationsAsync().catch(err => console.log("Notification Error:", err));
+    }
   }, []);
 
   useEffect(() => {
-    // 1. Wait for hydration and for the Root Navigation to be fully mounted
     const isNavigationMounted = !!navigationState?.key;
-    if (!_hasHydrated || !isNavigationMounted) return;
+    if (!_hasHydrated || !isNavigationMounted || navigationAttempted.current) return;
 
-    const isLoggedIn = !!token && token.length > 10;
-    const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
-    const isAtRoot = pathname === '/' || segments.length === 0; 
+    const performNavigation = async () => {
+      const isLoggedIn = !!token && token.length > 10;
+      const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
+      
+      // Comprehensive check for ANY management role
+      const userRole = (role || '').toLowerCase();
+      const actsAsManagement = 
+        isSupervisor || 
+        isCreditOfficer || 
+        isHeadOfCredit || 
+        isCCO || 
+        isMD || 
+        ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit'].includes(userRole);
 
-    // 2. Use a micro-task delay to ensure the Stack is actually in the view hierarchy
-    const timeout = setTimeout(() => {
-      if (!isLoggedIn) {
-        if (!inAuthGroup) {
-          router.replace('/login');
-        }
-      } else {
-        if (inAuthGroup || isAtRoot) {
-          if (isSupervisor) {
-            router.replace('/(tabs)/managerDashboard');
+      console.log(`[Auth Check] LoggedIn: ${isLoggedIn}, Management: ${actsAsManagement}, Role: ${userRole}, Path: ${pathname}`);
+
+      try {
+        if (!isLoggedIn) {
+          if (!inAuthGroup) {
+            router.replace('/login');
+          }
+        } else {
+          // --- REDIRECT LOGIC WITH LOOP PREVENTION ---
+          
+          if (actsAsManagement) {
+            // If already on manager dashboard, do nothing to prevent loops
+            if (pathname.includes('managerDashboard')) {
+               console.log("✅ Already on Management Dashboard");
+            } else {
+               console.log("🚀 Navigating to Manager Dashboard");
+               router.replace('/(tabs)/managerDashboard'); 
+            }
           } else {
-            router.replace('/(tabs)');
+            // If already on sales tabs, do nothing
+            if (segments[0] === '(tabs)' && !pathname.includes('managerDashboard')) {
+               console.log("✅ Already on Sales Officer Tabs");
+            } else {
+               console.log("🚀 Navigating to Sales Officer Tabs");
+               router.replace('/(tabs)');
+            }
           }
         }
+      } catch (e) {
+        console.error("Navigation Redirect Failed", e);
+      } finally {
+        navigationAttempted.current = true;
+        setIsReady(true);
+        await SplashScreen.hideAsync().catch(() => {});
       }
+    };
 
-      // 3. Mark the app as ready and dismiss splash screen
-      setIsReady(true);
-      SplashScreen.hideAsync();
-    }, 0);
-
+    const timeout = setTimeout(performNavigation, 250); // Slightly longer delay for store stability
     return () => clearTimeout(timeout);
-  }, [_hasHydrated, token, segments, pathname, navigationState?.key, isSupervisor]);
+  }, [_hasHydrated, navigationState?.key, token, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD]);
 
-  // Gate: While not ready, return null so the native Splash Screen stays visible.
-  // This prevents the "Attempted to navigate before mounting" error.
   if (!isReady || !navigationState?.key) {
-    return null;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#003366" />
+        <Text style={styles.loadingText}>MicroTrust Bank Securing Session...</Text>
+      </View>
+    );
   }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
-      <Stack.Screen name="sign_up" options={{ title: 'Create Account' }} />
-      <Stack.Screen name="forgot_password" options={{ title: 'Reset Password' }} />
-      <Stack.Screen name="profilesumary" options={{ title: 'Profile Summary' }} />
-      <Stack.Screen name="loanDetails" options={{ title: 'Loan Details' }} />
+      {/* Ensure other screens like loanDetails are accessible */}
+      <Stack.Screen name="loanDetails" options={{ headerShown: false }} />
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1, 
+    backgroundColor: '#FFFFFF', 
+    justifyContent: 'center', 
+    alignItems: 'center'
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#003366',
+    fontWeight: '600'
+  }
+});

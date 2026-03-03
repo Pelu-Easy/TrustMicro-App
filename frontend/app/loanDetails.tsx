@@ -33,8 +33,13 @@ export default function LoanDetails() {
   const userRole = (role || '').toLowerCase();
 
   // --- WORKFLOW LOGIC: WHO CAN ACT? ---
-  const actsAsManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD ||
-                            ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
+  const actsAsManagement = 
+    isSupervisor || 
+    isCreditOfficer || 
+    isHeadOfCredit || 
+    isCCO || 
+    isMD ||
+    ['manager', 'supervisor', 'admin', 'super admin', 'head of credit', 'cco', 'md'].includes(userRole);
 
   // --- CALCULATE NEXT STAGE IN PIPELINE ---
   const getNextStatus = () => {
@@ -121,13 +126,24 @@ export default function LoanDetails() {
   };
 
   const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => {
-    const cleanUri = typeof uri === 'string' ? decodeURIComponent(uri) : uri;
+    // Helper to ensure we don't double-decode or crash on null
+    const getSafeUri = (input: any) => {
+        if (!input || typeof input !== 'string') return null;
+        try {
+            return input.includes('%') ? decodeURIComponent(input) : input;
+        } catch (e) {
+            return input;
+        }
+    };
+
+    const safeUri = getSafeUri(uri);
+
     return (
       <View style={styles.docCard}>
         <Text style={styles.docLabel}>{label}</Text>
-        {cleanUri ? (
-          <TouchableOpacity onPress={() => openZoom(cleanUri as string)}>
-            <Image source={{ uri: cleanUri as string }} style={styles.docImage} resizeMode="cover" />
+        {safeUri ? (
+          <TouchableOpacity onPress={() => openZoom(safeUri)}>
+            <Image source={{ uri: safeUri }} style={styles.docImage} resizeMode="cover" />
           </TouchableOpacity>
         ) : (
           <View style={styles.noDoc}><Text style={{color: '#94A3B8'}}>{placeholder}</Text></View>
@@ -330,7 +346,7 @@ export default function LoanDetails() {
             <Ionicons name="close-circle" size={40} color="#fff" />
           </TouchableOpacity>
           {selectedImage && (
-            <Image source={{ uri: decodeURIComponent(selectedImage) }} style={styles.fullImage} resizeMode="contain" />
+            <Image source={{ uri: selectedImage }} style={styles.fullImage} resizeMode="contain" />
           )}
         </View>
       </Modal>

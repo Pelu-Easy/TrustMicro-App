@@ -3,7 +3,6 @@ import { Tabs } from 'expo-router';
 import useUserData from '../../store/userSignUp';
 
 export default function TabLayout() {
-  // --- UPDATED: Pull the fixed boolean flags from our store ---
   const { 
     isSupervisor, 
     isHeadOfCredit, 
@@ -15,8 +14,6 @@ export default function TabLayout() {
 
   const userRole = role?.toLowerCase() || '';
 
-  // --- REFINED: Comprehensive Management Check ---
-  // This now correctly identifies Caleb as management because isHeadOfCredit will be true
   const isManagement = 
     isSupervisor || 
     isHeadOfCredit || 
@@ -42,13 +39,12 @@ export default function TabLayout() {
         }}
       />
       
-      {/* Hide 'New Loan' for management/supervisors */}
       <Tabs.Screen
         name="loanForm"
         options={{
           title: 'New Loan',
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={24} color={color} />,
-          // Correctly hides for Caleb (Head of Credit)
+          // Explicitly using undefined vs null for href to satisfy strict types
           href: isManagement ? null : undefined, 
         }}
       />
@@ -58,7 +54,6 @@ export default function TabLayout() {
         options={{
           title: 'Approvals',
           tabBarIcon: ({ color }) => <Ionicons name="shield-checkmark" size={24} color={color} />,
-          // Correctly shows for Caleb (Head of Credit)
           href: !isManagement ? null : undefined, 
         }}
       />

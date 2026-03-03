@@ -93,11 +93,15 @@ const useUserData = create<UserState>()(
             'CREDIT_OFFICER', 
             'CCO', 
             'MD', 
-            'SUPERVISOR'
+            'SUPERVISOR',
+            'BRANCH_SUPERVISOR',
+            'MANAGER',
+            'ADMIN'
           ];
           
           if (managementRoles.includes(roleUpper)) {
             newState.isSupervisor = true;
+            newState.isLoanOfficer = false; 
           } else {
             // Explicitly handle standard loan officers
             newState.isLoanOfficer = true;
