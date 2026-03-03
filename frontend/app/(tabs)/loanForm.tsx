@@ -111,10 +111,14 @@ export default function CompleteLoanForm() {
     if (!token || !staffBranch) return;
     setIsLoadingSup(true);
     try {
+      // Endpoint to get supervisors in the same branch as the officer
       const response = await api.get('/manager/supervisors', { params: { branch: staffBranch } });
       setSupervisors(response.data || []);
-    } catch (e) { console.log("Supervisor fetch error"); }
-    finally { setIsLoadingSup(false); }
+    } catch (e) { 
+      console.log("Supervisor fetch error", e); 
+    } finally { 
+      setIsLoadingSup(false); 
+    }
   }, [token, staffBranch]);
 
   useEffect(() => { if (step === 1) fetchSupervisors(); }, [step, fetchSupervisors]);
@@ -143,6 +147,7 @@ export default function CompleteLoanForm() {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
     try {
+      // Using your identity verification service endpoint
       const res = await api.post('/verify-identity', { bvn: formData.bvn });
       if (res.data.status === "success") {
         updateData('customerName', `${res.data.data.firstName} ${res.data.data.lastName}`);
@@ -150,8 +155,11 @@ export default function CompleteLoanForm() {
       } else {
         Alert.alert("Verification Failed", "BVN not found.");
       }
-    } catch (e) { Alert.alert("Error", "Verification service unavailable."); } 
-    finally { setIsVerifying(false); }
+    } catch (e) { 
+      Alert.alert("Error", "Verification service unavailable."); 
+    } finally { 
+      setIsVerifying(false); 
+    }
   };
 
   const handleFinalSubmit = async () => {
@@ -160,15 +168,27 @@ export default function CompleteLoanForm() {
     
     setIsSubmitting(true);
     try {
-      const payload = { ...formData, staffName: staffFullName, branchName: staffBranch, status: 'Pending' };
+      // Building the payload expected by your server.js SQL query
+      const payload = { 
+        ...formData, 
+        staffName: staffFullName, 
+        branchName: staffBranch, 
+        status: 'Pending' 
+      };
+
       const response = await api.post('/loans', payload);
+
       if (response.status === 201 || response.status === 200) {
-        // FIX: Redirect to home using relative path
-        Alert.alert("Success", "Submitted!", [{ text: "OK", onPress: () => router.replace('/') }]);
+        Alert.alert("Success", "Loan Application Submitted!", [
+          { text: "OK", onPress: () => router.replace('/') }
+        ]);
       }
     } catch (error: any) {
-      Alert.alert("Error", error.response?.data?.error || "Submission failed.");
-    } finally { setIsSubmitting(false); }
+      const errorMsg = error.response?.data?.error || "Submission failed. Please check your network.";
+      Alert.alert("Error", errorMsg);
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   return (
@@ -207,7 +227,9 @@ export default function CompleteLoanForm() {
             <Text style={styles.label}>Full Name</Text>
             <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} />
             
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => (formData.customerName && formData.supervisorId) ? setStep(2) : Alert.alert("Missing Info", "Verify BVN and select a Supervisor.")}>
+            <TouchableOpacity 
+              style={styles.primaryBtn} 
+              onPress={() => (formData.customerName && formData.supervisorId) ? setStep(2) : Alert.alert("Missing Info", "Verify BVN and select a Supervisor.")}>
                 <Text style={styles.btnText}>Next</Text>
             </TouchableOpacity>
           </View>
@@ -279,6 +301,7 @@ export default function CompleteLoanForm() {
         <Modal visible={showSupModal} transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15 }}>Select a Supervisor</Text>
               <FlatList
                 data={supervisors}
                 keyExtractor={(item) => item.id}
@@ -287,6 +310,7 @@ export default function CompleteLoanForm() {
                     <Text>{item.name}</Text>
                   </TouchableOpacity>
                 )}
+                ListEmptyComponent={<Text style={{ textAlign: 'center', padding: 20 }}>No supervisors found in your branch.</Text>}
               />
               <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={{color:'#FFF'}}>Cancel</Text></TouchableOpacity>
             </View>
@@ -308,7 +332,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#FFF', borderWidth: 1, borderColor: BRAND.border, padding: 12, borderRadius: 10, marginTop: 8 },
   disabledInput: { backgroundColor: '#F1F5F9' },
   row: { flexDirection: 'row', gap: 10 },
-  verifyBtn: { padding: 12, borderRadius: 10, justifyContent: 'center', marginTop: 8 },
+  verifyBtn: { padding: 12, borderRadius: 10, justifyContent: 'center', marginTop: 8, minWidth: 80 },
   primaryBtn: { backgroundColor: BRAND.primary, padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 20, flex: 1 },
   secBtn: { backgroundColor: '#E2E8F0', padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 20, flex: 1 },
   btnRow: { flexDirection: 'row', gap: 10 },
@@ -318,7 +342,7 @@ const styles = StyleSheet.create({
   revLabel: { fontSize: 13, color: '#64748b' },
   revVal: { color: BRAND.primary, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  supItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  modalContent: { backgroundColor: '#FFF', padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%' },
+  supItem: { padding: 18, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   closeBtn: { backgroundColor: BRAND.danger, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 }
 });

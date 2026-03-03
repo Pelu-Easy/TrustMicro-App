@@ -4,6 +4,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 // 1. Define the Interface
 interface UserState {
+  id: string | number | null;   // To store Employee ID
+  lastLogin: string | null;     // To store timestamp
   funame: string;
   email: string;
   isLoggedIn: boolean; 
@@ -21,6 +23,7 @@ interface UserState {
   // --- WORKFLOW SPECIFIC ROLES ---
   isCreditOfficer: boolean;
   isHeadOfCredit: boolean;
+  isHeadOfControl: boolean; // ADDED: New workflow role
   isCCO: boolean;
   isMD: boolean;
   isFinance: boolean;
@@ -35,8 +38,10 @@ interface UserState {
   clearUserData: () => void; 
 }
 
-// --- INITIAL STATE OBJECT FOR REDUNDANCY REDUCTION ---
+// --- INITIAL STATE OBJECT ---
 const initialState = {
+  id: null,
+  lastLogin: null,
   funame: '',
   email: '',
   isLoggedIn: false,
@@ -51,6 +56,7 @@ const initialState = {
   isSupervisor: false,
   isCreditOfficer: false,
   isHeadOfCredit: false,
+  isHeadOfControl: false, // ADDED
   isCCO: false,
   isMD: false,
   isFinance: false,
@@ -77,20 +83,21 @@ const useUserData = create<UserState>()(
 
         // If the update contains a new role string, recalculate boolean flags
         if (data.role) {
-          const roleUpper = data.role.toUpperCase();
+          const roleUpper = data.role.toUpperCase().replace(/\s+/g, '_');
           
           // Map the backend role string to the frontend boolean flags
           newState.isHeadOfCredit = roleUpper === 'HEAD_OF_CREDIT';
           newState.isCreditOfficer = roleUpper === 'CREDIT_OFFICER';
+          newState.isHeadOfControl = roleUpper === 'HEAD_OF_CONTROL'; // ADDED
           newState.isCCO = roleUpper === 'CCO';
           newState.isMD = roleUpper === 'MD';
           newState.isFinance = roleUpper === 'FINANCE';
           
           // CRITICAL: Ensure isSupervisor is true if they hold ANY management role
-          // This enables the correct routing in app/_layout.tsx
           const managementRoles = [
             'HEAD_OF_CREDIT', 
             'CREDIT_OFFICER', 
+            'HEAD_OF_CONTROL', // ADDED
             'CCO', 
             'MD', 
             'SUPERVISOR',
@@ -103,7 +110,6 @@ const useUserData = create<UserState>()(
             newState.isSupervisor = true;
             newState.isLoanOfficer = false; 
           } else {
-            // Explicitly handle standard loan officers
             newState.isLoanOfficer = true;
             newState.isSupervisor = false;
           }
@@ -115,7 +121,7 @@ const useUserData = create<UserState>()(
       clearUserData: () => {
         // Reset in-memory state but keep hydration flag true to avoid loading loops
         set({ ...initialState, _hasHydrated: true });
-        // --- Use Zustand persist API to clear storage ---
+        // Use Zustand persist API to clear storage
         useUserData.persist.clearStorage();
       },
 

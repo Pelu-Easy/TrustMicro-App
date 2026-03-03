@@ -2,18 +2,19 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { Alert } from 'react-native';
 import useUserData from '../store/userSignUp';
 
-// API Configuration
+// API Configuration - Standardized to the TrustMicro Bank production/staging endpoint
 export const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
-  // --- UPDATED: Increased timeout for slower connections ---
+  // --- TIMEOUT: Set to 30s to allow for heavy management/audit report generation ---
   timeout: 30000, 
 });
 
 // --- 1. REQUEST INTERCEPTOR (Attaches the Token) ---
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    // Retrieves token from the global store (Zustand)
     const { token } = useUserData.getState();
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -43,26 +44,29 @@ api.interceptors.response.use(
     }
 
     // --- HANDLE SESSION ISSUES (401/403) ---
+    // 401: Unauthorized (Token expired/Invalid)
+    // 403: Forbidden (Role permission issue - critical for Head of Control)
     if (status === 401 || status === 403) {
       if (!isAuthRequest) {
-        const { logout } = useUserData.getState();
-        console.warn(`Session issue (${status}), clearing user data...`);
+        const { logout, role } = useUserData.getState();
+        console.warn(`Access issue (${status}) for role: ${role}. Clearing session...`);
+        
+        // Clear global state and redirect logic trigger
         logout(); 
         
         if (originalRequest?.url !== '/users/me') {
-          Alert.alert(
-            "Session Expired", 
-            status === 401 
-              ? "Your security token is invalid or expired. Please login again."
-              : "Your session has timed out for security. Please login again.",
-            [{ text: "OK" }]
-          );
+          const alertTitle = status === 401 ? "Session Expired" : "Access Revoked";
+          const alertMsg = status === 401 
+            ? "Your security token is invalid or expired. Please login again."
+            : "Your permissions have been updated or your session timed out. Please login again.";
+
+          Alert.alert(alertTitle, alertMsg, [{ text: "OK" }]);
         }
       } else if (status === 403) {
-        // Forbidden during an active auth flow (e.g., login/signup)
+        // Forbidden during an active login/signup attempt
         Alert.alert(
           "Permission Denied",
-          "You do not have the required role to access this feature.",
+          "You do not have the required administrative role to access this feature.",
           [{ text: "Back" }]
         );
       }
@@ -74,14 +78,15 @@ api.interceptors.response.use(
     
     // --- Specific handling for timeouts and network refusals ---
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      errorMessage = "The server is taking too long to respond. Please try again.";
+      errorMessage = "The server is taking too long to respond. This may happen during large data audits. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      errorMessage = "Cannot connect to server. It may be waking up. Please try again in 30 seconds.";
+      errorMessage = "Cannot connect to server. The banking system may be undergoing maintenance. Please try again in 30 seconds.";
     } else if (error.response) {
+      // Backend-specific error messages
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }
 
-    // Don't show generic alert for Auth requests as they handle their own UI
+    // Don't show generic alert for Auth requests as Login/Signup handle their own UI
     if (!isAuthRequest) {
         Alert.alert("Request Failed", errorMessage);
     }

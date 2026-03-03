@@ -31,7 +31,7 @@ interface LoanItem {
 export default function ManagerDashboard() {
   const { 
     token, funame, branch, role,
-    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD,
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD,
     _hasHydrated 
   } = useUserData();
   const router = useRouter();
@@ -46,19 +46,20 @@ export default function ManagerDashboard() {
     if (!_hasHydrated) return;
     
     const userRole = role?.toLowerCase() || '';
-    const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || 
-                         isCCO || isMD || ['manager', 'admin', 'cco', 'md'].includes(userRole);
+    const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isHeadOfControl || 
+                         isCCO || isMD || ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control'].includes(userRole);
 
     if (!isManagement) {
-      // If a regular Sales Officer somehow lands here, redirect them to their home
+      // Redirect regular staff to the main tabs
       router.replace('/(tabs)');
     }
-  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD]);
+  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD]);
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
   const getDashboardTitle = () => {
     if (isMD) return "Managing Director's Desk";
     if (isCCO) return "CCO Approval Basket";
+    if (isHeadOfControl) return "Internal Control Desk"; // Added Role Title
     if (isHeadOfCredit) return "Credit Management Portal";
     if (isCreditOfficer) return "Credit Review Basket";
     if (isSupervisor) return "Branch Supervisor Portal";
@@ -70,6 +71,7 @@ export default function ManagerDashboard() {
     if (isSupervisor) return 'Pending';
     if (isCreditOfficer) return 'PENDING_CREDIT';
     if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
+    if (isHeadOfControl) return 'PENDING_CONTROL'; // Added Status Mapping
     if (isCCO) return 'PENDING_CCO';
     if (isMD) return 'PENDING_MD';
     return 'Pending';
@@ -80,37 +82,42 @@ export default function ManagerDashboard() {
 
     setIsLoading(true);
     try {
-      // Index 0: Work Basket (needs attention), Index 1: History/Approved
       let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
       
-      // Axios call via api service with specific error trapping for Network issues
       const response = await api.get(endpoint);
       const allFetchedLoans = response.data || [];
       
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
         
-        // Logic: HQ management (MD/CCO/HeadCredit) sees everything. 
-        // Branch staff (Supervisor/CreditOfficer) see only their branch.
+        // Logic: HQ management (MD/CCO/HeadControl/HeadCredit) sees everything for the whole bank.
         const workBasket = allFetchedLoans.filter((loan: LoanItem) => {
           const statusMatch = loan.status === targetStatus;
-          const isHQManagement = isMD || isCCO || isHeadOfCredit;
-          const branchMatch = isHQManagement ? true : (loan.branchName === branch || loan.branch === branch);
+          
+          const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit; // Added Head of Control to HQ access
+          const loanBranch = loan.branchName || loan.branch;
+          const branchMatch = isHQManagement ? true : (loanBranch === branch);
+          
           return statusMatch && branchMatch;
         });
         setLoans(workBasket);
       } else {
-        setLoans(allFetchedLoans);
+        const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit;
+        if (isHQManagement) {
+            setLoans(allFetchedLoans);
+        } else {
+            const branchHistory = allFetchedLoans.filter((loan: LoanItem) => (loan.branchName === branch || loan.branch === branch));
+            setLoans(branchHistory);
+        }
       }
       
     } catch (error: any) {
       console.error("Dashboard Fetch Error:", error.message);
       
-      // Handling the ERR_NETWORK specifically for the user
       if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
         Alert.alert(
           "Connection Problem", 
-          "The server is taking too long to wake up or your internet is unstable. Please pull to refresh in a few seconds."
+          "The server is taking too long to wake up. Please pull to refresh in a few seconds."
         );
       }
       setLoans([]); 
@@ -118,7 +125,7 @@ export default function ManagerDashboard() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex, branch]);
+  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, selectedIndex, branch]);
 
   useEffect(() => {
     if (token && _hasHydrated) fetchData();
@@ -184,9 +191,9 @@ export default function ManagerDashboard() {
           <Text style={styles.titleText}>{getDashboardTitle()}</Text>
         </View>
         <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/(tabs)/profile')}>
-           <View style={styles.avatarMini}>
-             <Text style={styles.avatarText}>{funame?.charAt(0)}</Text>
-           </View>
+            <View style={styles.avatarMini}>
+              <Text style={styles.avatarText}>{funame?.charAt(0)}</Text>
+            </View>
         </TouchableOpacity>
       </View>
 
@@ -234,7 +241,7 @@ export default function ManagerDashboard() {
               <Ionicons name="checkmark-done-circle-outline" size={80} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>Queue Clear</Text>
               <Text style={styles.emptySubtitle}>
-                No {selectedIndex === 0 ? 'pending' : 'approved'} applications found in this category.
+                No {selectedIndex === 0 ? 'pending' : 'approved'} applications found for {branch}.
               </Text>
             </View>
           }

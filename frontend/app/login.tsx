@@ -17,13 +17,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // --- UTILITY & STATE IMPORTS ---
-import api from '@/services/api';
+import api from '@/services/api'; // Using centralized api instance
 import { useLoanStore } from '@/store/loanStore';
 import useUserData from '@/store/userSignUp';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { updateUserData } = useUserData();
+  const { updateUserData, setToken } = useUserData();
 
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -38,7 +38,6 @@ export default function LoginScreen() {
 
   const validateEmail = (emailStr: string) => /\S+@\S+\.\S+/.test(emailStr);
 
-  // New: Function to handle support contact
   const handleContactSupport = () => {
     const supportEmail = "admin@trustmicrobank.com";
     const subject = encodeURIComponent("Account Reactivation Request");
@@ -71,45 +70,57 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
+      // POST to /auth/login with credentials
       const response = await api.post('/auth/login', { 
         email: trimmedEmail.toLowerCase(), 
         password: trimmedPassword 
       });
 
       const { token, user } = response.data;
+      
+      // Reset local strikes on success
       setFailedAttempts(0);
 
+      // --- AUTHENTICATION & ROLE LOGIC ---
       const userRole = user.role?.toLowerCase() || '';
+      
+      // Check if user is a supervisor via boolean, numeric (MySQL), or string role
+      // ADDED: 'head of control' to the management check
       const isUserSupervisor = 
           user.is_supervisor === true || 
-          ['manager', 'supervisor', 'admin', 'super admin'].includes(userRole);
+          user.is_supervisor === 1 ||
+          ['manager', 'supervisor', 'admin', 'super admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control'].includes(userRole);
 
+      // Save token for the API interceptor/SecureStore
+      setToken(token);
+
+      // --- INTEGRATED DATA SYNC ---
+      // Update the global user store with fresh data from DB
       updateUserData({
-        token: token,
         isLoggedIn: true,
         role: user.role,
-        funame: user.full_name || user.fullName || 'Staff Member',
+        funame: user.full_name, // Map MySQL full_name to funame
         email: user.email,
-        phone: user.phone_no || user.phone,
+        phone: user.phone_no,
         branch: user.branch,
-        department: user.department,
         unit: user.unit,
-        supervisor: user.supervisor_name || user.supervisor,
         isSupervisor: isUserSupervisor,
-        isLoanOfficer: 
-          user.is_loan_officer === true || 
-          userRole === 'officer'
+        id: user.id, 
+        lastLogin: new Date().toISOString(), 
+        isLoanOfficer: user.is_loan_officer === true || user.is_loan_officer === 1 || userRole === 'officer'
       });
 
+      // Sync the loanStore specifically for loan application context
       useLoanStore.setState((state) => ({
         staffProfile: {
           ...state.staffProfile,
-          funame: user.full_name || user.fullName || 'Staff Member',
+          funame: user.full_name,
         }
       }));
 
       setIsLoading(false);
 
+      // Navigation based on supervisor logic
       if (isUserSupervisor) {
         router.replace('/');
       } else {
@@ -122,29 +133,30 @@ export default function LoginScreen() {
       const status = error.response?.status;
       const errorCode = error.response?.data?.code;
 
+      // Handle specific backend error for missing account
       if (status === 404 && errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
         return; 
       }
 
+      // Handle backend deactivation (status 403)
       if (status === 403) {
         setIsLockedOut(true);
-        setErrors({ general: "Account Deactivated. Please contact System Admin." });
+        setErrors({ general: error.response?.data?.error || "Account Deactivated. Contact Admin." });
         return;
       }
 
+      // Local attempt tracking
       const nextAttemptCount = failedAttempts + 1;
       setFailedAttempts(nextAttemptCount);
 
       if (nextAttemptCount >= 3) {
         setIsLockedOut(true);
-        setErrors({ 
-          general: "Account Deactivated: Too many failed attempts." 
-        });
+        setErrors({ general: "Account Deactivated: Too many failed attempts." });
 
+        // Sync lockout with backend to deactivate account in MySQL
         api.post('/auth/deactivate', { 
-          email: trimmedEmail.toLowerCase(),
-          reason: "Excessive failed login attempts" 
+          email: trimmedEmail.toLowerCase()
         }).catch(err => console.error("Deactivation sync failed", err));
         
         Alert.alert(
@@ -253,7 +265,6 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Recovery/Support option only visible when locked out */}
             {isLockedOut && (
               <TouchableOpacity style={styles.supportLink} onPress={handleContactSupport}>
                 <Text style={styles.supportLinkText}>Need help? Contact System Admin</Text>

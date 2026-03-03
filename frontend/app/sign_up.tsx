@@ -60,13 +60,14 @@ export default function SignUpScreen() {
 
   const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services", "Sales"];
   
-  // ROLES LIST
+  // ROLES LIST - Added "Head of Control"
   const units = [
     "Credit Officer", 
     "Supervisor", 
     "Head of Credit", 
     "CCO", 
     "MD", 
+    "Head of Control",
     "Finance", 
     "Disbursement",
     "Cashier", 
@@ -79,11 +80,17 @@ export default function SignUpScreen() {
   const isMarketingOrSales = formData.department === "Marketing" || formData.department === "Sales";
   
   // Dynamic validation: Supervisor is required for Credit Officers or General Staff
-  const needsSupervisor = formData.unit === "Credit Officer" || (!formData.isSupervisor && formData.unit !== "MD" && formData.unit !== "CCO");
+  // MD, CCO, and Head of Control do not require supervisors
+  const needsSupervisor = formData.unit === "Credit Officer" || 
+                          (!formData.isSupervisor && 
+                           formData.unit !== "MD" && 
+                           formData.unit !== "CCO" && 
+                           formData.unit !== "Head of Control");
 
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
+        // Fetching existing supervisors so new staff can select their manager
         const response = await api.get('/manager/supervisors');
         if (response.data) {
           setSupervisors(response.data);
@@ -143,6 +150,7 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
+      // Map fields to match your MySQL database schema exactly
       const payload = {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -151,11 +159,12 @@ export default function SignUpScreen() {
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
-        // Map based on checkbox selection
-        supervisor_name: formData.isSupervisor ? 'N/A' : formData.supervisor, 
+        // If they are a supervisor, name is N/A, else use the selected supervisor
+        supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), 
         role: formData.isSupervisor ? 'Manager' : formData.unit,
-        is_loan_officer: formData.isLoanOfficer,
-        is_active: true 
+        is_loan_officer: formData.isLoanOfficer ? 1 : 0, // Sending as bit/int for MySQL
+        is_supervisor: (formData.isSupervisor || formData.unit === "Head of Control") ? 1 : 0,
+        is_active: 1 
       };
 
       const response = await api.post('/auth/signup', payload);

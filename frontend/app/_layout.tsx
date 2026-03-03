@@ -10,7 +10,7 @@ let notificationInitialized = false;
 export default function RootLayout() {
   const { 
     token, _hasHydrated, role,
-    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD 
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, isHeadOfControl 
   } = useUserData();
   
   const segments = useSegments() as string[];
@@ -30,13 +30,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     const isNavigationMounted = !!navigationState?.key;
-    if (!_hasHydrated || !isNavigationMounted || navigationAttempted.current) return;
+    if (!_hasHydrated || !isNavigationMounted) return;
 
     const performNavigation = async () => {
       const isLoggedIn = !!token && token.length > 10;
       const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
       
-      // Comprehensive check for ANY management role
+      // Comprehensive check for ANY management role including Head of Control
       const userRole = (role || '').toLowerCase();
       const actsAsManagement = 
         isSupervisor || 
@@ -44,18 +44,20 @@ export default function RootLayout() {
         isHeadOfCredit || 
         isCCO || 
         isMD || 
-        ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit'].includes(userRole);
+        isHeadOfControl ||
+        ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'head of control'].includes(userRole);
 
       console.log(`[Auth Check] LoggedIn: ${isLoggedIn}, Management: ${actsAsManagement}, Role: ${userRole}, Path: ${pathname}`);
 
       try {
         if (!isLoggedIn) {
+          // If the interceptor clears the token, this block triggers immediately
           if (!inAuthGroup) {
+            navigationAttempted.current = false; // Reset for next login
             router.replace('/login');
           }
         } else {
           // --- REDIRECT LOGIC WITH LOOP PREVENTION ---
-          
           if (actsAsManagement) {
             // If already on manager dashboard, do nothing to prevent loops
             if (pathname.includes('managerDashboard')) {
@@ -73,19 +75,19 @@ export default function RootLayout() {
                router.replace('/(tabs)');
             }
           }
+          navigationAttempted.current = true;
         }
       } catch (e) {
         console.error("Navigation Redirect Failed", e);
       } finally {
-        navigationAttempted.current = true;
         setIsReady(true);
         await SplashScreen.hideAsync().catch(() => {});
       }
     };
 
-    const timeout = setTimeout(performNavigation, 250); // Slightly longer delay for store stability
+    const timeout = setTimeout(performNavigation, 250); // Stability delay
     return () => clearTimeout(timeout);
-  }, [_hasHydrated, navigationState?.key, token, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD]);
+  }, [_hasHydrated, navigationState?.key, token, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, isHeadOfControl]);
 
   if (!isReady || !navigationState?.key) {
     return (
@@ -100,7 +102,6 @@ export default function RootLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
-      {/* Ensure other screens like loanDetails are accessible */}
       <Stack.Screen name="loanDetails" options={{ headerShown: false }} />
     </Stack>
   );

@@ -3,12 +3,13 @@ import { Picker } from '@react-native-picker/picker';
 import * as Print from 'expo-print';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, AppState, AppStateStatus, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLoanStore } from '../../store/loanStore';
 import { useStaffStore } from '../../store/staffStore';
 import useUserData from '../../store/userSignUp';
+import api from '../../utils/api';
 
 const BRAND = { 
   primary: "#003366", 
@@ -21,11 +22,74 @@ const BRAND = {
 export default function Profile() {
   const { disbursementTarget, setDisbursementTarget } = useStaffStore();
   const router = useRouter();
+  const appState = useRef(AppState.currentState);
+  const [refreshing, setRefreshing] = useState(false);
   
-  const { branch, updateUserData, funame: fullName, isSupervisor, logout, setToken } = useUserData();
+  // Destructured id and lastLogin from the store
+  const { 
+    id, lastLogin, branch, updateUserData, funame: fullName, isSupervisor, logout, setToken,
+    isCreditOfficer, isHeadOfCredit, isCCO, isMD 
+  } = useUserData();
   
   const loans = useLoanStore((state) => state.loans);
   const staff = useLoanStore((state) => state.staffProfile);
+
+  // --- AUTO-REFRESH LOGIC ON APP RETURN ---
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (
+        appState.current.match(/inactive|background/) && 
+        nextAppState === 'active'
+      ) {
+        refreshUserData();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const refreshUserData = async () => {
+    // We don't need the ID in the URL because the backend identifies us via the JWT token
+    setRefreshing(true);
+    try {
+      // Calling the specific endpoint found in your server.js
+      const response = await api.get('/users/me');
+       
+      if (response.data) {
+        const updatedInfo = response.data;
+         
+        // Mapping backend 'full_name' and 'branch' to frontend store
+        updateUserData({ 
+          branch: updatedInfo.branch,
+          funame: updatedInfo.full_name,
+          role: updatedInfo.role,
+          unit: updatedInfo.unit
+        });
+         
+        console.log("Profile data auto-synced with MicroTrust Server.");
+      }
+    } catch (error) {
+      console.error("Auto-refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // --- DYNAMIC ROLE TITLE LOGIC ---
+  const getRoleTitle = () => {
+    if (isMD) return "Managing Director";
+    if (isCCO) return "Chief Compliance Officer";
+    if (isHeadOfCredit) return "Head of Credit";
+    if (isCreditOfficer) return "Credit Officer";
+    if (isSupervisor) return "Supervisor";
+    return "Field Officer";
+  };
+
+  const roleTitle = getRoleTitle();
+  const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD;
 
   // --- PERFORMANCE CALCULATIONS ---
   const disbursedLoans = loans.filter(l => l.status === 'Disbursed');
@@ -69,7 +133,7 @@ export default function Profile() {
           <div style="margin-top: 30px;">
             <p><strong>Officer Name:</strong> ${fullName}</p>
             <p><strong>Branch:</strong> ${branch}</p>
-            <p><strong>Role:</strong> ${isSupervisor ? 'Supervisor' : 'Field Officer'}</p>
+            <p><strong>Role:</strong> ${roleTitle}</p>
             <p><strong>Report Date:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
           <div style="background-color: #F5F7FA; padding: 20px; border-radius: 10px; margin-top: 30px;">
@@ -136,18 +200,37 @@ export default function Profile() {
           
           <View style={[
             styles.badge, 
-            isSupervisor ? styles.supervisorBadge : styles.officerBadge
+            isManagement ? styles.supervisorBadge : styles.officerBadge
           ]}>
             <Ionicons 
-              name={isSupervisor ? "shield-checkmark" : "person"} 
+              name={isManagement ? "shield-checkmark" : "person"} 
               size={14} 
               color="#fff" 
             />
             <Text style={styles.badgeText}>
-              {isSupervisor ? "Supervisor" : "Field Officer"}
+              {roleTitle}
             </Text>
           </View>
           <Text style={styles.staffRole}>{branch}</Text>
+        </View>
+
+        {/* --- ACCOUNT DETAILS SECTION --- */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Account Information</Text>
+          <View style={styles.infoRow}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Employee ID</Text>
+              <Text style={styles.infoValue}>
+                {id ? `TM-${id.toString().padStart(4, '0')}` : "Fetching..."}
+              </Text>
+            </View>
+            <View style={[styles.infoItem, { borderLeftWidth: 1, borderLeftColor: '#F1F5F9' }]}>
+              <Text style={styles.infoLabel}>Last Login</Text>
+              <Text style={styles.infoValue}>
+                {lastLogin ? new Date(lastLogin).toLocaleDateString() : "First Login"}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* --- PERFORMANCE CARD --- */}
@@ -173,10 +256,10 @@ export default function Profile() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Target Management</Text>
           <View style={styles.adminRow}>
-            <Ionicons name="trending-up-outline" size={20} color={isSupervisor ? BRAND.primary : BRAND.officer} />
+            <Ionicons name="trending-up-outline" size={20} color={isManagement ? BRAND.primary : BRAND.officer} />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={{ fontSize: 12, color: '#64748b' }}>Monthly Target (₦)</Text>
-                {isSupervisor ? (
+                {isManagement ? (
                   <TextInput
                     style={styles.targetInput}
                     keyboardType="numeric"
@@ -203,8 +286,8 @@ export default function Profile() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Operating Branch</Text>
           <View style={styles.pickerContainer}>
-            <Ionicons name="business-outline" size={20} color={isSupervisor ? BRAND.primary : BRAND.officer} style={styles.pickerIcon} />
-            {isSupervisor ? (
+            <Ionicons name="business-outline" size={20} color={isManagement ? BRAND.primary : BRAND.officer} style={styles.pickerIcon} />
+            {isManagement ? (
               <Picker
                 selectedValue={branch}
                 style={styles.picker}
@@ -236,7 +319,6 @@ export default function Profile() {
 
         {/* --- LOAN HISTORY --- */}
         <View style={styles.historySection}>
-          {/* FIX: Changed <div> to <View> to prevent native crash */}
           <View style={styles.historyHeader}>
             <Text style={styles.sectionLabel}>Recent Disbursements</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)')}>
@@ -269,7 +351,7 @@ export default function Profile() {
         </View>
 
         {/* --- DANGER ZONE --- */}
-        {isSupervisor && (
+        {isManagement && (
           <View style={[styles.section, { marginTop: 20, borderColor: '#FFCDD2', borderWidth: 1 }]}>
             <Text style={[styles.sectionLabel, { color: '#C62828' }]}>Danger Zone</Text>
             <TouchableOpacity 
@@ -296,7 +378,7 @@ export default function Profile() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   content: { padding: 25 },
-  header: { alignItems: 'center', marginBottom: 30, marginTop: 20 },
+  header: { alignItems: 'center', marginBottom: 20, marginTop: 10 },
   avatarLarge: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#003366', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
   avatarText: { color: '#FFF', fontSize: 36, fontWeight: 'bold' },
   staffName: { fontSize: 22, fontWeight: 'bold', color: '#333' },
@@ -305,6 +387,12 @@ const styles = StyleSheet.create({
   supervisorBadge: { backgroundColor: BRAND.supervisor },
   officerBadge: { backgroundColor: BRAND.officer },
   badgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold', marginLeft: 5, textTransform: 'uppercase' },
+  
+  infoRow: { flexDirection: 'row', paddingVertical: 10 },
+  infoItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5 },
+  infoLabel: { fontSize: 10, color: '#94A3B8', textTransform: 'uppercase', fontWeight: 'bold' },
+  infoValue: { fontSize: 14, color: '#1E293B', fontWeight: 'bold', marginTop: 4 },
+
   card: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, marginBottom: 25 },
   cardTitle: { fontSize: 13, color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 },
   targetRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 15, marginBottom: 15 },
