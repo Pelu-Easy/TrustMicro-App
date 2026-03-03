@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context'; // Correct import to fix warning
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLoanStore } from '../../store/loanStore';
 import { useStaffStore } from '../../store/staffStore';
 import useUserData from '../../store/userSignUp';
@@ -153,7 +153,6 @@ export default function Profile() {
         {/* --- PERFORMANCE CARD --- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Monthly Disbursement Target</Text>
-          {/* FIXED: Changed from <div> to <View> */}
           <View style={styles.targetRow}>
               <Text style={styles.targetValue}>₦{totalDisbursedAmount.toLocaleString()}</Text>
               <Text style={styles.targetGoal}>/ ₦{(staff.monthlyTarget / 1000000).toFixed(1)}M</Text>
@@ -237,12 +236,12 @@ export default function Profile() {
 
         {/* --- LOAN HISTORY --- */}
         <View style={styles.historySection}>
-          <View style={styles.historyHeader}>
+          <div style={styles.historyHeader}>
             <Text style={styles.sectionLabel}>Recent Disbursements</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)')}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
-          </View>
+          </div>
 
           {recentDisbursements.length > 0 ? (
             recentDisbursements.map((loan) => (

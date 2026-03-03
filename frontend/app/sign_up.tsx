@@ -19,10 +19,27 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// --- TYPES ---
+interface Supervisor {
+  id: string;
+  full_name: string;
+}
+
+interface ValidationErrors {
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  unit?: string;
+  supervisor?: string;
+  password?: string;
+  confirmPassword?: string;
+}
+
 export default function SignUpScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [supervisors, setSupervisors] = useState<any[]>([]);
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
   
   // Visibility States for Passwords
   const [showPassword, setShowPassword] = useState(false);
@@ -39,11 +56,11 @@ export default function SignUpScreen() {
     unit: '', isLoanOfficer: false, isSupervisor: false,
   });
 
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<ValidationErrors>({});
 
   const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services", "Sales"];
   
-  // UPDATED ROLES LIST based on server.js changes
+  // ROLES LIST
   const units = [
     "Credit Officer", 
     "Supervisor", 
@@ -79,8 +96,8 @@ export default function SignUpScreen() {
   }, []);
 
   const updateField = (field: string, value: any) => {
-    if (errors[field]) {
-      setErrors((prev: any) => ({ ...prev, [field]: null }));
+    if (errors[field as keyof ValidationErrors]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
@@ -101,8 +118,8 @@ export default function SignUpScreen() {
 
   const validateEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
-  const handleSignUp = async () => {
-    let currentErrors: any = {};
+  const validateForm = (): boolean => {
+    let currentErrors: ValidationErrors = {};
     if (!formData.fullName.trim()) currentErrors.fullName = "Full name is required";
     if (!validateEmail(formData.email)) currentErrors.email = "Enter a valid corporate email";
     if (formData.phone.trim().length !== 11) currentErrors.phone = "Phone must be 11 digits";
@@ -117,10 +134,12 @@ export default function SignUpScreen() {
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
     if (formData.password !== formData.confirmPassword) currentErrors.confirmPassword = "Passwords do not match";
 
-    if (Object.keys(currentErrors).length > 0) {
-      setErrors(currentErrors);
-      return;
-    }
+    setErrors(currentErrors);
+    return Object.keys(currentErrors).length === 0;
+  };
+
+  const handleSignUp = async () => {
+    if (!validateForm()) return;
 
     setIsLoading(true);
     try {
@@ -154,7 +173,7 @@ export default function SignUpScreen() {
     }
   };
 
-  const ErrorMsg = ({ name }: { name: string }) => (
+  const ErrorMsg = ({ name }: { name: keyof ValidationErrors }) => (
     errors[name] ? <Text style={styles.errorText}>{errors[name]}</Text> : null
   );
 
@@ -322,7 +341,7 @@ export default function SignUpScreen() {
                 {supervisors.length === 0 ? (
                   <Text style={{ textAlign: 'center', marginVertical: 20, color: '#64748B' }}>No supervisors available.</Text>
                 ) : (
-                  <FlatList data={supervisors} keyExtractor={(_, i) => i.toString()} renderItem={({ item }) => (
+                  <FlatList data={supervisors} keyExtractor={(item) => item.id} renderItem={({ item }) => (
                       <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}>
                       <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
                       </TouchableOpacity>

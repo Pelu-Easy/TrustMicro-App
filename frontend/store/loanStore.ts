@@ -37,7 +37,7 @@ export interface Loan {
   bvnHardCopy: string | null;
   employmentLetter: string | null;
   passportPhoto: string | null;
-  tenure: string;          
+  tenure: string;           
   interestRate: string;   
   monthlyRepayment?: string;
   totalRepayment?: string;
@@ -61,6 +61,9 @@ interface LoanState {
   deleteLoan: (id: string) => void;
   setTarget: (amount: number) => void; 
   clearAllData: () => void;
+  // --- NEW HYDRATION FIELDS ---
+  _hasHydrated: boolean; 
+  setHasHydrated: (state: boolean) => void;
 }
 
 export const useLoanStore = create<LoanState>()(
@@ -71,7 +74,9 @@ export const useLoanStore = create<LoanState>()(
         funame: "", 
         monthlyTarget: 0, 
       },
+      _hasHydrated: false,
 
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
       setLoans: (newLoans) => set({ loans: newLoans }),
 
       fetchLoans: async (email, token) => {
@@ -160,11 +165,20 @@ export const useLoanStore = create<LoanState>()(
           staffProfile: { ...state.staffProfile, monthlyTarget: amount },
         })),
 
-      clearAllData: () => set({ loans: [] }),
+      clearAllData: () => {
+        // --- FIX: Use Zustand persist API to clear storage ---
+        useLoanStore.persist.clearStorage();
+        // Also reset in-memory state
+        set({ loans: [] });
+      },
     }),
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // --- UPDATE: Handle Hydration ---
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

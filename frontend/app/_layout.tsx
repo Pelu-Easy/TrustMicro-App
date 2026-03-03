@@ -43,6 +43,7 @@ export default function RootLayout() {
         router.replace('/login');
       } else if (isLoggedIn && inAuthGroup) {
         console.log("🔓 Token found, moving to App");
+        // Navigation guard for sflApp project
         router.replace('/(tabs)');
       }
       setIsReady(true);

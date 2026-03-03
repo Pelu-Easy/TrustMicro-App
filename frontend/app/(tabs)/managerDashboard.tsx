@@ -1,13 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react'; // Added useRef
-import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import api from '../../services/api'; // Use our secure instance
-// Note: Ensure @react-native-segmented-control/segmented-control is installed
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import api from '../../services/api';
 import useUserData from '../../store/userSignUp';
 
 const BRAND = { primary: "#003366", accent: "#2E7D32", bg: "#F8FAFC", card: "#FFFFFF" };
+
+// --- TYPES ---
+interface LoanItem {
+  id: string;
+  customerName: string;
+  status: string;
+  loanAmount?: string;
+  amount?: string;
+  staffName?: string;
+  branchName?: string;
+  branch?: string;
+}
 
 export default function ManagerDashboard() {
   const { 
@@ -16,7 +27,7 @@ export default function ManagerDashboard() {
   } = useUserData();
   const router = useRouter();
 
-  const [loans, setLoans] = useState([]);
+  const [loans, setLoans] = useState<LoanItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0); 
@@ -42,45 +53,42 @@ export default function ManagerDashboard() {
   };
 
   const fetchData = useCallback(async () => {
-    // If no token exists, don't even try to fetch
     if (!token) return;
 
     setIsLoading(true);
     try {
+      // Logic: Index 0 is the Work Basket (filtered), Index 1 is Approved Loans
       let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
       
-      // Use our centralized 'api' instance
       const response = await api.get(endpoint);
       
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
-        const workBasket = response.data.filter((loan: any) => 
-          loan.status === targetStatus
-        );
+        // Filter by Status AND Branch (Supervisors/Officers are branch-bound)
+        const workBasket = response.data.filter((loan: LoanItem) => {
+          const statusMatch = loan.status === targetStatus;
+          // Management at HQ (CCO/MD) might see all branches, others only theirs
+          const branchMatch = (isMD || isCCO || isHeadOfCredit) ? true : loan.branchName === branch;
+          return statusMatch && branchMatch;
+        });
         setLoans(workBasket);
       } else {
         setLoans(response.data);
       }
       
     } catch (error: any) {
-      // --- SILENTLY HANDLE 401 DURING LOGOUT ---
-      if (error.response?.status === 401 || !token) {
-        console.log("Request aborted due to logout or expired token.");
-        return; // Do not console.error or alert
-      }
+      if (error.response?.status === 401 || !token) return;
       console.error("Dashboard Fetch Error:", error.message);
+      setLoans([]); // Clear loans on error
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex]);
+  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex, branch]);
 
   useEffect(() => {
-    // Only fetch if token exists
-    if (token) {
-      fetchData();
-    }
-  }, [fetchData, selectedIndex, token]); // Added token dependency
+    if (token) fetchData();
+  }, [fetchData, selectedIndex, token]);
 
   const onRefresh = () => {
     if (!token) return;
@@ -88,9 +96,8 @@ export default function ManagerDashboard() {
     fetchData();
   };
 
-  // ... renderLoanItem and return statement remain unchanged ...
-// ...
-  const renderLoanItem = ({ item }: { item: any }) => (
+  // FIXED: Type safety for renderLoanItem
+  const renderLoanItem = ({ item }: { item: LoanItem }) => (
     <TouchableOpacity 
       style={styles.loanCard}
       onPress={() => router.push({
@@ -108,7 +115,7 @@ export default function ManagerDashboard() {
       <View style={styles.cardBody}>
         <View style={styles.infoRow}>
           <Ionicons name="cash-outline" size={16} color="#64748B" />
-          <Text style={styles.infoText}>₦{Number(item.amount).toLocaleString()}</Text>
+          <Text style={styles.infoText}>₦{Number(item.loanAmount || item.amount || 0).toLocaleString()}</Text>
         </View>
         <View style={styles.infoRow}>
           <Ionicons name="person-outline" size={16} color="#64748B" />
@@ -117,7 +124,7 @@ export default function ManagerDashboard() {
       </View>
       
       <View style={styles.cardFooter}>
-        <Text style={styles.branchText}>{item.branch || branch}</Text>
+        <Text style={styles.branchText}>{item.branchName || item.branch || branch}</Text>
         <Ionicons name="chevron-forward" size={18} color={BRAND.primary} />
       </View>
     </TouchableOpacity>
@@ -137,14 +144,11 @@ export default function ManagerDashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* NEW: SEGMENTED CONTROL FOR TOGGLING VIEWS */}
       <View style={styles.segmentContainer}>
         <SegmentedControl
-          values={['Pending', 'Approved Loans']}
+          values={['Work Basket', 'Approved Loans']}
           selectedIndex={selectedIndex}
-          onChange={(event) => {
-            setSelectedIndex(event.nativeEvent.selectedSegmentIndex);
-          }}
+          onChange={(event) => setSelectedIndex(event.nativeEvent.selectedSegmentIndex)}
           tintColor={BRAND.primary}
           backgroundColor="#E2E8F0"
           fontStyle={{color: '#475569'}}
@@ -168,12 +172,12 @@ export default function ManagerDashboard() {
       {isLoading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={BRAND.primary} />
-          <Text style={styles.loaderText}>Loading {selectedIndex === 0 ? 'Work Basket' : 'Approved Loans'}...</Text>
+          <Text style={styles.loaderText}>Loading Work Basket...</Text>
         </View>
       ) : (
         <FlatList
           data={loans}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => (item.id || Math.random()).toString()}
           renderItem={renderLoanItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -194,69 +198,31 @@ export default function ManagerDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: 20, 
-    paddingTop: 10,
-    backgroundColor: BRAND.card
-  },
-  welcomeText: { fontSize: 14, color: '#64748B', fontWeight: '500' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: BRAND.card },
+  welcomeText: { fontSize: 14, color: '#64748B' },
   titleText: { fontSize: 22, fontWeight: 'bold', color: BRAND.primary },
   avatarMini: { width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.primary, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFF', fontWeight: 'bold' },
   profileBtn: { padding: 5 },
-  // NEW STYLE
-  segmentContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: BRAND.card,
-  },
-  statsBar: { 
-    flexDirection: 'row', 
-    backgroundColor: BRAND.card, 
-    marginHorizontal: 20, 
-    marginTop: 10, 
-    borderRadius: 15, 
-    padding: 15,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    marginBottom: 10
-  },
+  segmentContainer: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: BRAND.card },
+  statsBar: { flexDirection: 'row', backgroundColor: BRAND.card, marginHorizontal: 20, marginTop: 10, borderRadius: 15, padding: 15, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, marginBottom: 10 },
   statItem: { flex: 1, alignItems: 'center' },
   statLabel: { fontSize: 12, color: '#94A3B8', marginBottom: 4 },
   statValue: { fontSize: 20, fontWeight: 'bold', color: BRAND.primary },
   listContent: { padding: 20, paddingTop: 10 },
-  loanCard: { 
-    backgroundColor: BRAND.card, 
-    borderRadius: 16, 
-    padding: 16, 
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  loanCard: { backgroundColor: BRAND.card, borderRadius: 16, padding: 16, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   customerName: { fontSize: 17, fontWeight: 'bold', color: '#1E293B', flex: 1 },
   statusBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: 'bold', color: BRAND.primary, textTransform: 'uppercase' },
+  statusText: { fontSize: 11, fontWeight: 'bold', color: BRAND.primary },
   cardBody: { gap: 8, marginBottom: 12 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   infoText: { fontSize: 14, color: '#475569' },
-  cardFooter: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingTop: 12, 
-    borderTopWidth: 1, 
-    borderTopColor: '#F1F5F9' 
-  },
-  branchText: { fontSize: 12, color: '#94A3B8', fontWeight: '500' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  branchText: { fontSize: 12, color: '#94A3B8' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loaderText: { marginTop: 10, color: '#64748B' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#475569', marginTop: 15 },
-  emptySubtitle: { fontSize: 14, color: '#94A3B8', textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  emptySubtitle: { fontSize: 14, color: '#94A3B8', textAlign: 'center', marginTop: 8 },
 });

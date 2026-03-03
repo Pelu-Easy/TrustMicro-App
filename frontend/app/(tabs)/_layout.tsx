@@ -3,22 +3,30 @@ import { Tabs } from 'expo-router';
 import useUserData from '../../store/userSignUp';
 
 export default function TabLayout() {
-  const { isSupervisor, role } = useUserData();
+  // --- UPDATED: Pull the fixed boolean flags from our store ---
+  const { 
+    isSupervisor, 
+    isHeadOfCredit, 
+    isCCO, 
+    isMD, 
+    isFinance,
+    role 
+  } = useUserData();
 
   const userRole = role?.toLowerCase() || '';
 
-  // UPDATED: Added 'cfo' to management check to allow access to approvals/finance
+  // --- REFINED: Comprehensive Management Check ---
+  // This now correctly identifies Caleb as management because isHeadOfCredit will be true
   const isManagement = 
-    isSupervisor === true || 
+    isSupervisor || 
+    isHeadOfCredit || 
+    isCCO || 
+    isMD || 
+    isFinance ||
     userRole === 'manager' || 
-    userRole === 'supervisor' || 
     userRole === 'admin' ||
     userRole === 'super admin' ||
-    userRole === 'head of credit' || 
-    userRole === 'hoc' ||
-    userRole === 'cco' ||
-    userRole === 'md' ||
-    userRole === 'cfo'; // New role added
+    userRole === 'cfo';
 
   return (
     <Tabs
@@ -40,7 +48,7 @@ export default function TabLayout() {
         options={{
           title: 'New Loan',
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={24} color={color} />,
-          // This removes the tab button entirely for management
+          // Correctly hides for Caleb (Head of Credit)
           href: isManagement ? null : undefined, 
         }}
       />
@@ -50,7 +58,7 @@ export default function TabLayout() {
         options={{
           title: 'Approvals',
           tabBarIcon: ({ color }) => <Ionicons name="shield-checkmark" size={24} color={color} />,
-          // This removes the tab button for field officers
+          // Correctly shows for Caleb (Head of Credit)
           href: !isManagement ? null : undefined, 
         }}
       />

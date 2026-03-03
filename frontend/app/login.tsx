@@ -253,7 +253,7 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            {/* NEW: Recovery/Support option only visible when locked out */}
+            {/* Recovery/Support option only visible when locked out */}
             {isLockedOut && (
               <TouchableOpacity style={styles.supportLink} onPress={handleContactSupport}>
                 <Text style={styles.supportLinkText}>Need help? Contact System Admin</Text>
@@ -321,7 +321,6 @@ const styles = StyleSheet.create({
   signupRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
   noAccountText: { color: '#64748B', fontSize: 15 },
   signUpLinkText: { color: '#003366', fontSize: 15, fontWeight: 'bold', textDecorationLine: 'underline' },
-  // Styles for support link
   supportLink: { marginTop: 15, alignItems: 'center' },
   supportLinkText: { color: '#003366', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });

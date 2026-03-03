@@ -4,7 +4,9 @@ const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    
+    // FIX: Check if authHeader exists before splitting
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
     if (!token) return res.status(401).json({ error: "Access Denied: No Token Provided" });
 
@@ -16,7 +18,7 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// --- NEW MIDDLEWARE ---
+// --- MANAGEMENT MIDDLEWARE ---
 const isManagement = (req, res, next) => {
     if (!req.user) {
         return res.status(403).json({ error: "Access Denied: No user data" });
@@ -27,16 +29,16 @@ const isManagement = (req, res, next) => {
     const isSupFlag = req.user.is_supervisor;
 
     // Allowed if: Explicitly marked as supervisor, Role is manager, OR Unit is management
-    const managementUnits = ['cco', 'md', 'head of credit', 'admin', 'super admin'];
+    const managementUnits = ['cco', 'md', 'head of credit', 'admin', 'super admin', 'manager', 'supervisor'];
+    
     const hasManagementAccess = 
         isSupFlag == 1 || 
         isSupFlag === true || 
-        role === 'manager' || 
-        role === 'supervisor' ||
+        managementUnits.includes(role) ||
         managementUnits.includes(unit);
 
     console.log(`[AUTH] Checking management access for: ${req.user.email}`);
-    console.log(`[AUTH] Unit: "${unit}" | Sup Flag: ${isSupFlag}`);
+    console.log(`[AUTH] Role: "${role}" | Unit: "${unit}" | Sup Flag: ${isSupFlag}`);
 
     if (hasManagementAccess) {
         console.log("[AUTH] Access Granted ✅");

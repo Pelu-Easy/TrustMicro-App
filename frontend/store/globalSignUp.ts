@@ -1,8 +1,7 @@
-//import { router } from 'expo-router';
 import { router } from 'expo-router';
 import { create } from 'zustand';
 
-// 1. Define the Interface to clear TypeScript "implicit any" errors
+// 1. Define the Interface
 interface SignUpState {
   isSignUp: boolean;
   sign_up: () => void;
@@ -11,17 +10,17 @@ interface SignUpState {
 
 // 2. Implementation
 const useSignUpStore = create<SignUpState>((set) => ({
-    isSignUp: false,
+  isSignUp: false,
+  
+  sign_up: () => {
+    set({ isSignUp: true });
     
-    sign_up: () => {
-        set({ isSignUp: true });
-        
-        // FIX: Use absolute path '/' to ensure Expo Router finds the screen 
-        // regardless of where this store file is located.
-        router.push('/profilesumary' as any);
-    },
-    
-    signedUp: () => set({ isSignUp: false }),
+    // FIX: Remove 'as any' to rely on TypeScript route checking.
+    // Ensure '/profilesumary' exists in your app directory.
+    router.push('/profilesumary');
+  },
+  
+  signedUp: () => set({ isSignUp: false }),
 }));
 
 export default useSignUpStore;

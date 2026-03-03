@@ -1,7 +1,8 @@
-import Constants from 'expo-constants'; // Added missing import
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+// --- FIX: Import Constants explicitly ---
+import Constants from 'expo-constants';
 
 export async function registerForPushNotificationsAsync() {
   let token;
@@ -27,10 +28,9 @@ export async function registerForPushNotificationsAsync() {
   }
 
   // 3. Get Project ID safely from app.json
-  // We use the slug/path instead of hardcoding the long ID here
+  // --- FIX: Use Constants.expoConfig.extra correctly ---
   const projectId = 
-    Constants?.expoConfig?.extra?.eas?.projectId ?? 
-    Constants?.easConfig?.projectId;
+    Constants.expoConfig?.extra?.eas?.projectId;
 
   if (!projectId) {
     console.error('Project ID not found in app.json. Ensure you ran npx eas-cli project:init');

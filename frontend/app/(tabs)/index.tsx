@@ -2,7 +2,7 @@ import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -28,7 +28,7 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowBanner: true, 
+    shouldShowBanner: true,   
     shouldShowList: true,   
   }),
 });
@@ -36,7 +36,7 @@ Notifications.setNotificationHandler({
 interface StatCardProps {
   title: string;
   value: string;
-  icon: keyof typeof Ionicons.prototype.props.name;
+  icon: keyof typeof Ionicons.glyphMap; // Fixed: Specific icon type
   color: string;
 }
 
@@ -47,38 +47,32 @@ export default function Dashboard() {
   const loans = useLoanStore((state) => state.loans);
   const fetchLoans = useLoanStore((state) => state.fetchLoans); 
   const { disbursementTarget } = useStaffStore();
-  const { funame, token, email, branch, isSupervisor, role, setToken, logout } = useUserData(); 
+  
+  // USER DATA
+  const { 
+    funame, token, email, branch, role, setToken, logout,
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, isFinance, _hasHydrated 
+  } = useUserData(); 
   
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0); 
 
-  // --- ROLE LOGIC ---
-  const userRole = role?.toLowerCase() || '';
-  
-  const isCreditOfficer = userRole === 'credit officer';
-  const isHeadOfCredit = userRole === 'head of credit';
-  const isCCO = userRole === 'cco' || userRole === 'chief commercial officer';
-  const isMD = userRole === 'md' || userRole === 'managing director';
-  const isFinance = userRole === 'finance' || userRole === 'disbursement';
-
-  // Define who is part of the Approval Workflow
-  const isWorkflowUser = ['credit officer', 'head of credit', 'cco', 'chief commercial officer', 'md', 'managing director', 'finance', 'disbursement', 'manager', 'supervisor'].includes(userRole) || isSupervisor === true;
-
-  const isManagement = isSupervisor === true || userRole === 'manager' || userRole === 'supervisor' || userRole === 'admin' || isWorkflowUser;
-  
-  const canOnboardLoan = !isManagement && (userRole === 'sales' || userRole === 'officer' || userRole === 'staff');
+  // --- REFINED ROLE LOGIC ---
+  const isWorkflowUser = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD || isFinance;
+  const isManagement = isWorkflowUser || role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'manager';
+  const canOnboardLoan = !isManagement && ['sales', 'officer', 'staff'].includes(role?.toLowerCase() || '');
 
   // Helper to determine if a loan needs this specific user's attention
-  const isMyTask = (loanStatus: string) => {
+  const isMyTask = useCallback((loanStatus: string) => {
     if (isCreditOfficer) return loanStatus === 'PENDING_CREDIT';
     if (isHeadOfCredit) return loanStatus === 'PENDING_HEAD_CREDIT';
     if (isCCO) return loanStatus === 'PENDING_CCO';
     if (isMD) return loanStatus === 'PENDING_MD';
     if (isFinance) return loanStatus === 'APPROVED_FINANCE';
-    if (isSupervisor || userRole === 'manager' || userRole === 'supervisor') return loanStatus === 'Pending';
+    if (isSupervisor || role?.toLowerCase() === 'manager') return loanStatus === 'Pending';
     return false;
-  };
+  }, [isCreditOfficer, isHeadOfCredit, isCCO, isMD, isFinance, isSupervisor, role]);
 
   // --- TRACKER LOGIC ---
   const getStatusProgress = (status: string) => {
@@ -105,26 +99,26 @@ export default function Dashboard() {
   };
 
   const fetchAllLoans = useCallback(async () => {
-    if (!token || !email) return;
+    if (!_hasHydrated || !token || !email) return;
     try {
       await fetchLoans(email, token);
-    } catch (error: any) {
+    } catch (error) {
       console.log("Dashboard sync failed.");
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [token, email, fetchLoans]);
+  }, [_hasHydrated, token, email, fetchLoans]);
 
   const fetchUnreadCount = useCallback(async () => {
-    if (!token) return;
+    if (!token || !_hasHydrated) return;
     try {
       const res = await api.get('/notifications/unread-count');
       setUnreadCount(res.data.count || 0);
     } catch (e) {
       console.log("Failed to fetch unread count");
     }
-  }, [token]);
+  }, [token, _hasHydrated]);
 
   useEffect(() => {
     const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
@@ -138,22 +132,33 @@ export default function Dashboard() {
       foregroundSubscription.remove();
       responseSubscription.remove();
     };
-  }, [fetchUnreadCount, fetchAllLoans]);
+  }, [fetchUnreadCount, fetchAllLoans, router]);
 
   useFocusEffect(
     useCallback(() => {
-      if (token && token.length > 10 && email) {
+      if (token && token.length > 10 && email && _hasHydrated) {
         fetchAllLoans();
         fetchUnreadCount(); 
       }
-    }, [token, email, fetchAllLoans, fetchUnreadCount])
+    }, [token, email, _hasHydrated, fetchAllLoans, fetchUnreadCount])
   );
 
-  const totalDisbursed = loans
-    .filter(l => l.status === 'Disbursed')
-    .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
+  // --- MEMOIZED DATA PROCESSING ---
+  const processedLoans = useMemo(() => {
+    return loans
+      .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
+      .slice(0, 15);
+  }, [loans, isWorkflowUser, isMyTask]);
 
-  const disbursementProgress = Math.min(totalDisbursed / (disbursementTarget || 1000000), 1);
+  const totalDisbursed = useMemo(() => {
+    return loans
+      .filter(l => l.status === 'Disbursed')
+      .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
+  }, [loans]);
+
+  const disbursementProgress = useMemo(() => {
+    return Math.min(totalDisbursed / (disbursementTarget || 1000000), 1);
+  }, [totalDisbursed, disbursementTarget]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -161,27 +166,10 @@ export default function Dashboard() {
     fetchUnreadCount(); 
   };
 
-  const [activeTab, setActiveTab] = useState<'loans' | 'team'>('loans');
-  const [team, setTeam] = useState<any[]>([]);
-
-  const fetchTeam = async () => {
-    if (userRole !== 'manager' && userRole !== 'supervisor' && !isSupervisor) return;
-    try {
-      const response = await api.get('/manager/my-team');
-      setTeam(response.data);
-    } catch (error) {
-      console.error("Error fetching team:", error);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'team') fetchTeam();
-  }, [activeTab, userRole]);
-
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
     <View style={styles.statCard}>
       <View style={[styles.iconCircleStat, { backgroundColor: color + '20' }]}>
-        <Ionicons name={icon as any} size={22} color={color} />
+        <Ionicons name={icon} size={22} color={color} />
       </View>
       <View>
         <Text style={styles.statValue}>{value}</Text>
@@ -190,7 +178,8 @@ export default function Dashboard() {
     </View>
   );
 
-  if (isLoading) {
+  // Show loader until hydrated and data is fetched
+  if (!_hasHydrated || isLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#003366" />
@@ -266,12 +255,10 @@ export default function Dashboard() {
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
         </View>
 
-        {loans.length === 0 ? (
+        {processedLoans.length === 0 ? (
           <View style={styles.emptyState}><Ionicons name="folder-open-outline" size={48} color="#CBD5E1" /><Text style={styles.emptyText}>No loan records found.</Text></View>
         ) : (
-          loans
-          .filter(l => isWorkflowUser ? isMyTask(l.status) : true) 
-          .slice(0, 15).map((loan, index) => {
+          processedLoans.map((loan, index) => {
             const track = getStatusProgress(loan.status);
             return (
               <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {

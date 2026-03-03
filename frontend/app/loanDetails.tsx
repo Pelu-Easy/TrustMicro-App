@@ -86,8 +86,6 @@ export default function LoanDetails() {
     setIsSubmitting(true);
     try {
       const API_URL = 'https://trustmicro-app.onrender.com/api/v1';
-      
-      // Determine the status string to send to the backend
       const targetStatus = decision === 'Rejected' ? 'Rejected' : getNextStatus();
       
       await axios.patch(
@@ -194,7 +192,6 @@ export default function LoanDetails() {
         </View>
 
         <View style={styles.content}>
-          {/* Timeline Tracking */}
           <WorkflowTimeline />
 
           {/* Customer Summary Card */}
@@ -378,8 +375,6 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeModal: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
   fullImage: { width: width, height: height * 0.8 },
-
-  // --- WORKFLOW TIMELINE STYLES ---
   timelineCard: { backgroundColor: '#fff', padding: 20, borderRadius: 15, elevation: 3, marginBottom: 20 },
   timelineContainer: { marginTop: 15 },
   timelineItem: { flexDirection: 'row', minHeight: 50 },
@@ -390,8 +385,6 @@ const styles = StyleSheet.create({
   stageLabel: { fontSize: 14, color: '#1E293B', fontWeight: '600' },
   stageStatusText: { fontSize: 11, color: '#64748B', marginTop: 2 },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.accent },
-
-  // --- REJECT MODAL STYLES ---
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   rejectModalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 25, elevation: 5 },
   rejectTitle: { fontSize: 20, fontWeight: 'bold', color: BRAND.danger, marginBottom: 10 },

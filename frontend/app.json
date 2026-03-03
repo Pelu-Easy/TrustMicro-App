@@ -8,13 +8,12 @@
     "icon": "./assets/images/icon.png",
     "scheme": "trustmicro",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
-  "android": {
+    "android": {
       "package": "com.peluisrael.trustmicro",
-      "googleServicesFile": "./google-services.json", 
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"

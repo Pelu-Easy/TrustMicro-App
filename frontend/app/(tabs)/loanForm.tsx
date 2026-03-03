@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
+  FlatList,
+  Modal,
   ScrollView,
   StyleSheet,
   Text, TextInput, TouchableOpacity,
@@ -18,6 +20,8 @@ import api from '../../services/api';
 import { useLoanStore } from '../../store/loanStore';
 import useUserData from '../../store/userSignUp';
 
+const { width } = Dimensions.get('window');
+
 const BRAND = { 
   primary: "#003366", 
   accent: "#10B981", 
@@ -28,24 +32,23 @@ const BRAND = {
   border: "#E2E8F0" 
 };
 
-// --- LOAN LIMITS CONFIGURATION ---
 const LOAN_LIMITS: Record<string, number> = {
   'Federal': 1000000,
   'State': 500000,
   'Private': 250000
 };
 
+// --- TYPES ---
+interface Supervisor {
+  id: string;
+  name: string;
+}
+
+// --- SUB-COMPONENTS ---
 const ReviewItem = ({ label, value }: { label: string, value: string }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
     <Text style={styles.revLabel}>{label}:</Text>
     <Text style={styles.revVal}>{value || 'N/A'}</Text>
-  </View>
-);
-
-const DocStatus = ({ label, exists }: { label: string, exists: boolean }) => (
-  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-    <Ionicons name={exists ? "checkmark-circle" : "close-circle"} size={14} color={exists ? BRAND.accent : BRAND.danger} />
-    <Text style={{ fontSize: 11, color: '#64748b' }}>{label}</Text>
   </View>
 );
 
@@ -54,37 +57,33 @@ export default function CompleteLoanForm() {
   const params = useLocalSearchParams();
   
   const [step, setStep] = useState(1);
-  const [permission, requestPermission] = useCameraPermissions();
+  const { loans: allLoans } = useLoanStore();
   
+  // USER DATA & FLAGS
+  const { 
+    funame: staffFullName, 
+    branch: staffBranch, 
+    token, 
+    role, 
+    isSupervisor, 
+    isHeadOfCredit,
+    _hasHydrated 
+  } = useUserData();
+
+  // STATE
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currentLoanId, setCurrentLoanId] = useState<string>('');
-
-  const { loans: allLoans } = useLoanStore();
-  const { funame: staffFullName, branch: staffBranch, role, isSupervisor } = useUserData();
-
-  // --- SAFETY CHECK: REDIRECT MANAGEMENT USERS ---
-  useEffect(() => {
-    const userRole = role?.toLowerCase() || '';
-    const isManagement = 
-      isSupervisor === true || 
-      ['manager', 'supervisor', 'admin', 'super admin', 'head of credit', 'hoc', 'cco', 'md'].includes(userRole);
-
-    if (isManagement) {
-      router.replace('/(tabs)'); // Redirect to Home
-    }
-  }, [role, isSupervisor]);
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
+  const [isLoadingSup, setIsLoadingSup] = useState(false);
+  const [showSupModal, setShowSupModal] = useState(false);
 
   const [formData, setFormData] = useState({
     customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
     loanAmount: '', bankName: '', accountNumber: '',
     employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-    idUploaded: '', 
-    utilityUploaded: '', 
-    passportUploaded: '', 
-    workIdUploaded: '', 
-    statementUploaded: '', 
-    signatureUploaded: '',
+    supervisorId: '', supervisorName: '',
+    idUploaded: '', utilityUploaded: '', passportUploaded: '', 
+    workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
     monthlyIncome: '₦50,000.00 - ₦100,000.00',
     loanType: 'Federal',
     repaymentCycle: 'Monthly',
@@ -92,320 +91,201 @@ export default function CompleteLoanForm() {
     tenure: '12 Months'
   });
 
-  const updateData = (key: string, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
+  // --- ROLE PROTECTION ---
+  useEffect(() => {
+    if (!_hasHydrated) return;
+    const userRole = role?.toLowerCase() || '';
+    const isManagement = isSupervisor || isHeadOfCredit || 
+      ['manager', 'admin', 'cco', 'md'].includes(userRole);
 
-  const handlePickDocument = async (fieldKey: string) => {
+    if (isManagement) router.replace('/(tabs)'); 
+  }, [_hasHydrated, role, isHeadOfCredit, isSupervisor]);
+
+  // --- SUPERVISOR FETCH ---
+  const fetchSupervisors = useCallback(async () => {
+    if (!token || !staffBranch) return;
+    setIsLoadingSup(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['image/*', 'application/pdf'],
-        copyToCacheDirectory: true,
-      });
+      const response = await api.get('/manager/supervisors', { params: { branch: staffBranch } });
+      setSupervisors(response.data || []);
+    } catch (e) { console.log("Supervisor fetch error"); }
+    finally { setIsLoadingSup(false); }
+  }, [token, staffBranch]);
+
+  useEffect(() => { if (step === 1) fetchSupervisors(); }, [step, fetchSupervisors]);
+
+  // FIXED: updateData now accepts specific keys
+  const updateData = (key: keyof typeof formData, value: string) => setFormData(prev => ({ ...prev, [key]: value }));
+
+  const handlePickDocument = async (fieldKey: keyof typeof formData) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'] });
       if (!result.canceled) {
         updateData(fieldKey, result.assets[0].uri);
         Alert.alert("Success", "Document attached.");
       }
-    } catch (error) {
-      Alert.alert("Error", "Could not pick the document.");
-    }
+    } catch (e) { Alert.alert("Error", "Could not pick document."); }
   };
 
   const validateAmount = () => {
     const amount = parseFloat(formData.loanAmount);
     const limit = LOAN_LIMITS[formData.loanType] || 0;
-    
-    if (isNaN(amount) || amount <= 0) return { valid: false, msg: "Please enter a valid amount." };
+    if (isNaN(amount) || amount <= 0) return { valid: false, msg: "Enter a valid amount." };
     if (amount > limit) return { valid: false, msg: `Limit for ${formData.loanType} is ₦${limit.toLocaleString()}.` };
     return { valid: true, msg: "" };
   };
-
-  useEffect(() => {
-    if (params.draftId) {
-      const existingLoan = allLoans.find(l => l.id === params.draftId);
-      if (existingLoan) {
-        setCurrentLoanId(existingLoan.id);
-        setFormData(prev => ({
-          ...prev,
-          customerName: existingLoan.customerName || '',
-          bvn: existingLoan.bvn || '',
-          nin: existingLoan.nin || '',
-          phone: existingLoan.phone || '',
-          loanAmount: existingLoan.loanAmount ? String(existingLoan.loanAmount) : '',
-          bankName: existingLoan.bankName || '',
-          accountNumber: existingLoan.accountNumber || '',
-          loanType: existingLoan.loanType || 'Federal',
-          gender: existingLoan.gender || '',
-          dob: existingLoan.dob || '',
-          employerName: (existingLoan as any).employerName || '',
-          jobTitle: (existingLoan as any).jobTitle || '',
-          idUploaded: (existingLoan as any).idCard || (existingLoan as any).idImageUrl || '',
-          utilityUploaded: (existingLoan as any).ninHardCopy || (existingLoan as any).utilityBillUrl || '',
-          statementUploaded: (existingLoan as any).bankStatement || (existingLoan as any).statementUrl || '',
-          passportUploaded: (existingLoan as any).passportPhoto || (existingLoan as any).passportImageUrl || '',
-          workIdUploaded: (existingLoan as any).workIdUrl || '',
-          signatureUploaded: (existingLoan as any).signatureUrl || '',
-        }));
-      }
-    } else {
-      setCurrentLoanId(`loan_${Date.now()}`);
-    }
-  }, [params.draftId, allLoans]);
 
   const handleVerifyIdentity = async () => {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
     try {
-      const response = await fetch('https://trustmicro.free.beeceptor.com/verify-identity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bvn: formData.bvn })
-      });
-      const result = await response.json();
-      if (result.status === "success") {
-        updateData('customerName', `${result.data.firstName} ${result.data.lastName}`);
-        updateData('dob', result.data.dob);
-        Alert.alert("Success", "Identity Verified");
+      const res = await api.post('/verify-identity', { bvn: formData.bvn });
+      if (res.data.status === "success") {
+        updateData('customerName', `${res.data.data.firstName} ${res.data.data.lastName}`);
+        updateData('dob', res.data.data.dob);
+      } else {
+        Alert.alert("Verification Failed", "BVN not found.");
       }
-    } catch (e) { Alert.alert("Error", "Verification failed."); } 
+    } catch (e) { Alert.alert("Error", "Verification service unavailable."); } 
     finally { setIsVerifying(false); }
   };
 
   const handleFinalSubmit = async () => {
     if (isSubmitting) return;
+    if (!formData.supervisorId) return Alert.alert("Missing Info", "Please select a supervisor.");
+    
     setIsSubmitting(true);
-
-    const payload = {
-      id: currentLoanId,
-      customerName: formData.customerName,
-      bvn: formData.bvn,
-      nin: formData.nin,
-      phone: formData.phone,
-      loanAmount: parseFloat(formData.loanAmount),
-      bankName: formData.bankName,
-      accountNumber: formData.accountNumber,
-      employerName: formData.employerName,
-      jobTitle: formData.jobTitle,
-      ninImageUrl: formData.idUploaded, 
-      idImageUrl: formData.idUploaded,
-      passportImageUrl: formData.passportUploaded,
-      utilityBillUrl: formData.utilityUploaded,
-      workIdUrl: formData.workIdUploaded,
-      statementUrl: formData.statementUploaded,
-      signatureUrl: formData.signatureUploaded,
-      monthlyIncome: formData.monthlyIncome,
-      loanType: formData.loanType,
-      repaymentCycle: formData.repaymentCycle,
-      gender: formData.gender,
-      tenure: formData.tenure,
-      staffName: staffFullName || 'System',
-      branchName: staffBranch || 'Main',
-      status: 'Pending' 
-    };
-
     try {
+      const payload = { ...formData, staffName: staffFullName, branchName: staffBranch, status: 'Pending' };
       const response = await api.post('/loans', payload);
-
       if (response.status === 201 || response.status === 200) {
-        Alert.alert("Success", "Loan application submitted successfully and sent for review!", [
-          { 
-            text: "OK", 
-            onPress: () => {
-              setFormData({
-                customerName: '', bvn: '', nin: '', phone: '', address: '', dob: '',
-                loanAmount: '', bankName: '', accountNumber: '',
-                employerName: '', jobTitle: '', nokName: '', nokPhone: '',
-                idUploaded: '', utilityUploaded: '', passportUploaded: '', 
-                workIdUploaded: '', statementUploaded: '', signatureUploaded: '',
-                monthlyIncome: '₦50,000.00 - ₦100,000.00',
-                loanType: 'Federal', repaymentCycle: 'Monthly',
-                gender: '', tenure: '12 Months'
-              });
-              setStep(1);
-              setCurrentLoanId(`loan_${Date.now()}`);
-              router.replace('/(tabs)');
-            } 
-          }
-        ]);
+        Alert.alert("Success", "Submitted!", [{ text: "OK", onPress: () => router.replace('/(tabs)') }]);
       }
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error || "Check your internet connection and try again.";
-      Alert.alert("Submission Failed", errorMsg);
-    } finally {
-      setIsSubmitting(false);
-    }
+      Alert.alert("Error", error.response?.data?.error || "Submission failed.");
+    } finally { setIsSubmitting(false); }
   };
-
-  const Selector = ({ label, options, current, onSelect }: any) => (
-    <View style={{ marginBottom: 15 }}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.selectorRow}>
-        {options.map((opt: string) => (
-          <TouchableOpacity 
-            key={opt} 
-            onPress={() => onSelect(opt)}
-            style={[styles.selectorItem, current === opt && styles.selectorActive]}
-          >
-            <Text style={[styles.selectorText, current === opt && { color: '#FFF' }]}>{opt}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ padding: 24 }}>
         <View style={styles.headerRow}>
-            <View style={{flex: 1}}>
-                <Text style={styles.stepText}>{`STEP ${step} OF 5`}</Text>
-                <View style={styles.barBg}><View style={[styles.barFill, {width: `${(step/5)*100}%`}]} /></View>
-            </View>
+          <View style={{flex: 1}}>
+            <Text style={styles.stepText}>{`STEP ${step} OF 5`}</Text>
+            <View style={styles.barBg}><View style={[styles.barFill, {width: `${(step/5)*100}%`}]} /></View>
+          </View>
         </View>
 
+        {/* STEP 1: KYC & SUPERVISOR */}
         {step === 1 && (
           <View>
             <Text style={styles.title}>KYC Registration</Text>
-            <Text style={styles.label}>BVN *</Text>
-            <View style={styles.row}>
-                <TextInput style={[styles.input, {flex:1}]} value={formData.bvn} onChangeText={v=>updateData('bvn',v)} keyboardType="numeric" maxLength={11} placeholder="11-digit BVN" />
-                <TouchableOpacity style={styles.iconBtn}><Ionicons name="scan" size={20} color="#FFF" /></TouchableOpacity>
-            </View>
-            <TouchableOpacity style={[styles.verifyBtn, {backgroundColor: BRAND.accent}]} onPress={handleVerifyIdentity}>
-                {isVerifying ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Verify Identity</Text>}
+            
+            <Text style={styles.label}>Reporting Supervisor *</Text>
+            <TouchableOpacity style={styles.input} onPress={() => setShowSupModal(true)}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: formData.supervisorName ? BRAND.primary : '#94A3B8' }}>
+                  {formData.supervisorName || "Select Supervisor"}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={BRAND.primary} />
+              </View>
             </TouchableOpacity>
 
-            <Text style={styles.label}>Full Name *</Text>
-            <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Auto-filled from BVN" />
-            
-            <Text style={styles.label}>Customer Phone Number *</Text>
-            <TextInput style={styles.input} value={formData.phone} onChangeText={v=>updateData('phone', v)} keyboardType="phone-pad" placeholder="080XXXXXXXX" />
+            <Text style={styles.label}>BVN *</Text>
+            <View style={styles.row}>
+                <TextInput style={[styles.input, {flex:1}]} value={formData.bvn} onChangeText={v=>updateData('bvn',v)} keyboardType="numeric" maxLength={11} />
+                <TouchableOpacity style={[styles.verifyBtn, {backgroundColor: BRAND.accent}]} onPress={handleVerifyIdentity}>
+                    {isVerifying ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Verify</Text>}
+                </TouchableOpacity>
+            </View>
 
-            <Text style={styles.label}>Date of Birth *</Text>
-            <TextInput style={[styles.input, styles.disabledInput]} value={formData.dob} editable={false} placeholder="Auto-filled from BVN" />
-
-            <Selector label="Gender *" options={['Male', 'Female']} current={formData.gender} onSelect={(v: string) => updateData('gender', v)} />
-            <Text style={styles.label}>NIN *</Text>
-            <TextInput style={styles.input} value={formData.nin} onChangeText={v=>updateData('nin',v)} keyboardType="numeric" maxLength={11} placeholder="11-digit NIN" />
+            <Text style={styles.label}>Full Name</Text>
+            <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} />
             
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => (formData.customerName && formData.phone) ? setStep(2) : Alert.alert("Required", "Please verify BVN and enter Phone Number")}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => (formData.customerName && formData.supervisorId) ? setStep(2) : Alert.alert("Missing Info", "Verify BVN and select a Supervisor.")}>
                 <Text style={styles.btnText}>Next</Text>
             </TouchableOpacity>
           </View>
         )}
 
+        {/* STEP 2: EMPLOYMENT */}
         {step === 2 && (
           <View>
             <Text style={styles.title}>Employment & Bank</Text>
             <Text style={styles.label}>Employer Name</Text>
-            <TextInput style={styles.input} value={formData.employerName} onChangeText={v=>updateData('employerName', v)} placeholder="Employer Name" />
-            <Text style={styles.label}>Job Title</Text>
-            <TextInput style={styles.input} value={formData.jobTitle} onChangeText={v=>updateData('jobTitle', v)} placeholder="Job Title" />
-            
-            <View style={styles.divider} />
-            <Text style={styles.label}>Bank Name *</Text>
-            <TextInput style={styles.input} value={formData.bankName} onChangeText={v=>updateData('bankName', v)} placeholder="e.g. GTBank" />
+            <TextInput style={styles.input} value={formData.employerName} onChangeText={v=>updateData('employerName', v)} />
             <Text style={styles.label}>Account Number *</Text>
-            <TextInput style={styles.input} value={formData.accountNumber} onChangeText={v=>updateData('accountNumber', v)} keyboardType="numeric" maxLength={10} placeholder="10-digit Account Number" />
-
+            <TextInput style={styles.input} value={formData.accountNumber} onChangeText={v=>updateData('accountNumber', v)} keyboardType="numeric" maxLength={10} />
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(1)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={()=> (formData.bankName && formData.accountNumber) ? setStep(3) : Alert.alert("Required", "Please enter Bank details")}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=> setStep(3)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
+        {/* STEP 3: FINANCIALS */}
         {step === 3 && (
           <View>
             <Text style={styles.title}>Financials</Text>
-            <Selector label="Monthly Income Range *" options={['₦50,000.00 - ₦100,000.00', '₦110,000.00 - ₦200,000.00', '₦210,000.00 - ₦350,000.00', '₦360,000.00 and above']} current={formData.monthlyIncome} onSelect={(v: string) => updateData('monthlyIncome', v)} />
-            <Selector label="Loan Type *" options={['Federal', 'State', 'Private']} current={formData.loanType} onSelect={(v: string) => updateData('loanType', v)} />
-            
-            <Text style={styles.label}>Requested Loan Amount *</Text>
-            <TextInput 
-              style={[styles.input, !validateAmount().valid && {borderColor: BRAND.danger}]} 
-              value={formData.loanAmount} 
-              onChangeText={v=>updateData('loanAmount',v)} 
-              keyboardType="numeric" 
-              placeholder={`Max: ₦${LOAN_LIMITS[formData.loanType]?.toLocaleString() || 0}`} 
-            />
-            
+            <Text style={styles.label}>Loan Type</Text>
+            <TextInput style={styles.input} value={formData.loanType} editable={false} />
+            <Text style={styles.label}>Requested Amount</Text>
+            <TextInput style={styles.input} value={formData.loanAmount} onChangeText={v=>updateData('loanAmount', v)} keyboardType="numeric" />
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(2)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => validateAmount().valid ? setStep(4) : Alert.alert("Error", validateAmount().msg)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=> validateAmount().valid ? setStep(4) : Alert.alert("Error", validateAmount().msg)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
+        {/* STEP 4: DOCUMENTS */}
         {step === 4 && (
           <View>
             <Text style={styles.title}>Documents</Text>
-            {[
-              { label: 'ID CARD', key: 'idUploaded' },
-              { label: 'UTILITY BILL', key: 'utilityUploaded' },
-              { label: 'PASSPORT PHOTO', key: 'passportUploaded' },
-              { label: 'WORK ID / EMPLOYMENT', key: 'workIdUploaded' },
-              { label: 'BANK STATEMENT', key: 'statementUploaded' },
-              { label: 'CUSTOMER SIGNATURE', key: 'signatureUploaded' }
-            ].map(doc => (
-              <TouchableOpacity key={doc.key} style={[styles.uploadBox, (formData as any)[doc.key] && { borderColor: BRAND.accent }]} onPress={() => handlePickDocument(doc.key)}>
-                <Text style={[styles.uploadText, (formData as any)[doc.key] && { color: BRAND.accent }]}>{doc.label} {(formData as any)[doc.key] ? '✅' : ''}</Text>
-                <Ionicons name="cloud-upload" size={24} color={(formData as any)[doc.key] ? BRAND.accent : BRAND.primary} />
+            {['idUploaded', 'passportUploaded', 'signatureUploaded'].map(key => (
+              <TouchableOpacity key={key} style={styles.uploadBox} onPress={() => handlePickDocument(key as keyof typeof formData)}>
+                <Text>{key.toUpperCase()} {formData[key as keyof typeof formData] ? '✅' : ''}</Text>
+                <Ionicons name="cloud-upload" size={24} color={BRAND.primary} />
               </TouchableOpacity>
             ))}
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(3)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep(5)}><Text style={styles.btnText}>Review</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=>setStep(5)}><Text style={styles.btnText}>Review</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
+        {/* STEP 5: REVIEW */}
         {step === 5 && (
           <View>
             <Text style={styles.title}>Review & Submit</Text>
-            <Text style={styles.subtitle}>Confirm details below are correct before submitting.</Text>
-            
             <View style={styles.reviewCard}>
-                <Text style={styles.reviewSectionHeader}>Identity & Contact</Text>
-                <ReviewItem label="Name" value={formData.customerName} />
-                <ReviewItem label="Phone" value={formData.phone} />
-                <ReviewItem label="BVN" value={`*******${formData.bvn.slice(-4)}`} />
-                <ReviewItem label="Gender" value={formData.gender} />
-                
-                <View style={styles.divider} />
-
-                <Text style={styles.reviewSectionHeader}>Bank Details</Text>
-                <ReviewItem label="Bank" value={formData.bankName} />
-                <ReviewItem label="Account" value={formData.accountNumber} />
-
-                <View style={styles.divider} />
-
-                <Text style={styles.reviewSectionHeader}>Loan Details</Text>
-                <ReviewItem label="Type" value={formData.loanType} />
-                <ReviewItem label="Amount" value={`₦${Number(formData.loanAmount || 0).toLocaleString()}`} />
-                <ReviewItem label="Tenure" value={formData.tenure} />
-
-                <View style={styles.divider} />
-
-                <Text style={styles.reviewSectionHeader}>Documents</Text>
-                <View style={styles.docRow}>
-                  <DocStatus label="ID" exists={!!formData.idUploaded} />
-                  <DocStatus label="Utility" exists={!!formData.utilityUploaded} />
-                  <DocStatus label="Photo" exists={!!formData.passportUploaded} />
-                  <DocStatus label="WorkID" exists={!!formData.workIdUploaded} />
-                  <DocStatus label="Stmt" exists={!!formData.statementUploaded} />
-                  <DocStatus label="Sign" exists={!!formData.signatureUploaded} />
-                </View>
+                <ReviewItem label="Customer" value={formData.customerName} />
+                <ReviewItem label="Amount" value={formData.loanAmount} />
+                <ReviewItem label="Supervisor" value={formData.supervisorName} />
             </View>
-
-            <TouchableOpacity 
-              style={[styles.primaryBtn, isSubmitting && { opacity: 0.7 }]} 
-              onPress={handleFinalSubmit}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Confirm & Submit</Text>}
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleFinalSubmit} disabled={isSubmitting}>
+                {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Confirm & Submit</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(4)} disabled={isSubmitting}><Text>Edit Details</Text></TouchableOpacity>
           </View>
         )}
+
+        {/* SUPERVISOR MODAL */}
+        <Modal visible={showSupModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <FlatList
+                data={supervisors}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.supItem} onPress={() => { updateData('supervisorId', item.id); updateData('supervisorName', item.name); setShowSupModal(false); }}>
+                    <Text>{item.name}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={{color:'#FFF'}}>Cancel</Text></TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -413,32 +293,26 @@ export default function CompleteLoanForm() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  stepText: { fontSize: 10, fontWeight: 'bold', color: BRAND.primary, marginBottom: 5 },
-  barBg: { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, flex: 1 },
+  headerRow: { flexDirection: 'row', marginBottom: 20 },
+  stepText: { fontSize: 10, fontWeight: 'bold', color: BRAND.primary },
+  barBg: { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2 },
   barFill: { height: 4, backgroundColor: BRAND.primary, borderRadius: 2 },
   title: { fontSize: 22, fontWeight: 'bold', color: BRAND.primary, marginBottom: 15 },
-  subtitle: { fontSize: 14, color: '#64748b', marginBottom: 20 },
-  label: { fontSize: 12, fontWeight: 'bold', marginTop: 10, color: '#64748b' },
+  label: { fontSize: 12, fontWeight: 'bold', marginTop: 15, color: '#64748b' },
   input: { backgroundColor: '#FFF', borderWidth: 1, borderColor: BRAND.border, padding: 12, borderRadius: 10, marginTop: 8 },
   disabledInput: { backgroundColor: '#F1F5F9' },
   row: { flexDirection: 'row', gap: 10 },
-  iconBtn: { backgroundColor: BRAND.primary, width: 45, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
-  verifyBtn: { padding: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  verifyBtn: { padding: 12, borderRadius: 10, justifyContent: 'center', marginTop: 8 },
   primaryBtn: { backgroundColor: BRAND.primary, padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 20, flex: 1 },
   secBtn: { backgroundColor: '#E2E8F0', padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 20, flex: 1 },
   btnRow: { flexDirection: 'row', gap: 10 },
   btnText: { color: '#FFF', fontWeight: 'bold' },
-  uploadBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border, marginBottom: 12 },
-  uploadText: { fontWeight: 'bold', color: BRAND.primary },
-  reviewCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border, marginBottom: 20 },
-  reviewSectionHeader: { fontSize: 14, fontWeight: 'bold', color: BRAND.primary, marginBottom: 10 },
-  divider: { height: 1, backgroundColor: BRAND.border, marginVertical: 12 },
+  uploadBox: { flexDirection: 'row', justifyContent: 'space-between', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border, marginBottom: 12, backgroundColor: '#FFF' },
+  reviewCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: BRAND.border },
   revLabel: { fontSize: 13, color: '#64748b' },
   revVal: { color: BRAND.primary, fontWeight: 'bold' },
-  docRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 5 },
-  selectorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  selectorItem: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: BRAND.border, backgroundColor: '#FFF' },
-  selectorActive: { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
-  selectorText: { fontSize: 12, color: BRAND.primary, fontWeight: '600' }
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#FFF', padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  supItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  closeBtn: { backgroundColor: BRAND.danger, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 }
 });

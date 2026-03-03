@@ -1,97 +1,74 @@
-import { router } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
-import api from '../services/api';
-import useUserData from '../store/userSignUp'; // Import your store to save user data
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { registerForPushNotificationsAsync } from '../services/notifications';
+import useUserData from '../store/userSignUp';
 
-const logoSource = require('../assets/images/LiquidCrest_Logo.png');
+export default function RootLayout() {
+  const { token, _hasHydrated } = useUserData();
+  const segments = useSegments();
+  const router = useRouter();
+  const navigationState = useRootNavigationState();
+  
+  // State to track if we've handled the initial routing
+  const [isReady, setIsReady] = useState(false);
 
-const SplashScreen = () => {
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
-  const { updateUserData } = useUserData(); // Extract the update function from your store
-
+  // 1. Notification Logic (Independent)
   useEffect(() => {
-    const checkLogin = async () => {
+    const setupNotifications = async () => {
       try {
-        // FIXED: Using the relative path because baseURL already handles /api/v1
-        const res = await api.get('/users/me');
-        
-        if (res.data) {
-          // Update your store with the fresh user data from the server
-          updateUserData({
-            funame: res.data.full_name,
-            email: res.data.email,
-            role: res.data.role,
-            branch: res.data.branch
-          });
-          
-          console.log("Auto-login successful, redirecting to dashboard...");
-          router.replace('/(tabs)/managerDashboard'); // Or your default home tab
-        }
-      } catch (err) {
-        console.log("Token invalid or expired, redirecting to Login.");
-        // We don't need an alert here, just let the timer handle the login redirect
+        const pushToken = await registerForPushNotificationsAsync();
+        if (pushToken) console.log("🚀 FINAL PUSH TOKEN:", pushToken);
+      } catch (error) {
+        console.error("Notification Error:", error);
       }
     };
-    checkLogin();
+    setupNotifications();
   }, []);
 
+  // 2. Auth & Navigation Logic
   useEffect(() => {
-    const zoomSequence = Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 1.06,
-        duration: 900,
-        useNativeDriver: true,
-        easing: Easing.inOut(Easing.cubic),
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 0.92,
-        duration: 900,
-        useNativeDriver: true,
-        easing: Easing.inOut(Easing.cubic),
-      }),
-    ]);
+    // Wait until Store is hydrated AND Navigation is mounted
+    if (!_hasHydrated || !navigationState?.key) return;
 
-    zoomSequence.start();
+    const isLoggedIn = !!token && token.length > 10;
+    const inAuthGroup = segments[0] === 'login' || 
+                        segments[0] === 'sign_up' || 
+                        segments[0] === 'forgot_password';
 
-    const timer = setTimeout(() => {
-      // Only navigate to login if the checkLogin above hasn't already moved us to tabs
-      router.replace('/login'); 
-      console.log("Splash screen duration finished.");
-    }, 4000); 
+    // Delay redirect slightly to ensure layout stability
+    const timeout = setTimeout(() => {
+      if (!isLoggedIn && !inAuthGroup) {
+        console.log("🔒 No token found, moving to Login");
+        router.replace('/login');
+      } else if (isLoggedIn && inAuthGroup) {
+        console.log("🔓 Token found, moving to App");
+        // Navigation guard for sflApp project
+        router.replace('/(tabs)');
+      }
+      setIsReady(true);
+    }, 100);
 
-    return () => {
-      zoomSequence.stop();
-      clearTimeout(timer); 
-    };
-  }, [scaleAnim]);
+    return () => clearTimeout(timeout);
+  }, [_hasHydrated, token, segments, navigationState?.key]);
+
+  // Loading Screen: Keep this visible until hydration AND auth check are done
+  if (!_hasHydrated || !isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+        <ActivityIndicator size="large" color="#003366" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Animated.Image
-        source={logoSource}
-        style={[styles.logo, { transform: [{ scale: scaleAnim }] }]}
-        resizeMode="contain"
-        accessibilityLabel="App logo splash"
-      />
-    </View>
+    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="sign_up" options={{ title: 'Create Account' }} />
+      <Stack.Screen name="forgot_password" options={{ title: 'Reset Password' }} />
+      <Stack.Screen name="profilesumary" options={{ title: 'Profile Summary' }} />
+      <Stack.Screen name="loanDetails" options={{ title: 'Loan Details' }} />
+    </Stack>
   );
-};
-
-const { width } = Dimensions.get('window');
-const LOGO_SIZE = Math.min(260, width * 0.56);
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#7EC7FF', 
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logo: {
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
-  },
-});
-
-export default SplashScreen;
+}

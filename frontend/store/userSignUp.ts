@@ -25,43 +25,44 @@ interface UserState {
   isMD: boolean;
   isFinance: boolean;
   
-  // --- NEW HYDRATION FIELDS ---
+  // --- HYDRATION FIELDS ---
   _hasHydrated: boolean; 
   setHasHydrated: (state: boolean) => void;
 
   // Actions
   updateUserData: (data: Partial<UserState>) => void;
   logout: () => void;
-  clearUserData: () => void; // Added to match the call in useLoanStore
+  clearUserData: () => void; 
 }
+
+// --- INITIAL STATE OBJECT FOR REDUNDANCY REDUCTION ---
+const initialState = {
+  funame: '',
+  email: '',
+  isLoggedIn: false,
+  phone: '',
+  branch: '',
+  department: '',
+  unit: '',
+  supervisor: '',
+  role: null,
+  token: null,
+  isLoanOfficer: false,
+  isSupervisor: false,
+  isCreditOfficer: false,
+  isHeadOfCredit: false,
+  isCCO: false,
+  isMD: false,
+  isFinance: false,
+  _hasHydrated: false,
+};
 
 // 2. Create the store
 const useUserData = create<UserState>()(
   persist(
     (set) => ({
-      // Initial State
-      funame: '',
-      email: '',
-      isLoggedIn: false,
-      phone: '',
-      branch: '',
-      department: '',
-      unit: '',
-      supervisor: '',
-      role: null,
-      token: null,
-      isLoanOfficer: false,
-      isSupervisor: false,
-
-      // --- INITIAL WORKFLOW STATE ---
-      isCreditOfficer: false,
-      isHeadOfCredit: false,
-      isCCO: false,
-      isMD: false,
-      isFinance: false,
+      ...initialState,
       
-      // --- INITIAL HYDRATION STATE ---
-      _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
       setToken: (newToken) => set({ 
@@ -82,58 +83,21 @@ const useUserData = create<UserState>()(
           newState.isCCO = data.role === 'CCO';
           newState.isMD = data.role === 'MD';
           newState.isFinance = data.role === 'FINANCE';
-          // Add other role mappings here as needed
         }
         
         return newState;
       }),
 
-      logout: () => {
-        set({
-          funame: '',
-          email: '',
-          isLoggedIn: false,
-          phone: '',
-          branch: '',
-          department: '',
-          unit: '',
-          supervisor: '',
-          role: null,
-          token: null,
-          isLoanOfficer: false,
-          isSupervisor: false,
-          isCreditOfficer: false,
-          isHeadOfCredit: false,
-          isCCO: false,
-          isMD: false,
-          isFinance: false,
-        });
-        // Clear storage entirely to be safe
-        AsyncStorage.removeItem('trust-micro-storage');
+      clearUserData: () => {
+        // Reset in-memory state
+        set(initialState);
+        // --- FIX: Use Zustand persist API to clear storage ---
+        useUserData.persist.clearStorage();
       },
 
-      // Added clearUserData function to point to logout logic
-      clearUserData: () => {
-        set({
-          funame: '',
-          email: '',
-          isLoggedIn: false,
-          phone: '',
-          branch: '',
-          department: '',
-          unit: '',
-          supervisor: '',
-          role: null,
-          token: null,
-          isLoanOfficer: false,
-          isSupervisor: false,
-          isCreditOfficer: false,
-          isHeadOfCredit: false,
-          isCCO: false,
-          isMD: false,
-          isFinance: false,
-        });
-        AsyncStorage.removeItem('trust-micro-storage');
+      logout: () => {
+        // Point to unified clear function
+        useUserData.getState().clearUserData();
       },
     }),
     {
