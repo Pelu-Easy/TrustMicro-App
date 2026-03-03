@@ -5,15 +5,14 @@ import { registerForPushNotificationsAsync } from '../services/notifications';
 import useUserData from '../store/userSignUp';
 
 export default function RootLayout() {
-  const { token, _hasHydrated } = useUserData();
+  const { token, _hasHydrated, isSupervisor } = useUserData(); // Added isSupervisor
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
   
-  // State to track if we've handled the initial routing
   const [isReady, setIsReady] = useState(false);
 
-  // 1. Notification Logic (Independent)
+  // 1. Notification Logic
   useEffect(() => {
     const setupNotifications = async () => {
       try {
@@ -36,23 +35,24 @@ export default function RootLayout() {
                         segments[0] === 'sign_up' || 
                         segments[0] === 'forgot_password';
 
-    // Delay redirect slightly to ensure layout stability
-    const timeout = setTimeout(() => {
-      if (!isLoggedIn && !inAuthGroup) {
-        console.log("🔒 No token found, moving to Login");
-        router.replace('/login');
-      } else if (isLoggedIn && inAuthGroup) {
-        console.log("🔓 Token found, moving to App");
-        // Navigation guard for sflApp project
-        router.replace('/(tabs)');
+    if (!isLoggedIn && !inAuthGroup) {
+      console.log("🔒 No token found, moving to Login");
+      router.replace('/login');
+    } else if (isLoggedIn && inAuthGroup) {
+      console.log("🔓 Token found, moving to App");
+      // Updated for MicroTrust Bank supervisor logic
+      if (isSupervisor) {
+        router.replace('/'); // Manager Dashboard
+      } else {
+        router.replace('/(tabs)'); // Officer Tabs
       }
-      setIsReady(true);
-    }, 100);
+    }
 
-    return () => clearTimeout(timeout);
-  }, [_hasHydrated, token, segments, navigationState?.key]);
+    // FIX: Always set ready if we aren't performing a redirect
+    setIsReady(true);
+  }, [_hasHydrated, token, segments, navigationState?.key, isSupervisor]);
 
-  // Loading Screen: Keep this visible until hydration AND auth check are done
+  // Loading Screen
   if (!_hasHydrated || !isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>

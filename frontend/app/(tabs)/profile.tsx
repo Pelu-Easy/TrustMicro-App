@@ -15,7 +15,7 @@ const BRAND = {
   accent: "#2E7D32", 
   border: "#E2E8F0",
   supervisor: "#10B981", 
-  officer: "#64748B"      
+  officer: "#64748B"       
 };
 
 export default function Profile() {
@@ -236,12 +236,13 @@ export default function Profile() {
 
         {/* --- LOAN HISTORY --- */}
         <View style={styles.historySection}>
-          <div style={styles.historyHeader}>
+          {/* FIX: Changed <div> to <View> to prevent native crash */}
+          <View style={styles.historyHeader}>
             <Text style={styles.sectionLabel}>Recent Disbursements</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)')}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
-          </div>
+          </View>
 
           {recentDisbursements.length > 0 ? (
             recentDisbursements.map((loan) => (

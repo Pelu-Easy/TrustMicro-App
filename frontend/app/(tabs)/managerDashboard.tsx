@@ -67,7 +67,7 @@ export default function ManagerDashboard() {
         // Filter by Status AND Branch (Supervisors/Officers are branch-bound)
         const workBasket = response.data.filter((loan: LoanItem) => {
           const statusMatch = loan.status === targetStatus;
-          // Management at HQ (CCO/MD) might see all branches, others only theirs
+          // Management at HQ (CCO/MD/Head of Credit) see all branches, others only theirs
           const branchMatch = (isMD || isCCO || isHeadOfCredit) ? true : loan.branchName === branch;
           return statusMatch && branchMatch;
         });
@@ -96,7 +96,7 @@ export default function ManagerDashboard() {
     fetchData();
   };
 
-  // FIXED: Type safety for renderLoanItem
+  // UPDATED: Standardized rendering for MicroTrust Bank
   const renderLoanItem = ({ item }: { item: LoanItem }) => (
     <TouchableOpacity 
       style={styles.loanCard}
@@ -106,16 +106,26 @@ export default function ManagerDashboard() {
       })}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.customerName}>{item.customerName}</Text>
-        <View style={[styles.statusBadge, item.status === 'Approved' && {backgroundColor: '#D1FAE5'}]}>
-          <Text style={[styles.statusText, item.status === 'Approved' && {color: BRAND.accent}]}>{item.status}</Text>
+        <Text style={styles.customerName}>{item.customerName || "Unnamed Customer"}</Text>
+        <View style={[
+          styles.statusBadge, 
+          (item.status === 'Approved' || item.status === 'Disbursed') && { backgroundColor: '#D1FAE5' }
+        ]}>
+          <Text style={[
+            styles.statusText, 
+            (item.status === 'Approved' || item.status === 'Disbursed') && { color: BRAND.accent }
+          ]}>
+            {item.status}
+          </Text>
         </View>
       </View>
       
       <View style={styles.cardBody}>
         <View style={styles.infoRow}>
           <Ionicons name="cash-outline" size={16} color="#64748B" />
-          <Text style={styles.infoText}>₦{Number(item.loanAmount || item.amount || 0).toLocaleString()}</Text>
+          <Text style={styles.infoText}>
+            ₦{Number(item.loanAmount || item.amount || 0).toLocaleString()}
+          </Text>
         </View>
         <View style={styles.infoRow}>
           <Ionicons name="person-outline" size={16} color="#64748B" />
@@ -177,7 +187,7 @@ export default function ManagerDashboard() {
       ) : (
         <FlatList
           data={loans}
-          keyExtractor={(item) => (item.id || Math.random()).toString()}
+          keyExtractor={(item) => (item.id || Math.random().toString())}
           renderItem={renderLoanItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -187,7 +197,9 @@ export default function ManagerDashboard() {
             <View style={styles.emptyContainer}>
               <Ionicons name="checkmark-circle-outline" size={80} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>All caught up!</Text>
-              <Text style={styles.emptySubtitle}>No {selectedIndex === 0 ? 'pending' : 'approved'} loans require your attention.</Text>
+              <Text style={styles.emptySubtitle}>
+                No {selectedIndex === 0 ? 'pending' : 'approved'} loans require your attention.
+              </Text>
             </View>
           }
         />

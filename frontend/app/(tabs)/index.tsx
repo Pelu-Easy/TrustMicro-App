@@ -36,7 +36,7 @@ Notifications.setNotificationHandler({
 interface StatCardProps {
   title: string;
   value: string;
-  icon: keyof typeof Ionicons.glyphMap; // Fixed: Specific icon type
+  icon: keyof typeof Ionicons.glyphMap; 
   color: string;
 }
 
@@ -59,8 +59,13 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0); 
 
   // --- REFINED ROLE LOGIC ---
+  // A Workflow user is anyone in the management chain (Caleb, etc.)
   const isWorkflowUser = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD || isFinance;
-  const isManagement = isWorkflowUser || role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'manager';
+  
+  // Management check includes Admins and Workflow users
+  const isManagement = isWorkflowUser || ['admin', 'manager'].includes(role?.toLowerCase() || '');
+  
+  // Only non-management roles (Sales/Staff) can onboard new loans
   const canOnboardLoan = !isManagement && ['sales', 'officer', 'staff'].includes(role?.toLowerCase() || '');
 
   // Helper to determine if a loan needs this specific user's attention
@@ -178,7 +183,6 @@ export default function Dashboard() {
     </View>
   );
 
-  // Show loader until hydrated and data is fetched
   if (!_hasHydrated || isLoading) {
     return (
       <View style={styles.centered}>
@@ -194,6 +198,7 @@ export default function Dashboard() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366" />}
         showsVerticalScrollIndicator={false}
       >
+        {/* --- HEADER --- */}
         <View style={styles.header}>
           <View>
             <Text style={styles.welcomeLabel}>Welcome back,</Text>
@@ -217,6 +222,7 @@ export default function Dashboard() {
           </View>
         </View>
 
+        {/* --- QUICK ACTIONS --- */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
           {canOnboardLoan && (
@@ -235,6 +241,7 @@ export default function Dashboard() {
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}><View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Logout</Text></TouchableOpacity>
         </View>
 
+        {/* --- TARGET CARD (Officers only) --- */}
         {!isManagement && (
           <View style={styles.targetCard}>
             <View style={styles.cardHeader}><Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} /><Text style={styles.cardTitle}>Monthly Disbursement Goal</Text></View>
@@ -244,12 +251,14 @@ export default function Dashboard() {
           </View>
         )}
 
+        {/* --- STATS --- */}
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
             <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
             <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
+        {/* --- DYNAMIC LIST --- */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{isWorkflowUser ? "Pending My Review" : "Recent Applications"}</Text>
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
@@ -343,12 +352,8 @@ const styles = StyleSheet.create({
   loanDate: { fontSize: 12, color: '#94A3B8', marginTop: 4 },
   loanStatusArea: { alignItems: 'flex-end', justifyContent: 'center' },
   loanValue: { fontSize: 15, fontWeight: '700', color: '#1E293B', marginBottom: 5 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  statusText: { fontSize: 11, fontWeight: 'bold' },
   emptyState: { alignItems: 'center', marginTop: 30 },
   emptyText: { color: '#94A3B8', marginTop: 10 },
-  reasonInline: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 4, backgroundColor: '#FEF2F2', padding: 4, borderRadius: 4, alignSelf: 'flex-start' },
-  reasonInlineText: { fontSize: 11, color: '#EF4444', fontWeight: '500', maxWidth: width * 0.4 },
   notiButton: { padding: 5, position: 'relative', marginRight: 5 },
   badgeCircle: { 
     position: 'absolute', 
