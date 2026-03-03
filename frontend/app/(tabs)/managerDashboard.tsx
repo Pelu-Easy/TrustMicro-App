@@ -6,7 +6,14 @@ import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, 
 import api from '../../services/api';
 import useUserData from '../../store/userSignUp';
 
-const BRAND = { primary: "#003366", accent: "#2E7D32", bg: "#F8FAFC", card: "#FFFFFF" };
+const BRAND = { 
+  primary: "#003366", 
+  accent: "#2E7D32", 
+  bg: "#F8FAFC", 
+  card: "#FFFFFF",
+  border: "#E2E8F0",
+  textSec: "#64748B"
+};
 
 // --- TYPES ---
 interface LoanItem {
@@ -18,12 +25,14 @@ interface LoanItem {
   staffName?: string;
   branchName?: string;
   branch?: string;
+  createdAt?: string;
 }
 
 export default function ManagerDashboard() {
   const { 
-    token, funame, branch, 
-    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD
+    token, funame, branch, role,
+    isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD,
+    _hasHydrated 
   } = useUserData();
   const router = useRouter();
 
@@ -31,6 +40,20 @@ export default function ManagerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0); 
+
+  // --- SECURITY GATE: ROLE-BASED ACCESS CONTROL (RBAC) ---
+  useEffect(() => {
+    if (!_hasHydrated) return;
+    
+    const userRole = role?.toLowerCase() || '';
+    const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || 
+                         isCCO || isMD || ['manager', 'admin', 'cco', 'md'].includes(userRole);
+
+    if (!isManagement) {
+      // If a regular Sales Officer somehow lands here, redirect them to their home
+      router.replace('/(tabs)');
+    }
+  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD]);
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
   const getDashboardTitle = () => {
@@ -57,29 +80,31 @@ export default function ManagerDashboard() {
 
     setIsLoading(true);
     try {
-      // Logic: Index 0 is the Work Basket (filtered), Index 1 is Approved Loans
+      // Index 0: Work Basket (needs attention), Index 1: History/Approved
       let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
       
       const response = await api.get(endpoint);
+      const allFetchedLoans = response.data || [];
       
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
-        // Filter by Status AND Branch (Supervisors/Officers are branch-bound)
-        const workBasket = response.data.filter((loan: LoanItem) => {
+        
+        // Logic: HQ management (MD/CCO/HeadCredit) sees everything. 
+        // Branch staff (Supervisor/CreditOfficer) see only their branch.
+        const workBasket = allFetchedLoans.filter((loan: LoanItem) => {
           const statusMatch = loan.status === targetStatus;
-          // Management at HQ (CCO/MD/Head of Credit) see all branches, others only theirs
-          const branchMatch = (isMD || isCCO || isHeadOfCredit) ? true : loan.branchName === branch;
+          const isHQManagement = isMD || isCCO || isHeadOfCredit;
+          const branchMatch = isHQManagement ? true : (loan.branchName === branch || loan.branch === branch);
           return statusMatch && branchMatch;
         });
         setLoans(workBasket);
       } else {
-        setLoans(response.data);
+        setLoans(allFetchedLoans);
       }
       
     } catch (error: any) {
-      if (error.response?.status === 401 || !token) return;
       console.error("Dashboard Fetch Error:", error.message);
-      setLoans([]); // Clear loans on error
+      setLoans([]); 
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -87,26 +112,25 @@ export default function ManagerDashboard() {
   }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, selectedIndex, branch]);
 
   useEffect(() => {
-    if (token) fetchData();
-  }, [fetchData, selectedIndex, token]);
+    if (token && _hasHydrated) fetchData();
+  }, [fetchData, selectedIndex, token, _hasHydrated]);
 
   const onRefresh = () => {
-    if (!token) return;
     setIsRefreshing(true);
     fetchData();
   };
 
-  // UPDATED: Standardized rendering for MicroTrust Bank
   const renderLoanItem = ({ item }: { item: LoanItem }) => (
     <TouchableOpacity 
       style={styles.loanCard}
+      activeOpacity={0.7}
       onPress={() => router.push({
         pathname: '/loanDetails',
         params: { ...item }
       })}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.customerName}>{item.customerName || "Unnamed Customer"}</Text>
+        <Text style={styles.customerName} numberOfLines={1}>{item.customerName || "Unnamed Customer"}</Text>
         <View style={[
           styles.statusBadge, 
           (item.status === 'Approved' || item.status === 'Disbursed') && { backgroundColor: '#D1FAE5' }
@@ -122,20 +146,23 @@ export default function ManagerDashboard() {
       
       <View style={styles.cardBody}>
         <View style={styles.infoRow}>
-          <Ionicons name="cash-outline" size={16} color="#64748B" />
+          <Ionicons name="cash-outline" size={16} color={BRAND.textSec} />
           <Text style={styles.infoText}>
             ₦{Number(item.loanAmount || item.amount || 0).toLocaleString()}
           </Text>
         </View>
         <View style={styles.infoRow}>
-          <Ionicons name="person-outline" size={16} color="#64748B" />
+          <Ionicons name="person-outline" size={16} color={BRAND.textSec} />
           <Text style={styles.infoText}>{item.staffName || 'Unknown Officer'}</Text>
         </View>
       </View>
       
       <View style={styles.cardFooter}>
         <Text style={styles.branchText}>{item.branchName || item.branch || branch}</Text>
-        <Ionicons name="chevron-forward" size={18} color={BRAND.primary} />
+        <View style={styles.actionPrompt}>
+          <Text style={styles.actionText}>View Details</Text>
+          <Ionicons name="chevron-forward" size={14} color={BRAND.primary} />
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -156,7 +183,7 @@ export default function ManagerDashboard() {
 
       <View style={styles.segmentContainer}>
         <SegmentedControl
-          values={['Work Basket', 'Approved Loans']}
+          values={['Work Basket', 'History']}
           selectedIndex={selectedIndex}
           onChange={(event) => setSelectedIndex(event.nativeEvent.selectedSegmentIndex)}
           tintColor={BRAND.primary}
@@ -168,13 +195,13 @@ export default function ManagerDashboard() {
 
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>{selectedIndex === 0 ? "Pending Tasks" : "Total Approved"}</Text>
+          <Text style={styles.statLabel}>{selectedIndex === 0 ? "Pending Tasks" : "Total Processed"}</Text>
           <Text style={styles.statValue}>{loans.length}</Text>
         </View>
-        <View style={[styles.statItem, { borderLeftWidth: 1, borderColor: '#E2E8F0' }]}>
-          <Text style={styles.statLabel}>Current Stage</Text>
+        <View style={[styles.statItem, { borderLeftWidth: 1, borderColor: BRAND.border }]}>
+          <Text style={styles.statLabel}>Priority</Text>
           <Text style={[styles.statValue, { fontSize: 14, color: BRAND.accent }]}>
-             {selectedIndex === 0 ? (isMD ? "Final Level" : "Reviewing") : "Finalized"}
+             {selectedIndex === 0 ? "Action Required" : "Archived"}
           </Text>
         </View>
       </View>
@@ -182,7 +209,7 @@ export default function ManagerDashboard() {
       {isLoading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={BRAND.primary} />
-          <Text style={styles.loaderText}>Loading Work Basket...</Text>
+          <Text style={styles.loaderText}>Syncing records...</Text>
         </View>
       ) : (
         <FlatList
@@ -195,10 +222,10 @@ export default function ManagerDashboard() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="checkmark-circle-outline" size={80} color="#CBD5E1" />
-              <Text style={styles.emptyTitle}>All caught up!</Text>
+              <Ionicons name="checkmark-done-circle-outline" size={80} color="#CBD5E1" />
+              <Text style={styles.emptyTitle}>Queue Clear</Text>
               <Text style={styles.emptySubtitle}>
-                No {selectedIndex === 0 ? 'pending' : 'approved'} loans require your attention.
+                No {selectedIndex === 0 ? 'pending' : 'approved'} applications found in this category.
               </Text>
             </View>
           }
@@ -211,30 +238,32 @@ export default function ManagerDashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: BRAND.card },
-  welcomeText: { fontSize: 14, color: '#64748B' },
-  titleText: { fontSize: 22, fontWeight: 'bold', color: BRAND.primary },
+  welcomeText: { fontSize: 14, color: BRAND.textSec },
+  titleText: { fontSize: 20, fontWeight: 'bold', color: BRAND.primary },
   avatarMini: { width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.primary, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#FFF', fontWeight: 'bold' },
+  avatarText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
   profileBtn: { padding: 5 },
   segmentContainer: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: BRAND.card },
-  statsBar: { flexDirection: 'row', backgroundColor: BRAND.card, marginHorizontal: 20, marginTop: 10, borderRadius: 15, padding: 15, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, marginBottom: 10 },
+  statsBar: { flexDirection: 'row', backgroundColor: BRAND.card, marginHorizontal: 20, marginTop: 10, borderRadius: 15, padding: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, marginBottom: 10 },
   statItem: { flex: 1, alignItems: 'center' },
-  statLabel: { fontSize: 12, color: '#94A3B8', marginBottom: 4 },
-  statValue: { fontSize: 20, fontWeight: 'bold', color: BRAND.primary },
-  listContent: { padding: 20, paddingTop: 10 },
-  loanCard: { backgroundColor: BRAND.card, borderRadius: 16, padding: 16, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  customerName: { fontSize: 17, fontWeight: 'bold', color: '#1E293B', flex: 1 },
-  statusBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: 'bold', color: BRAND.primary },
-  cardBody: { gap: 8, marginBottom: 12 },
+  statLabel: { fontSize: 11, color: '#94A3B8', marginBottom: 4, textTransform: 'uppercase' },
+  statValue: { fontSize: 18, fontWeight: 'bold', color: BRAND.primary },
+  listContent: { padding: 20, paddingTop: 10, paddingBottom: 40 },
+  loanCard: { backgroundColor: BRAND.card, borderRadius: 16, padding: 16, marginBottom: 15, borderWidth: 1, borderColor: BRAND.border },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  customerName: { fontSize: 16, fontWeight: '700', color: '#1E293B', flex: 1, marginRight: 10 },
+  statusBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusText: { fontSize: 10, fontWeight: 'bold', color: BRAND.primary, textTransform: 'uppercase' },
+  cardBody: { gap: 6, marginBottom: 12 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   infoText: { fontSize: 14, color: '#475569' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  branchText: { fontSize: 12, color: '#94A3B8' },
+  branchText: { fontSize: 12, color: '#94A3B8', fontWeight: '500' },
+  actionPrompt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionText: { fontSize: 12, color: BRAND.primary, fontWeight: '600' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loaderText: { marginTop: 10, color: '#64748B' },
+  loaderText: { marginTop: 10, color: BRAND.textSec, fontWeight: '500' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#475569', marginTop: 15 },
-  emptySubtitle: { fontSize: 14, color: '#94A3B8', textAlign: 'center', marginTop: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#475569', marginTop: 15 },
+  emptySubtitle: { fontSize: 14, color: '#94A3B8', textAlign: 'center', marginTop: 8, lineHeight: 20 },
 });
