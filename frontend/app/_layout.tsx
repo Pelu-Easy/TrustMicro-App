@@ -1,6 +1,6 @@
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { registerForPushNotificationsAsync } from '../services/notifications';
 import useUserData from '../store/userSignUp';
 
@@ -9,48 +9,36 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
-  
   const [isReady, setIsReady] = useState(false);
 
-  // 1. Notification Logic
   useEffect(() => {
-    const setupNotifications = async () => {
-      try {
-        const pushToken = await registerForPushNotificationsAsync();
-        if (pushToken) console.log("🚀 FINAL PUSH TOKEN:", pushToken);
-      } catch (error) {
-        console.error("Notification Error:", error);
-      }
-    };
-    setupNotifications();
+    registerForPushNotificationsAsync().catch(err => console.log("Notification Error:", err));
   }, []);
 
-  // 2. Auth & Navigation Logic
   useEffect(() => {
-    // Wait until Store is hydrated AND Navigation is mounted
+    // 1. Wait for hydration and navigation mounting
     if (!_hasHydrated || !navigationState?.key) return;
 
     const isLoggedIn = !!token && token.length > 10;
     
-    // Check if we are currently in an authentication screen
-    const inAuthGroup = segments.some(segment => 
-      ['login', 'sign_up', 'forgot_password'].includes(segment)
-    );
+    // Use .some and .includes to avoid the length === 0 type error
+    const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
+    const isAtRoot = segments.length < 1; 
+    const isInsideTabs = segments[0] === '(tabs)';
 
+    // 2. Routing Logic
     if (!isLoggedIn) {
-      // If not logged in and not already on an auth screen, redirect to login
       if (!inAuthGroup) {
-        console.log("🔒 No token found, moving to Login");
         router.replace('/login');
       }
     } else {
-      // If logged in and still sitting on an auth screen, move into the app
-      if (inAuthGroup) {
-        console.log("🔓 Token found, moving to App. Supervisor status:", isSupervisor);
-        
+      // If we are on a login screen OR at the app entry point, redirect to the correct dashboard
+      if (inAuthGroup || isAtRoot || isInsideTabs) {
         if (isSupervisor) {
-          router.replace('/(tabs)/managerDashboard'); 
+          // Direct Caleb/Managers to the manager dashboard
+          router.replace('/(tabs)/managerDashboard');
         } else {
+          // Direct Officers to the main tabs index
           router.replace('/(tabs)');
         }
       }
@@ -60,16 +48,17 @@ export default function RootLayout() {
   }, [_hasHydrated, token, segments, navigationState?.key, isSupervisor]);
 
   // Loading Screen
-  if (!_hasHydrated || !isReady || !navigationState?.key) {
+  if (!_hasHydrated || !navigationState?.key || !isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
         <ActivityIndicator size="large" color="#003366" />
+        <Text style={{ marginTop: 10, color: '#003366', fontWeight: '500' }}>Initializing TrustMicro...</Text>
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+    <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="sign_up" options={{ title: 'Create Account' }} />

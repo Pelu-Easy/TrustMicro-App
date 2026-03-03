@@ -59,14 +59,11 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0); 
 
   // --- REFINED ROLE LOGIC ---
-  // A Workflow user is anyone in the management chain (Caleb, etc.)
   const isWorkflowUser = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD || isFinance;
-  
-  // Management check includes Admins and Workflow users
   const isManagement = isWorkflowUser || ['admin', 'manager'].includes(role?.toLowerCase() || '');
   
-  // Only non-management roles (Sales/Staff) can onboard new loans
-  const canOnboardLoan = !isManagement && ['sales', 'officer', 'staff'].includes(role?.toLowerCase() || '');
+  // Only non-management roles (Sales/Staff/Officer) can onboard new loans
+  const canOnboardLoan = !isManagement || ['sales', 'officer', 'staff', 'loan officer'].includes(role?.toLowerCase() || '');
 
   // Helper to determine if a loan needs this specific user's attention
   const isMyTask = useCallback((loanStatus: string) => {
@@ -148,7 +145,6 @@ export default function Dashboard() {
     }, [token, email, _hasHydrated, fetchAllLoans, fetchUnreadCount])
   );
 
-  // --- MEMOIZED DATA PROCESSING ---
   const processedLoans = useMemo(() => {
     return loans
       .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
@@ -216,7 +212,7 @@ export default function Dashboard() {
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/(tabs)/profile')}>
+            <TouchableOpacity style={styles.profileIcon} onPress={() => router.push('/profile')}>
                 <Ionicons name="person-circle-outline" size={45} color="#003366" />
             </TouchableOpacity>
           </View>
@@ -226,13 +222,13 @@ export default function Dashboard() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
           {canOnboardLoan && (
-            <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/loanForm')}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/loanForm')}>
               <View style={styles.actionIconBg}><Ionicons name="add-circle" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>New Loan</Text>
             </TouchableOpacity>
           )}
           {isManagement && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/(tabs)/managerDashboard')}>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/managerDashboard')}>
               <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
               <Text style={styles.actionBtnText}>Approvals</Text>
             </TouchableOpacity>
@@ -241,7 +237,7 @@ export default function Dashboard() {
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}><View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Logout</Text></TouchableOpacity>
         </View>
 
-        {/* --- TARGET CARD (Officers only) --- */}
+        {/* --- TARGET CARD --- */}
         {!isManagement && (
           <View style={styles.targetCard}>
             <View style={styles.cardHeader}><Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} /><Text style={styles.cardTitle}>Monthly Disbursement Goal</Text></View>
@@ -258,7 +254,7 @@ export default function Dashboard() {
             <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
-        {/* --- DYNAMIC LIST --- */}
+        {/* --- LIST --- */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{isWorkflowUser ? "Pending My Review" : "Recent Applications"}</Text>
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
@@ -272,11 +268,11 @@ export default function Dashboard() {
             return (
               <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {
                 if (loan.status === 'Draft' && canOnboardLoan) {
-                  router.push({ pathname: '/(tabs)/loanForm', params: { draftId: loan.id } });
+                  router.push({ pathname: '/loanForm', params: { draftId: loan.id } });
                 } else if (loan.status === 'Rejected') {
                   Alert.alert("Loan Rejected", `REASON: ${loan.rejection_reason || 'Check docs.'}`, [
                     { text: "Dismiss", style: "cancel" },
-                    { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/(tabs)/loanForm', params: { draftId: loan.id } }) }
+                    { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/loanForm', params: { draftId: loan.id } }) }
                   ]);
                 } else {
                   router.push({ pathname: '/loanDetails', params: { ...loan } });

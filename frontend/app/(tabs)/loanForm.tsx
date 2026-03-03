@@ -95,10 +95,15 @@ export default function CompleteLoanForm() {
   useEffect(() => {
     if (!_hasHydrated) return;
     const userRole = role?.toLowerCase() || '';
+    
+    // Management check
     const isManagement = isSupervisor || isHeadOfCredit || 
-      ['manager', 'admin', 'cco', 'md'].includes(userRole);
+      ['manager', 'admin', 'cco', 'md', 'finance'].includes(userRole);
 
-    if (isManagement) router.replace('/(tabs)'); 
+    // FIX: Redirect management to root dashboard if they try to access the officer-only form
+    if (isManagement) {
+      router.replace('/'); 
+    }
   }, [_hasHydrated, role, isHeadOfCredit, isSupervisor]);
 
   // --- SUPERVISOR FETCH ---
@@ -114,7 +119,6 @@ export default function CompleteLoanForm() {
 
   useEffect(() => { if (step === 1) fetchSupervisors(); }, [step, fetchSupervisors]);
 
-  // FIXED: updateData now accepts specific keys
   const updateData = (key: keyof typeof formData, value: string) => setFormData(prev => ({ ...prev, [key]: value }));
 
   const handlePickDocument = async (fieldKey: keyof typeof formData) => {
@@ -159,7 +163,8 @@ export default function CompleteLoanForm() {
       const payload = { ...formData, staffName: staffFullName, branchName: staffBranch, status: 'Pending' };
       const response = await api.post('/loans', payload);
       if (response.status === 201 || response.status === 200) {
-        Alert.alert("Success", "Submitted!", [{ text: "OK", onPress: () => router.replace('/(tabs)') }]);
+        // FIX: Redirect to home using relative path
+        Alert.alert("Success", "Submitted!", [{ text: "OK", onPress: () => router.replace('/') }]);
       }
     } catch (error: any) {
       Alert.alert("Error", error.response?.data?.error || "Submission failed.");
@@ -276,6 +281,7 @@ export default function CompleteLoanForm() {
             <View style={styles.modalContent}>
               <FlatList
                 data={supervisors}
+                keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <TouchableOpacity style={styles.supItem} onPress={() => { updateData('supervisorId', item.id); updateData('supervisorName', item.name); setShowSupModal(false); }}>
                     <Text>{item.name}</Text>
