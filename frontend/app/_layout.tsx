@@ -5,7 +5,7 @@ import { registerForPushNotificationsAsync } from '../services/notifications';
 import useUserData from '../store/userSignUp';
 
 export default function RootLayout() {
-  const { token, _hasHydrated, isSupervisor } = useUserData(); // Added isSupervisor
+  const { token, _hasHydrated, isSupervisor } = useUserData();
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
@@ -31,29 +31,36 @@ export default function RootLayout() {
     if (!_hasHydrated || !navigationState?.key) return;
 
     const isLoggedIn = !!token && token.length > 10;
-    const inAuthGroup = segments[0] === 'login' || 
-                        segments[0] === 'sign_up' || 
-                        segments[0] === 'forgot_password';
+    
+    // Check if we are currently in an authentication screen
+    const inAuthGroup = segments.some(segment => 
+      ['login', 'sign_up', 'forgot_password'].includes(segment)
+    );
 
-    if (!isLoggedIn && !inAuthGroup) {
-      console.log("🔒 No token found, moving to Login");
-      router.replace('/login');
-    } else if (isLoggedIn && inAuthGroup) {
-      console.log("🔓 Token found, moving to App");
-      // Updated for MicroTrust Bank supervisor logic
-      if (isSupervisor) {
-        router.replace('/'); // Manager Dashboard
-      } else {
-        router.replace('/(tabs)'); // Officer Tabs
+    if (!isLoggedIn) {
+      // If not logged in and not already on an auth screen, redirect to login
+      if (!inAuthGroup) {
+        console.log("🔒 No token found, moving to Login");
+        router.replace('/login');
+      }
+    } else {
+      // If logged in and still sitting on an auth screen, move into the app
+      if (inAuthGroup) {
+        console.log("🔓 Token found, moving to App. Supervisor status:", isSupervisor);
+        
+        if (isSupervisor) {
+          router.replace('/(tabs)/managerDashboard'); 
+        } else {
+          router.replace('/(tabs)');
+        }
       }
     }
 
-    // FIX: Always set ready if we aren't performing a redirect
     setIsReady(true);
   }, [_hasHydrated, token, segments, navigationState?.key, isSupervisor]);
 
   // Loading Screen
-  if (!_hasHydrated || !isReady) {
+  if (!_hasHydrated || !isReady || !navigationState?.key) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
         <ActivityIndicator size="large" color="#003366" />

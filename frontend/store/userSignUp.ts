@@ -77,21 +77,41 @@ const useUserData = create<UserState>()(
 
         // If the update contains a new role string, recalculate boolean flags
         if (data.role) {
+          const roleUpper = data.role.toUpperCase();
+          
           // Map the backend role string to the frontend boolean flags
-          newState.isHeadOfCredit = data.role === 'HEAD_OF_CREDIT';
-          newState.isCreditOfficer = data.role === 'CREDIT_OFFICER';
-          newState.isCCO = data.role === 'CCO';
-          newState.isMD = data.role === 'MD';
-          newState.isFinance = data.role === 'FINANCE';
+          newState.isHeadOfCredit = roleUpper === 'HEAD_OF_CREDIT';
+          newState.isCreditOfficer = roleUpper === 'CREDIT_OFFICER';
+          newState.isCCO = roleUpper === 'CCO';
+          newState.isMD = roleUpper === 'MD';
+          newState.isFinance = roleUpper === 'FINANCE';
+          
+          // CRITICAL: Ensure isSupervisor is true if they hold ANY management role
+          // This enables the correct routing in app/_layout.tsx
+          const managementRoles = [
+            'HEAD_OF_CREDIT', 
+            'CREDIT_OFFICER', 
+            'CCO', 
+            'MD', 
+            'SUPERVISOR'
+          ];
+          
+          if (managementRoles.includes(roleUpper)) {
+            newState.isSupervisor = true;
+          } else {
+            // Explicitly handle standard loan officers
+            newState.isLoanOfficer = true;
+            newState.isSupervisor = false;
+          }
         }
         
         return newState;
       }),
 
       clearUserData: () => {
-        // Reset in-memory state
-        set(initialState);
-        // --- FIX: Use Zustand persist API to clear storage ---
+        // Reset in-memory state but keep hydration flag true to avoid loading loops
+        set({ ...initialState, _hasHydrated: true });
+        // --- Use Zustand persist API to clear storage ---
         useUserData.persist.clearStorage();
       },
 
