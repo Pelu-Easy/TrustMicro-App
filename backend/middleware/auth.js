@@ -27,11 +27,10 @@ const isManagement = (req, res, next) => {
     // Standardize to lowercase and trim spaces for robust comparison
     const role = (req.user.role || "").toLowerCase().trim();
     const unit = (req.user.unit || "").toLowerCase().trim();
-    const isSupFlag = req.user.is_supervisor;
 
     /**
-     * UPDATED: Added 'head of control' and 'credit officer' to allowed management units.
-     * This ensures the Head of Control can pass the RBAC check for the dashboard.
+     * UPDATED: Removed is_supervisor dependency as the column does not exist in staff_users.
+     * Access is now granted based on authorized roles and units.
      */
     const managementUnits = [
         'cco', 
@@ -46,13 +45,11 @@ const isManagement = (req, res, next) => {
     ];
     
     const hasManagementAccess = 
-        isSupFlag == 1 || 
-        isSupFlag === true || 
         managementUnits.includes(role) ||
         managementUnits.includes(unit);
 
     console.log(`[AUTH] Checking management access for: ${req.user.email}`);
-    console.log(`[AUTH] Role: "${role}" | Unit: "${unit}" | Sup Flag: ${isSupFlag}`);
+    console.log(`[AUTH] Role: "${role}" | Unit: "${unit}"`);
 
     if (hasManagementAccess) {
         console.log("[AUTH] Access Granted ✅");
@@ -65,7 +62,12 @@ const isManagement = (req, res, next) => {
 
 const isSupervisor = (req, res, next) => {
     const role = (req.user.role || "").toLowerCase().trim();
-    if (req.user.is_supervisor == 1 || role === 'supervisor' || role === 'manager') {
+    const unit = (req.user.unit || "").toLowerCase().trim();
+    
+    // Updated to use role/unit strings instead of is_supervisor column
+    const supervisorRoles = ['supervisor', 'manager', 'head of control', 'head of credit', 'cco', 'md'];
+    
+    if (supervisorRoles.includes(role) || supervisorRoles.includes(unit)) {
         next();
     } else {
         res.status(403).json({ error: "Access Denied: Supervisor only" });
