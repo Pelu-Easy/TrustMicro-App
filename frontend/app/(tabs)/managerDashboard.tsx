@@ -41,39 +41,51 @@ export default function ManagerDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0); 
 
+  // Derived role check for Head of Marketing
+  const isHeadOfMarketing = role?.toLowerCase().trim() === 'head of marketing';
+
   // --- SECURITY GATE: ROLE-BASED ACCESS CONTROL (RBAC) ---
   useEffect(() => {
     if (!_hasHydrated) return;
     
-    const userRole = role?.toLowerCase() || '';
+    const userRole = role?.toLowerCase().trim() || '';
     const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isHeadOfControl || 
-                         isCCO || isMD || ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control'].includes(userRole);
+                         isCCO || isMD || isHeadOfMarketing || 
+                         ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control', 'head of marketing'].includes(userRole);
 
     if (!isManagement) {
       // Redirect regular staff to the main tabs
       router.replace('/(tabs)');
     }
-  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD]);
+  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing]);
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
   const getDashboardTitle = () => {
     if (isMD) return "Managing Director's Desk";
     if (isCCO) return "CCO Approval Basket";
-    if (isHeadOfControl) return "Internal Control Desk"; // Added Role Title
+    if (isHeadOfControl) return "Internal Control Desk";
     if (isHeadOfCredit) return "Credit Management Portal";
     if (isCreditOfficer) return "Credit Review Basket";
+    if (isHeadOfMarketing) return "Marketing Approval Desk"; // Added Marketing Title
     if (isSupervisor) return "Branch Supervisor Portal";
     return "Management Dashboard";
   };
 
   // --- WORKFLOW: GET RELEVANT STATUS FILTER ---
   const getTargetStatus = () => {
-    if (isSupervisor) return 'Pending';
+    // Stage 1: Initial submission from Sales Staff
+    if (isHeadOfMarketing || isSupervisor) return 'Pending'; 
+    // Stage 2: After Marketing/Supervisor approval
     if (isCreditOfficer) return 'PENDING_CREDIT';
+    // Stage 3: After Credit Officer review
     if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
-    if (isHeadOfControl) return 'PENDING_CONTROL'; // Added Status Mapping
+    // Stage 4: After Head of Credit review
+    if (isHeadOfControl) return 'PENDING_CONTROL';
+    // Stage 5: After Control review
     if (isCCO) return 'PENDING_CCO';
+    // Stage 6: Final Management Review
     if (isMD) return 'PENDING_MD';
+    
     return 'Pending';
   };
 
@@ -90,11 +102,11 @@ export default function ManagerDashboard() {
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
         
-        // Logic: HQ management (MD/CCO/HeadControl/HeadCredit) sees everything for the whole bank.
+        // HQ management sees everything. Branch Supervisors see only their branch.
         const workBasket = allFetchedLoans.filter((loan: LoanItem) => {
           const statusMatch = loan.status === targetStatus;
           
-          const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit; // Added Head of Control to HQ access
+          const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit || isHeadOfMarketing; 
           const loanBranch = loan.branchName || loan.branch;
           const branchMatch = isHQManagement ? true : (loanBranch === branch);
           
@@ -102,7 +114,7 @@ export default function ManagerDashboard() {
         });
         setLoans(workBasket);
       } else {
-        const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit;
+        const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit || isHeadOfMarketing;
         if (isHQManagement) {
             setLoans(allFetchedLoans);
         } else {
@@ -112,9 +124,6 @@ export default function ManagerDashboard() {
       }
       
     } catch (error: any) {
-      // --- UPDATED ERROR HANDLING ---
-      // If it's a 403 or 401, the interceptor in api.ts already handled the logout/alert.
-      // We exit early to stop processing.
       if (error.response?.status === 403 || error.response?.status === 401) {
         return; 
       }
@@ -132,7 +141,7 @@ export default function ManagerDashboard() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, selectedIndex, branch]);
+  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing, selectedIndex, branch]);
 
   useEffect(() => {
     if (token && _hasHydrated) fetchData();
@@ -156,13 +165,13 @@ export default function ManagerDashboard() {
         <Text style={styles.customerName} numberOfLines={1}>{item.customerName || "Unnamed Customer"}</Text>
         <View style={[
           styles.statusBadge, 
-          (item.status === 'Approved' || item.status === 'Disbursed') && { backgroundColor: '#D1FAE5' }
+          (item.status === 'Approved' || item.status === 'Disbursed' || item.status === 'APPROVED_FINANCE') && { backgroundColor: '#D1FAE5' }
         ]}>
           <Text style={[
             styles.statusText, 
-            (item.status === 'Approved' || item.status === 'Disbursed') && { color: BRAND.accent }
+            (item.status === 'Approved' || item.status === 'Disbursed' || item.status === 'APPROVED_FINANCE') && { color: BRAND.accent }
           ]}>
-            {item.status}
+            {item.status?.replace(/_/g, ' ')}
           </Text>
         </View>
       </View>

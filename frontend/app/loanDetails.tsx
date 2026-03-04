@@ -9,21 +9,23 @@ const { width, height } = Dimensions.get('window');
 const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "#F8FAFC", accent: "#3B82F6" };
 
 /**
- * SCALABLE ROLE CONFIGURATION
+ * UPDATED ROLE CONFIGURATION & WORKFLOW
+ * Order: Marketing/Supervisor -> Credit -> Head of Credit -> Control -> CCO -> MD
  */
-const ROLE_AUTHORITY_MAP: Record<string, { nextStatus: string, label: string }> = {
-  'supervisor': { nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit Dept' },
-  'credit officer': { nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
-  'head of credit': { nextStatus: 'PENDING_CONTROL', label: 'Forward to Head of Control' },
-  'head of control': { nextStatus: 'PENDING_CCO', label: 'Forward to CCO' },
-  'cco': { nextStatus: 'PENDING_MD', label: 'Forward to MD' },
-  'md': { nextStatus: 'APPROVED_FINANCE', label: 'Final Approval' },
-  'manager': { nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit Dept' },
+const ROLE_AUTHORITY_MAP: Record<string, { nextStatus: string, label: string, authorizedStatus: string }> = {
+  'head of marketing': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'supervisor': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'credit officer': { authorizedStatus: 'PENDING_CREDIT', nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
+  'head of credit': { authorizedStatus: 'PENDING_HEAD_CREDIT', nextStatus: 'PENDING_CONTROL', label: 'Forward to Head of Control' },
+  'head of control': { authorizedStatus: 'PENDING_CONTROL', nextStatus: 'PENDING_CCO', label: 'Forward to CCO' },
+  'cco': { authorizedStatus: 'PENDING_CCO', nextStatus: 'PENDING_MD', label: 'Forward to MD' },
+  'md': { authorizedStatus: 'PENDING_MD', nextStatus: 'APPROVED_FINANCE', label: 'Final Approval' },
+  'manager': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
 };
 
 export default function LoanDetails() {
   const router = useRouter();
-  const { role, token } = useUserData();
+  const { role } = useUserData();
   
   const { 
     id, customerName, amount, loanType, staffName, 
@@ -38,14 +40,18 @@ export default function LoanDetails() {
   const [isRejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  const normalizedRole = (role || '').toLowerCase();
+  const normalizedRole = (role || '').toLowerCase().trim();
   const userAuthority = ROLE_AUTHORITY_MAP[normalizedRole];
 
-  // --- UPDATED: Ensure Head of Control (and others) can act if status matches their workflow ---
-  const canPerformAction = !!userAuthority && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
+  /**
+   * UPDATED: Strict logic to ensure only the right role can approve at the right time.
+   * e.g., Head of Marketing can only act if status is 'Pending'.
+   */
+  const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus === status;
+  const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
 
   const stages = [
-    { id: 'Pending', label: 'Supervisor' },
+    { id: 'Pending', label: 'Marketing/Supervisor' },
     { id: 'PENDING_CREDIT', label: 'Credit Officer' },
     { id: 'PENDING_HEAD_CREDIT', label: 'Head of Credit' },
     { id: 'PENDING_CONTROL', label: 'Head of Control' },
@@ -85,7 +91,6 @@ export default function LoanDetails() {
       ]);
       setRejectModalVisible(false);
     } catch (error: any) {
-      // If interceptor already handled 401/403, we don't need a second alert here
       if (error.response?.status !== 401 && error.response?.status !== 403) {
         Alert.alert("Update Failed", error.response?.data?.message || "Connection error.");
       }
@@ -149,6 +154,9 @@ export default function LoanDetails() {
             <View style={styles.divider} />
             <Text style={styles.label}>LOAN AMOUNT</Text>
             <Text style={styles.amountText}>₦{Number(amount || 0).toLocaleString()}</Text>
+            <View style={styles.divider} />
+            <Text style={styles.label}>CURRENT STATUS</Text>
+            <Text style={[styles.value, {color: BRAND.accent, fontWeight: 'bold'}]}>{status?.toString().replace(/_/g, ' ')}</Text>
           </View>
 
           <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport" />
@@ -165,7 +173,9 @@ export default function LoanDetails() {
             </View>
           ) : (
             <View style={styles.readOnlyBadge}>
-              <Text style={styles.readOnlyText}>View Only Mode</Text>
+              <Text style={styles.readOnlyText}>
+                {status === 'Rejected' ? 'Application Rejected' : 'View Only Mode (Pending Other Dept)'}
+              </Text>
             </View>
           )}
         </View>

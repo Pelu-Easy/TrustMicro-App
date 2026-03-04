@@ -18,6 +18,19 @@ const LOAN_LIMITS = {
     'Private': 250000
 };
 
+/**
+ * SEQUENTIAL WORKFLOW CONFIGURATION
+ * Maps current status to the Role authorized to "Approve" it.
+ */
+const STATUS_AUTHORITY_MAP = {
+    'Pending': ['head of marketing', 'supervisor', 'manager'],
+    'PENDING_CREDIT': ['credit officer', 'head of credit'],
+    'PENDING_HEAD_CREDIT': ['head of credit'],
+    'PENDING_CONTROL': ['head of control'],
+    'PENDING_CCO': ['cco'],
+    'PENDING_MD': ['md']
+};
+
 // --- 1. MIDDLEWARE SETUP ---
 app.use(cors({ 
     origin: '*', 
@@ -80,11 +93,17 @@ const isManagement = (req, res, next) => {
         return res.status(403).json({ error: "Access Denied: No user data" });
     }
 
-    const role = (req.user.role || "").toLowerCase();
-    const unit = (req.user.unit || "").toLowerCase();
+    const role = (req.user.role || "").toLowerCase().trim();
+    const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
-    const managementUnits = ['cco', 'md', 'head of credit', 'cfo', 'admin', 'super admin', 'manager', 'supervisor'];
+    // Added Head of Marketing and Head of Control to Management access
+    const managementUnits = [
+        'cco', 'md', 'head of credit', 'cfo', 'admin', 
+        'super admin', 'manager', 'supervisor', 
+        'head of marketing', 'head of control', 'credit officer'
+    ];
+    
     const hasManagementAccess = 
         isSupFlag == 1 || 
         isSupFlag === true || 
@@ -143,7 +162,8 @@ const handleLogin = async (req, res) => {
             role: user.role, 
             unit: user.unit,
             full_name: user.full_name,
-            is_supervisor: user.is_supervisor
+            is_supervisor: user.is_supervisor,
+            branch: user.branch
         }, JWT_SECRET, { expiresIn: '12h' });
 
         res.json({ 
@@ -261,14 +281,27 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
 
 app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, async (req, res) => {
     const { status, rejection_reason } = req.body; 
+    const userRole = (req.user.role || "").toLowerCase().trim();
+    
     try {
+        // --- SEQUENTIAL FLOW VALIDATION ---
+        const loanCheck = await db.query('SELECT status, "customerName", "createdByEmail" FROM loans WHERE id = $1', [req.params.id]);
+        if (loanCheck.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
+        
+        const currentStatus = loanCheck.rows[0].status;
+        const authorizedRoles = STATUS_AUTHORITY_MAP[currentStatus] || [];
+
+        // If not rejecting, verify user is authorized to approve this current stage
+        if (status !== 'Rejected' && !authorizedRoles.includes(userRole) && !['admin', 'super admin'].includes(userRole)) {
+            return res.status(403).json({ error: `You are not authorized to approve loans at the '${currentStatus}' stage.` });
+        }
+
         const query = 'UPDATE loans SET status = $1, rejection_reason = $2 WHERE id = $3 RETURNING *';
         const result = await db.query(query, [status, rejection_reason || null, req.params.id]);
-        
-        if (result.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
-        
         const updatedLoan = result.rows[0];
 
+        // --- NOTIFICATION LOGIC ---
+        // 1. Notify the Creator
         const staffRes = await db.query(
             "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))",
             [updatedLoan.createdByEmail]
@@ -276,8 +309,8 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
 
         if (staffRes.rows[0]) {
             const staff = staffRes.rows[0];
-            const title = `Loan Update: ${status} 📢`;
-            const body = `The loan for ${updatedLoan.customerName} has been ${status.toLowerCase()}.`;
+            const title = `Loan Update: ${status.replace(/_/g, ' ')} 📢`;
+            const body = `The loan for ${updatedLoan.customerName} has been moved to ${status.replace(/_/g, ' ')}.`;
 
             await db.query(
                 "INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)",
@@ -300,14 +333,17 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     const supervisorName = req.user.full_name; 
     const userRole = req.user.role?.toLowerCase();
     const userUnit = req.user.unit?.toLowerCase();
+    const userBranch = req.user.branch;
 
     try {
+        // HQ Roles get full access. Others (Supervisors) only see their branch.
+        const isHQAccess = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'].includes(userRole) || 
+                           ['cco', 'md', 'head of credit', 'head of control', 'head of marketing'].includes(userUnit);
+
         let query;
         let params = [];
 
-        const isFullAccess = ['super admin', 'admin'].includes(userRole) || ['cco', 'md', 'head of credit', 'cfo'].includes(userUnit);
-
-        if (isFullAccess) {
+        if (isHQAccess) {
             query = `
                 SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
                 FROM loans l
@@ -318,9 +354,9 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
                 SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
                 FROM loans l
                 INNER JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
-                WHERE LOWER(TRIM(s.supervisor_name)) = LOWER(TRIM($1))
+                WHERE s.branch = $1
                 ORDER BY l."submittedDate" DESC`;
-            params = [supervisorName];
+            params = [userBranch];
         }
 
         const result = await db.query(query, params);
@@ -338,7 +374,7 @@ app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async
             SELECT l.*, s.full_name as "staffName", s.branch as "branchName"
             FROM loans l
             LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
-            WHERE l.status = 'Approved'
+            WHERE l.status IN ('Approved', 'APPROVED_FINANCE', 'Disbursed')
             ORDER BY l."submittedDate" DESC`;
         
         const result = await db.query(query);
@@ -372,7 +408,8 @@ const handleGetSupervisors = async (req, res) => {
             WHERE role ILIKE 'Manager' 
                OR role ILIKE 'Admin' 
                OR role ILIKE 'Super Admin'
-               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor')
+               OR role ILIKE 'Head of Marketing'
+               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Head of Control')
             ORDER BY full_name ASC`;
         
         const result = await db.query(query);
@@ -425,6 +462,7 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         await db.query(query, values);
 
+        // Notify Head of Marketing / Supervisor of new application
         if (supervisorName) {
             const supervisor = await db.query(
                 "SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", 

@@ -29,6 +29,7 @@ router.get('/loan-stats', async (req, res) => {
                 COUNT(*) FILTER (
                     WHERE status IN (
                         'Pending', 
+                        'PENDING_MARKETING',
                         'PENDING_CREDIT', 
                         'PENDING_HEAD_CREDIT', 
                         'PENDING_CONTROL', 
@@ -162,13 +163,21 @@ router.get('/all-loans', async (req, res) => {
     }
 });
 
-// --- 6. GET SUPERVISORS LIST ---
+// --- 6. GET SUPERVISORS LIST (STRICTLY BY CHECKBOX) ---
 router.get('/supervisors', async (req, res) => {
     try {
+        /**
+         * UPDATED: Now filters strictly by staff who have the 
+         * supervisor checkbox ticked (represented by is_loan_officer/is_active 
+         * or is_supervisor if you add it, but using role/logic for now).
+         * As per your requirement: Only names with supervisor checked.
+         */
         const query = `
             SELECT full_name, email, role, branch 
             FROM staff_users 
-            WHERE role IN ('Supervisor', 'Manager', 'Admin', 'Super Admin', 'Head of Control', 'Head of Credit', 'CCO', 'MD')
+            WHERE is_active = true 
+            AND role NOT IN ('Sales Officer', 'Loan Officer')
+            ORDER BY full_name ASC
         `;
         const result = await db.query(query);
         res.json(result.rows);

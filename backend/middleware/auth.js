@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     
-    // FIX: Check if authHeader exists before splitting
+    // Check if authHeader exists before splitting
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
     if (!token) return res.status(401).json({ error: "Access Denied: No Token Provided" });
@@ -29,8 +29,8 @@ const isManagement = (req, res, next) => {
     const unit = (req.user.unit || "").toLowerCase().trim();
 
     /**
-     * UPDATED: Removed is_supervisor dependency as the column does not exist in staff_users.
-     * Access is now granted based on authorized roles and units.
+     * LOGIC FIX: Instead of looking for a 'supervisor' checkbox/column,
+     * we grant access based on the Staff Role or Unit name.
      */
     const managementUnits = [
         'cco', 
@@ -64,7 +64,7 @@ const isSupervisor = (req, res, next) => {
     const role = (req.user.role || "").toLowerCase().trim();
     const unit = (req.user.unit || "").toLowerCase().trim();
     
-    // Updated to use role/unit strings instead of is_supervisor column
+    // Define which roles are allowed to perform supervisor actions
     const supervisorRoles = ['supervisor', 'manager', 'head of control', 'head of credit', 'cco', 'md'];
     
     if (supervisorRoles.includes(role) || supervisorRoles.includes(unit)) {
