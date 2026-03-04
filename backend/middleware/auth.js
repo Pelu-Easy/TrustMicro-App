@@ -24,12 +24,26 @@ const isManagement = (req, res, next) => {
         return res.status(403).json({ error: "Access Denied: No user data" });
     }
 
-    const role = (req.user.role || "").toLowerCase();
-    const unit = (req.user.unit || "").toLowerCase();
+    // Standardize to lowercase and trim spaces for robust comparison
+    const role = (req.user.role || "").toLowerCase().trim();
+    const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
-    // Allowed if: Explicitly marked as supervisor, Role is manager, OR Unit is management
-    const managementUnits = ['cco', 'md', 'head of credit', 'admin', 'super admin', 'manager', 'supervisor'];
+    /**
+     * UPDATED: Added 'head of control' and 'credit officer' to allowed management units.
+     * This ensures the Head of Control can pass the RBAC check for the dashboard.
+     */
+    const managementUnits = [
+        'cco', 
+        'md', 
+        'head of credit', 
+        'head of control', 
+        'credit officer', 
+        'admin', 
+        'super admin', 
+        'manager', 
+        'supervisor'
+    ];
     
     const hasManagementAccess = 
         isSupFlag == 1 || 
@@ -50,7 +64,12 @@ const isManagement = (req, res, next) => {
 };
 
 const isSupervisor = (req, res, next) => {
-    // ... existing isSupervisor logic ...
+    const role = (req.user.role || "").toLowerCase().trim();
+    if (req.user.is_supervisor == 1 || role === 'supervisor' || role === 'manager') {
+        next();
+    } else {
+        res.status(403).json({ error: "Access Denied: Supervisor only" });
+    }
 };
 
 module.exports = { authenticateToken, isSupervisor, isManagement };

@@ -112,6 +112,13 @@ export default function ManagerDashboard() {
       }
       
     } catch (error: any) {
+      // --- UPDATED ERROR HANDLING ---
+      // If it's a 403 or 401, the interceptor in api.ts already handled the logout/alert.
+      // We exit early to stop processing.
+      if (error.response?.status === 403 || error.response?.status === 401) {
+        return; 
+      }
+
       console.error("Dashboard Fetch Error:", error.message);
       
       if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {

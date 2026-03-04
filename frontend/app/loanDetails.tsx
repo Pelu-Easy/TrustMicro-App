@@ -41,6 +41,7 @@ export default function LoanDetails() {
   const normalizedRole = (role || '').toLowerCase();
   const userAuthority = ROLE_AUTHORITY_MAP[normalizedRole];
 
+  // --- UPDATED: Ensure Head of Control (and others) can act if status matches their workflow ---
   const canPerformAction = !!userAuthority && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
 
   const stages = [
@@ -79,13 +80,15 @@ export default function LoanDetails() {
       Alert.alert("Success", `Loan has been ${decision === 'Rejected' ? 'rejected' : 'forwarded'}.`, [
         { 
           text: "OK", 
-          // FIX: Using the correct path for your Manager Dashboard
           onPress: () => router.replace('/(tabs)/managerDashboard') 
         }
       ]);
       setRejectModalVisible(false);
     } catch (error: any) {
-      Alert.alert("Update Failed", error.response?.data?.message || "Connection error.");
+      // If interceptor already handled 401/403, we don't need a second alert here
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
+        Alert.alert("Update Failed", error.response?.data?.message || "Connection error.");
+      }
     } finally {
       setIsSubmitting(false);
     }

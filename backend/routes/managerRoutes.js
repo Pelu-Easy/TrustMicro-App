@@ -26,8 +26,17 @@ router.get('/loan-stats', async (req, res) => {
         const statsQuery = `
             SELECT 
                 COUNT(*)::INT as "totalLoans",
-                COUNT(*) FILTER (WHERE status = 'Pending')::INT as "pendingLoans",
-                COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed')::INT as "disbursedLoans",
+                COUNT(*) FILTER (
+                    WHERE status IN (
+                        'Pending', 
+                        'PENDING_CREDIT', 
+                        'PENDING_HEAD_CREDIT', 
+                        'PENDING_CONTROL', 
+                        'PENDING_CCO', 
+                        'PENDING_MD'
+                    )
+                )::INT as "pendingLoans",
+                COUNT(*) FILTER (WHERE status = 'Approved' OR status = 'Disbursed' OR status = 'APPROVED_FINANCE')::INT as "disbursedLoans",
                 SUM(CAST(COALESCE(amount, '0') AS NUMERIC)) as "totalVolume"
             FROM loans
         `;
@@ -134,7 +143,9 @@ router.get('/all-loans', async (req, res) => {
                 amount, 
                 "loanAmount" AS "loanAmount", 
                 status, 
-                "submittedDate" AS "submittedDate"
+                "submittedDate" AS "submittedDate",
+                branch,
+                "branchName"
             FROM loans
             ORDER BY "submittedDate" DESC
         `;
@@ -157,7 +168,7 @@ router.get('/supervisors', async (req, res) => {
         const query = `
             SELECT full_name, email, role, branch 
             FROM staff_users 
-            WHERE role IN ('Supervisor', 'Manager', 'Admin', 'Super Admin')
+            WHERE role IN ('Supervisor', 'Manager', 'Admin', 'Super Admin', 'Head of Control', 'Head of Credit', 'CCO', 'MD')
         `;
         const result = await db.query(query);
         res.json(result.rows);
@@ -207,7 +218,8 @@ router.patch('/update-status/:id', async (req, res) => {
         if (staffRes.rows[0]) {
             const staff = staffRes.rows[0];
             const title = `Loan Journey Update 📢`;
-            const body = `Your loan application for ${updatedLoan.customerName} has moved to: ${status.replace(/_/g, ' ')}`;
+            const cleanStatus = status.replace(/_/g, ' ');
+            const body = `Your loan application for ${updatedLoan.customerName} has moved to: ${cleanStatus}`;
 
             // Save to Notification History
             await db.query(
