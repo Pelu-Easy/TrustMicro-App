@@ -228,10 +228,18 @@ export default function Dashboard() {
             </TouchableOpacity>
           )}
           {isManagement && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/managerDashboard')}>
-              <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
-              <Text style={styles.actionBtnText}>Approvals</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]} onPress={() => router.push('/managerDashboard')}>
+                <View style={styles.actionIconBg}><Ionicons name="shield-checkmark" size={24} color="#fff" /></View>
+                <Text style={styles.actionBtnText}>Approvals</Text>
+              </TouchableOpacity>
+              
+              {/* NEW CUSTOMERS BUTTON FOR MANAGEMENT */}
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#8B5CF6' }]} onPress={() => router.push('/CustomerList')}>
+                <View style={styles.actionIconBg}><Ionicons name="people" size={24} color="#fff" /></View>
+                <Text style={styles.actionBtnText}>Customers</Text>
+              </TouchableOpacity>
+            </>
           )}
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B' }]}><View style={styles.actionIconBg}><Ionicons name="bar-chart" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Reports</Text></TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}><View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Logout</Text></TouchableOpacity>
@@ -281,13 +289,13 @@ export default function Dashboard() {
                 <View style={styles.loanInfo}>
                   <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
-                  <View style={styles.miniTrackerContainer}>
-                    <View style={styles.trackerLabelRow}>
+                  <div style={styles.miniTrackerContainer}>
+                    <div style={styles.trackerLabelRow}>
                        <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                        <Text style={styles.trackerPercent}>{track.percent}%</Text>
-                    </View>
+                    </div>
                     <View style={styles.miniProgressBarBg}><View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} /></View>
-                  </View>
+                  </div>
                 </View>
                 <View style={styles.loanStatusArea}>
                   <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>
