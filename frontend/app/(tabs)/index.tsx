@@ -289,13 +289,13 @@ export default function Dashboard() {
                 <View style={styles.loanInfo}>
                   <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
-                  <div style={styles.miniTrackerContainer}>
-                    <div style={styles.trackerLabelRow}>
+                  <View style={styles.miniTrackerContainer}>
+                    <View style={styles.trackerLabelRow}>
                        <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                        <Text style={styles.trackerPercent}>{track.percent}%</Text>
-                    </div>
+                    </View>
                     <View style={styles.miniProgressBarBg}><View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} /></View>
-                  </div>
+                  </View>
                 </View>
                 <View style={styles.loanStatusArea}>
                   <Text style={styles.loanValue}>₦{Number(loan.loanAmount || 0).toLocaleString()}</Text>

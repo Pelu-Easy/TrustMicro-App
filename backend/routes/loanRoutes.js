@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../server');
-const crypto = require('crypto'); // Built-in Node.js module for UUIDs
+const crypto = require('crypto');
 
 // --- SUBMIT NEW LOAN APPLICATION ---
 router.post('/', async (req, res) => {
+    // We import db inside the route to prevent circular dependency crashes
+    const { db } = require('../server'); 
+
     const {
         customerName,
         bvn,
@@ -14,7 +16,7 @@ router.post('/', async (req, res) => {
         bankName,
         accountNumber,
         employerName,
-        staffEmail,
+        staffEmail, // This comes from your frontend
         status,
         nin,
         gender,
@@ -22,10 +24,12 @@ router.post('/', async (req, res) => {
         repaymentCycle
     } = req.body;
 
-    // Generate a unique ID for the loan record
-    const loanId = crypto.randomUUID();
+    // Generate a unique ID
+    const loanId = `LOAN-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
 
     try {
+        if (!db) throw new Error("Database connection not initialized");
+
         await db.query('BEGIN');
 
         // 1. Insert/Update Customers table 
@@ -37,9 +41,9 @@ router.post('/', async (req, res) => {
                 phone = EXCLUDED.phone
             RETURNING id;
         `;
-        await db.query(customerQuery, [customerName, bvn, phone, nin]);
+        await db.query(customerQuery, [customerName, bvn, phone || 'N/A', nin || 'N/A']);
 
-        // 2. Insert into Loans table using the generated loanId
+        // 2. Insert into Loans table
         const loanQuery = `
             INSERT INTO loans (
                 "id",
@@ -58,25 +62,25 @@ router.post('/', async (req, res) => {
                 "monthlyIncome",
                 "repaymentCycle",
                 "submittedDate"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_DATE)
             RETURNING id;
         `;
 
         const values = [
-            loanId, // Manual ID injection
+            loanId,
             customerName,
             bvn,
-            loanAmount, 
-            loanAmount, 
+            parseFloat(loanAmount), 
+            parseFloat(loanAmount), 
             loanType,
             bankName,
             accountNumber,
-            employerName,
-            staffEmail || 'sales_officer@trustmicro.com',
+            employerName || 'N/A',
+            staffEmail || 'system@trustmicro.com', // Maps to createdByEmail
             status || 'Pending',
             nin,
             gender,
-            monthlyIncome,
+            monthlyIncome || 0,
             repaymentCycle
         ];
 
@@ -91,7 +95,7 @@ router.post('/', async (req, res) => {
         });
 
     } catch (error) {
-        await db.query('ROLLBACK');
+        if (db) await db.query('ROLLBACK');
         console.error("Loan Submission Error:", error.message);
         res.status(500).json({ 
             error: `Database Error: ${error.message}` 

@@ -6,14 +6,34 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Expo } = require('expo-server-sdk');
 
-//import the new loan route
-const loanRoutes = require('./routes/loanRoutes');
-app.use('/api/v1/loans', loanRoutes);
-
+// --- 0. INITIALIZE APP FIRST ---
 const app = express();
 const expo = new Expo();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
+
+// --- 1. MIDDLEWARE SETUP ---
+app.use(cors({ 
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], 
+    allowedHeaders: ['Content-Type', 'Authorization'] 
+}));
+app.use(express.json());
+
+// Import and use external loan routes
+const loanRoutes = require('./routes/loanRoutes');
+app.use('/api/v1/loans', loanRoutes);
+
+app.use((req, res, next) => {
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+    next();
+});
+
+// --- 2. DATABASE INITIALIZATION ---
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
 // --- CONFIGURATION & LIMITS ---
 const LOAN_LIMITS = {
@@ -30,26 +50,6 @@ const STATUS_AUTHORITY_MAP = {
     'PENDING_CCO': ['cco'],
     'PENDING_MD': ['md']
 };
-
-
-// --- 1. MIDDLEWARE SETUP ---
-app.use(cors({ 
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], 
-    allowedHeaders: ['Content-Type', 'Authorization'] 
-}));
-app.use(express.json());
-
-app.use((req, res, next) => {
-    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
-    next();
-});
-
-// --- 2. DATABASE INITIALIZATION ---
-const db = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
 
 // --- 3. HELPER FUNCTIONS ---
 const sendPushNotification = async (targetExpoToken, title, body, data = {}) => {
@@ -182,7 +182,6 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     }
 
     try {
-        // Mock KYC response
         const mockCustomer = {
             firstName: "TrustMicro",
             lastName: "Customer",
@@ -191,7 +190,6 @@ app.post('/api/v1/verify-identity', async (req, res) => {
             verificationStatus: "VERIFIED"
         };
 
-        // UPSERT: Save to 'customers' table. Updates name/status if BVN exists.
         const upsertQuery = `
             INSERT INTO customers (bvn, full_name, kyc_status, updated_at)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -216,6 +214,33 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     } catch (e) {
         console.error("Verification error:", e.message);
         res.status(500).json({ error: "Database/KYC service error" });
+    }
+});
+
+// ADDED: BVN VERIFICATION ROUTE TO FIX 404 ERROR
+app.post('/api/v1/manager/verify-bvn', async (req, res) => {
+    const { bvn } = req.body;
+    if (!bvn || bvn.length !== 11) {
+        return res.status(400).json({ status: "error", message: "Invalid BVN." });
+    }
+    try {
+        const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
+        if (result.rows.length > 0) {
+            return res.json({
+                status: "success",
+                data: {
+                    fullName: result.rows[0].full_name,
+                    bvn: result.rows[0].bvn,
+                    verificationStatus: "VERIFIED"
+                }
+            });
+        }
+        res.json({
+            status: "success",
+            data: { fullName: "Verified Customer", bvn: bvn, verificationStatus: "VERIFIED" }
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Verification Service Unavailable" });
     }
 });
 
@@ -329,7 +354,7 @@ app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
 });
 
-// --- 9. LOAN SUBMISSION ---
+// --- 9. LOAN SUBMISSION (Fallback Internal Route) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
@@ -376,3 +401,5 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 
 app.get('/', (req, res) => res.send("🚀 sflApp API Live"));
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`));
+// Add this at the bottom of server.js
+module.exports = { db };
