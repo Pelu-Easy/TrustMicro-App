@@ -6,10 +6,10 @@ import * as Sharing from 'expo-sharing';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import api from '../../services/api';
 import { useLoanStore } from '../../store/loanStore';
 import { useStaffStore } from '../../store/staffStore';
 import useUserData from '../../store/userSignUp';
-import api from '../../utils/api';
 
 const BRAND = { 
   primary: "#003366", 
