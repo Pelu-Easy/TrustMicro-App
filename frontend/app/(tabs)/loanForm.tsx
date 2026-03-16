@@ -61,7 +61,7 @@ export default function CompleteLoanForm() {
   const { 
     funame: staffFullName, 
     branch: staffBranch, 
-    supervisor: assignedSupervisor, // Added to pull from store
+    supervisor: assignedSupervisor, 
     token, 
     role, 
     isSupervisor, 
@@ -92,7 +92,6 @@ export default function CompleteLoanForm() {
     if (!_hasHydrated) return;
     const userRole = role?.toLowerCase() || '';
     
-    // Management check
     const isManagement = isSupervisor || isHeadOfCredit || 
       ['manager', 'admin', 'cco', 'md', 'finance'].includes(userRole);
 
@@ -107,7 +106,7 @@ export default function CompleteLoanForm() {
       setFormData(prev => ({
         ...prev,
         supervisorName: assignedSupervisor,
-        supervisorId: assignedSupervisor // Using name as ID per system logic
+        supervisorId: assignedSupervisor 
       }));
     }
   }, [_hasHydrated, assignedSupervisor]);
@@ -136,18 +135,20 @@ export default function CompleteLoanForm() {
     if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
     setIsVerifying(true);
     try {
-      // Updated endpoint to match the new deterministic mock in managerRoutes.js
+      // UPDATED: Path removed /api/v1 because it's now in the baseURL of api.js
       const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
       
       if (res.data.status === "success") {
-        // Updated mapping to match backend 'fullName' and 'phoneNumber'
         updateData('customerName', res.data.data.fullName);
-        updateData('dob', res.data.data.dateOfBirth);
-        updateData('phone', res.data.data.phoneNumber);
+        if (res.data.data.dateOfBirth) updateData('dob', res.data.data.dateOfBirth);
+        if (res.data.data.phoneNumber) updateData('phone', res.data.data.phoneNumber);
+        
+        Alert.alert("Success", "Identity Verified");
       } else {
         Alert.alert("Verification Failed", "BVN not found.");
       }
     } catch (e) { 
+      console.error("Verification error:", e);
       Alert.alert("Error", "Verification service unavailable. Ensure backend is running."); 
     } finally { 
       setIsVerifying(false); 
@@ -166,6 +167,7 @@ export default function CompleteLoanForm() {
         status: 'Pending' 
       };
 
+      // UPDATED: Path removed /api/v1 because it's now in the baseURL of api.js
       const response = await api.post('/loans', payload);
 
       if (response.status === 201 || response.status === 200) {
@@ -251,7 +253,7 @@ export default function CompleteLoanForm() {
             <Text style={styles.title}>Documents</Text>
             {['idUploaded', 'passportUploaded', 'signatureUploaded'].map(key => (
               <TouchableOpacity key={key} style={styles.uploadBox} onPress={() => handlePickDocument(key as keyof typeof formData)}>
-                <Text>{key.toUpperCase()} {formData[key as keyof typeof formData] ? '✅' : ''}</Text>
+                <Text>{key.toUpperCase().replace('UPLOADED', '')} {formData[key as keyof typeof formData] ? '✅' : ''}</Text>
                 <Ionicons name="cloud-upload" size={24} color={BRAND.primary} />
               </TouchableOpacity>
             ))}
@@ -268,7 +270,7 @@ export default function CompleteLoanForm() {
             <Text style={styles.title}>Review & Submit</Text>
             <View style={styles.reviewCard}>
                 <ReviewItem label="Customer" value={formData.customerName} />
-                <ReviewItem label="Amount" value={formData.loanAmount} />
+                <ReviewItem label="Amount" value={`₦${parseFloat(formData.loanAmount).toLocaleString()}`} />
                 <ReviewItem label="Reporting to" value={formData.supervisorName} />
             </View>
             <TouchableOpacity style={styles.primaryBtn} onPress={handleFinalSubmit} disabled={isSubmitting}>
@@ -302,7 +304,6 @@ const styles = StyleSheet.create({
   revLabel: { fontSize: 13, color: '#64748b' },
   revVal: { color: BRAND.primary, fontWeight: 'bold' }
 });
-
 
 
 // import { Ionicons } from '@expo/vector-icons';
