@@ -217,7 +217,7 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     }
 });
 
-// ADDED: BVN VERIFICATION ROUTE TO FIX 404 ERROR
+// BVN VERIFICATION ROUTE
 app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
     if (!bvn || bvn.length !== 11) {
@@ -244,7 +244,7 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     }
 });
 
-// NEW: GET ALL REGISTERED CUSTOMERS (MANAGEMENT ONLY)
+// GET ALL REGISTERED CUSTOMERS (MANAGEMENT ONLY)
 app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
@@ -283,6 +283,20 @@ app.get('/api/v1/notifications', authenticateToken, async (req, res) => {
         const result = await db.query("SELECT * FROM notification_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20", [req.user.id]);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Failed to load notifications" }); }
+});
+
+// ADDED: GET UNREAD NOTIFICATION COUNT
+app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query(
+            "SELECT COUNT(*) FROM notification_history WHERE user_id = $1 AND is_read = false", 
+            [req.user.id]
+        );
+        res.json({ count: parseInt(result.rows[0].count) });
+    } catch (err) {
+        // Fallback if 'is_read' column doesn't exist yet
+        res.json({ count: 0 });
+    }
 });
 
 // --- 8. MANAGER WORKFLOW ROUTES ---
@@ -354,7 +368,7 @@ app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
 });
 
-// --- 9. LOAN SUBMISSION (Fallback Internal Route) ---
+// --- 9. LOAN SUBMISSION ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;

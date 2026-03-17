@@ -78,7 +78,8 @@ api.interceptors.response.use(
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       errorMessage = "The server is taking too long to respond. This may happen during large data audits. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      errorMessage = "Cannot connect to server. Ensure your backend is running at http://192.168.43.60:5000";
+      // FIX: Dynamically show the current API_URL in the error message
+      errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')}`;
     } else if (error.response) {
       // Backend-specific error messages
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
