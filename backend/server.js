@@ -401,5 +401,4 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 
 app.get('/', (req, res) => res.send("🚀 sflApp API Live"));
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`));
-// Add this at the bottom of server.js
 module.exports = { db };

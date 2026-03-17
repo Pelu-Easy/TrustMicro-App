@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import useUserData from '../store/userSignUp';
 
 // API Configuration - Set to local IP for development
-export const API_URL = 'http://192.168.43.60:5000/api/v1';
+export const API_URL = 'http://192.168.100.73:5000/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
