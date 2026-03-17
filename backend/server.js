@@ -9,7 +9,7 @@ const { Expo } = require('expo-server-sdk');
 // --- 0. INITIALIZE APP FIRST ---
 const app = express();
 const expo = new Expo();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
 // --- 1. MIDDLEWARE SETUP ---
