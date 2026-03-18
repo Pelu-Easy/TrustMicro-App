@@ -171,14 +171,20 @@ router.get('/all-loans', async (req, res) => {
     }
 });
 
-// --- 6. GET SUPERVISORS LIST (STRICTLY BY CHECKBOX) ---
+// --- 6. GET SUPERVISORS LIST (UPDATED FOR SIGNUP COMPATIBILITY) ---
 router.get('/supervisors', async (req, res) => {
     try {
+        // Broadened query to ensure the list is not empty in new databases
         const query = `
-            SELECT full_name, email, role, branch 
+            SELECT id, full_name, email, role, branch 
             FROM staff_users 
             WHERE is_active = true 
-            AND role NOT IN ('Sales Officer', 'Loan Officer')
+            AND (
+                role ILIKE 'Manager' 
+                OR role ILIKE 'Admin' 
+                OR role ILIKE 'Supervisor'
+                OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations')
+            )
             ORDER BY full_name ASC
         `;
         const result = await db.query(query);

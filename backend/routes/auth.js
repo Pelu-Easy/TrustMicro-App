@@ -80,11 +80,10 @@ router.post('/login', async (req, res) => {
 router.post('/signup', async (req, res) => {
     const { 
         full_name, email, phone_no, branch, password,
-        department, unit, supervisor_name, is_loan_officer, role 
+        department, unit, supervisor_name, is_loan_officer, is_supervisor, role 
     } = req.body;
 
     try {
-        // 1. Double check phone AND email uniqueness
         const sanitizedEmail = email.trim().toLowerCase();
         const sanitizedPhone = phone_no.trim();
 
@@ -101,16 +100,15 @@ router.post('/signup', async (req, res) => {
             }
         }
 
-        // 2. Hash Password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // 3. Insert into staff_users
+        // --- UPDATED QUERY: Added is_supervisor ($11) and shifted is_active to $12 ---
         const query = `
             INSERT INTO staff_users (
                 full_name, email, phone_no, password, branch, role, 
-                department, unit, supervisor_name, is_loan_officer, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                department, unit, supervisor_name, is_loan_officer, is_supervisor, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING id
         `;
 
@@ -124,7 +122,8 @@ router.post('/signup', async (req, res) => {
             department, 
             unit, 
             supervisor_name, 
-            is_loan_officer === true, 
+            is_loan_officer === true || is_loan_officer === 1, 
+            is_supervisor === true || is_supervisor === 1, // Capture supervisor status
             true // is_active
         ];
 
@@ -132,12 +131,11 @@ router.post('/signup', async (req, res) => {
         res.status(201).json({ id: result.rows[0].id, message: "Account created successfully" });
 
     } catch (error) {
-        // Handle specific Postgres unique constraint violations (if the check above somehow missed it)
         if (error.code === '23505') {
             return res.status(400).json({ error: "An account with these details already exists." });
         }
         console.error("❌ SIGNUP ERROR:", error.message);
-        res.status(500).json({ error: "Server error during registration. Please try again later." });
+        res.status(500).json({ error: "Server error during registration." });
     }
 });
 

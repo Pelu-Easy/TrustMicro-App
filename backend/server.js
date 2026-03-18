@@ -92,7 +92,6 @@ const isManagement = (req, res, next) => {
     const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
-    // UPDATED: Added 'officer' to allow read-access to customer lists
     const managementUnits = [
         'cco', 'md', 'head of credit', 'cfo', 'admin', 
         'super admin', 'manager', 'supervisor', 
@@ -175,7 +174,6 @@ app.post('/api/v1/auth/signup', handleSignup);
 
 // --- 6. IDENTITY & CUSTOMER DATABASE LOGIC ---
 
-// IDENTITY VERIFICATION WITH AUTO-SAVE (UPSERT)
 app.post('/api/v1/verify-identity', async (req, res) => {
     const { bvn } = req.body;
     
@@ -219,7 +217,6 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     }
 });
 
-// BVN VERIFICATION ROUTE
 app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
     if (!bvn || bvn.length !== 11) {
@@ -246,7 +243,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     }
 });
 
-// GET ALL REGISTERED CUSTOMERS (MANAGEMENT & OFFICER)
 app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
@@ -256,7 +252,6 @@ app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req
     }
 });
 
-// GET SPECIFIC CUSTOMER LOANS (MANAGEMENT & OFFICER)
 app.get('/api/v1/manager/customer-loans/:bvn', authenticateToken, isManagement, async (req, res) => {
     const { bvn } = req.params;
     try {
@@ -287,7 +282,6 @@ app.get('/api/v1/notifications', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to load notifications" }); }
 });
 
-// GET UNREAD NOTIFICATION COUNT (ALL AUTHENTICATED USERS)
 app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
     try {
         const result = await db.query(
@@ -361,12 +355,24 @@ app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (re
     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
 
-app.get('/api/v1/manager/supervisors', authenticateToken, async (req, res) => {
+// REMOVED authenticateToken so Signup screen can access this list
+app.get('/api/v1/manager/supervisors', async (req, res) => {
     try {
-        const query = `SELECT id, full_name, email, role, branch FROM staff_users WHERE role ILIKE 'Manager' OR role ILIKE 'Admin' OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor') ORDER BY full_name ASC`;
+        const query = `
+            SELECT id, full_name, email, role, branch 
+            FROM staff_users 
+            WHERE role ILIKE 'Manager' 
+               OR role ILIKE 'Admin' 
+               OR role ILIKE 'Supervisor'
+               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations') 
+            ORDER BY full_name ASC
+        `;
         const result = await db.query(query);
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
+    } catch (err) { 
+        console.error("Supervisor load error:", err.message);
+        res.status(500).json({ error: "Failed to load supervisors" }); 
+    }
 });
 
 // --- 9. LOAN SUBMISSION ---
@@ -416,17 +422,16 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 
 app.get('/', (req, res) => res.send("🚀 sflApp API Live"));
 
-// --- FINAL SERVER STARTUP WITH CONFLICT PROTECTION ---
+// --- FINAL SERVER STARTUP ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log('-------------------------------------------');
     console.log(`🚀 TrustMicro Backend is LIVE`);
     console.log(`📡 Local:   http://localhost:${PORT}`);
-    console.log(`📱 Network: http://192.168.100.73:${PORT} (Verify via ipconfig)`);
+    console.log(`📱 Network: http://192.168.100.73:${PORT}`);
     console.log('-------------------------------------------');
 }).on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is busy! Kill existing processes first.`);
-        console.error(`💡 Run: taskkill /F /IM node.exe`);
+        console.error(`❌ Port ${PORT} is busy!`);
     } else {
         console.error("Server Error:", err);
     }
