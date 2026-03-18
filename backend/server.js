@@ -133,7 +133,8 @@ const handleLogin = async (req, res) => {
             return res.status(403).json({ error: "Account Deactivated." });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password_hash);
+        // Updated to use 'password' if your column is named password, or 'password_hash' if that is the name.
+        const isMatch = await bcrypt.compare(password, user.password || user.password_hash);
         if (!isMatch) {
             const newCount = (user.failed_attempts || 0) + 1;
             await client.query("UPDATE staff_users SET failed_attempts = $1, is_active = $2 WHERE id = $3", [newCount, newCount < 3, user.id]);
@@ -153,18 +154,50 @@ const handleLogin = async (req, res) => {
         res.json({ token, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role, unit: user.unit, branch: user.branch } });
     } catch (e) { 
         await client.query('ROLLBACK');
+        console.error("Login logic error:", e.message);
         res.status(500).json({ error: "Server Error" }); 
     } finally { client.release(); }
 };
 
 const handleSignup = async (req, res) => {
-    const { full_name, email, phone_no, branch, password, role, supervisor_name, unit, is_loan_officer } = req.body;
+    const { 
+        full_name, email, phone_no, branch, password, 
+        role, supervisor_name, unit, is_loan_officer, is_supervisor 
+    } = req.body;
+    
     try {
         const hash = await bcrypt.hash(password, 10);
-        const query = `INSERT INTO staff_users (full_name, email, phone_no, password_hash, role, branch, supervisor_name, is_active, failed_attempts, unit, is_loan_officer) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`;
-        await db.query(query, [full_name, email.trim().toLowerCase(), phone_no, hash, role || 'Officer', branch, supervisor_name, true, 0, unit || 'Operations', is_loan_officer || false]);
+        
+        // --- UPDATED INSERT QUERY: Including is_supervisor ($12) ---
+        const query = `
+            INSERT INTO staff_users (
+                full_name, email, phone_no, password, role, branch, 
+                supervisor_name, is_active, failed_attempts, unit, 
+                is_loan_officer, is_supervisor
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `;
+        
+        const values = [
+            full_name, 
+            email.trim().toLowerCase(), 
+            phone_no, 
+            hash, 
+            role || 'Officer', 
+            branch, 
+            supervisor_name, 
+            true, 
+            0, 
+            unit || 'Operations', 
+            is_loan_officer === true || is_loan_officer === 1,
+            is_supervisor === true || is_supervisor === 1 // The new column
+        ];
+
+        await db.query(query, values);
         res.status(201).json({ message: "Staff created" });
-    } catch (e) { res.status(500).json({ error: "Signup failed" }); }
+    } catch (e) { 
+        console.error("❌ SIGNUP ERROR:", e.message);
+        res.status(500).json({ error: "Signup failed: " + e.message }); 
+    }
 };
 
 app.post('/auth/login', handleLogin);
@@ -361,10 +394,14 @@ app.get('/api/v1/manager/supervisors', async (req, res) => {
         const query = `
             SELECT id, full_name, email, role, branch 
             FROM staff_users 
-            WHERE role ILIKE 'Manager' 
+            WHERE is_active = true 
+            AND (
+               is_supervisor = true
+               OR role ILIKE 'Manager' 
                OR role ILIKE 'Admin' 
                OR role ILIKE 'Supervisor'
-               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations') 
+               OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations')
+            )
             ORDER BY full_name ASC
         `;
         const result = await db.query(query);
