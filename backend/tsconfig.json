@@ -1,13 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES6",
-    "module": "commonjs",
-    "allowJs": true, 
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "allowJs": true,
     "checkJs": false,
     "noEmit": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*"]
+    }
   },
-  "include": ["**/*.js"] 
+  "include": ["**/*.js", "**/*.ts"],
+  "exclude": ["node_modules"]
 }

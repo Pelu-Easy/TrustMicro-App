@@ -111,6 +111,23 @@ export default function CompleteLoanForm() {
     }
   }, [_hasHydrated, assignedSupervisor]);
 
+  // --- NEW: AUTO-FILL & VERIFY BVN FOR TOP-UP ---
+  useEffect(() => {
+    if (_hasHydrated && params.bvn) {
+      const incomingBvn = Array.isArray(params.bvn) ? params.bvn[0] : params.bvn;
+      
+      // 1. Fill the BVN field
+      setFormData(prev => ({ ...prev, bvn: incomingBvn }));
+      
+      // 2. Automatically trigger verification
+      const timer = setTimeout(() => {
+        handleVerifyIdentity();
+      }, 600);
+
+      return () => clearTimeout(timer);
+    }
+  }, [_hasHydrated, params.bvn]);
+
   const updateData = (key: keyof typeof formData, value: string) => setFormData(prev => ({ ...prev, [key]: value }));
 
   const handlePickDocument = async (fieldKey: keyof typeof formData) => {
@@ -132,27 +149,37 @@ export default function CompleteLoanForm() {
   };
 
   const handleVerifyIdentity = async () => {
-    if (formData.bvn.length < 11) return Alert.alert("Error", "Enter 11-digit BVN");
-    setIsVerifying(true);
-    try {
-      // UPDATED: Path removed /api/v1 because it's now in the baseURL of api.js
-      const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
-      
-      if (res.data.status === "success") {
-        updateData('customerName', res.data.data.fullName);
-        if (res.data.data.dateOfBirth) updateData('dob', res.data.data.dateOfBirth);
-        if (res.data.data.phoneNumber) updateData('phone', res.data.data.phoneNumber);
-        
-        Alert.alert("Success", "Identity Verified");
-      } else {
-        Alert.alert("Verification Failed", "BVN not found.");
+    // We access the current BVN from the input state
+    // Using a functional update or direct check to ensure we have the latest value
+    setFormData(current => {
+      const bvnToVerify = current.bvn;
+      if (bvnToVerify.length < 11) {
+        Alert.alert("Error", "Enter 11-digit BVN");
+        return current;
       }
-    } catch (e) { 
-      console.error("Verification error:", e);
-      Alert.alert("Error", "Verification service unavailable. Ensure backend is running."); 
-    } finally { 
-      setIsVerifying(false); 
-    }
+
+      setIsVerifying(true);
+      api.post('/manager/verify-bvn', { bvn: bvnToVerify })
+        .then(res => {
+          if (res.data.status === "success") {
+            updateData('customerName', res.data.data.fullName);
+            if (res.data.data.dateOfBirth) updateData('dob', res.data.data.dateOfBirth);
+            if (res.data.data.phoneNumber) updateData('phone', res.data.data.phoneNumber);
+            Alert.alert("Success", "Identity Verified");
+          } else {
+            Alert.alert("Verification Failed", "BVN not found.");
+          }
+        })
+        .catch(e => {
+          console.error("Verification error:", e);
+          Alert.alert("Error", "Verification service unavailable.");
+        })
+        .finally(() => {
+          setIsVerifying(false);
+        });
+      
+      return current;
+    });
   };
 
   const handleFinalSubmit = async () => {
@@ -167,7 +194,6 @@ export default function CompleteLoanForm() {
         status: 'Pending' 
       };
 
-      // UPDATED: Path removed /api/v1 because it's now in the baseURL of api.js
       const response = await api.post('/loans', payload);
 
       if (response.status === 201 || response.status === 200) {
@@ -304,7 +330,6 @@ const styles = StyleSheet.create({
   revLabel: { fontSize: 13, color: '#64748b' },
   revVal: { color: BRAND.primary, fontWeight: 'bold' }
 });
-
 
 // import { Ionicons } from '@expo/vector-icons';
 // import * as DocumentPicker from 'expo-document-picker';

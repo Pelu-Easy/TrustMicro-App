@@ -28,7 +28,7 @@ export default function LoanDetails() {
   const { role } = useUserData();
   
   const { 
-    id, customerName, amount, loanType, staffName, 
+    id, customerName, amount, loanType, staffName, bvn,
     phone, bankName, accountNumber, status,
     ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl,
     workIdUrl, statementUrl, signatureUrl 
@@ -45,10 +45,13 @@ export default function LoanDetails() {
 
   /**
    * UPDATED: Strict logic to ensure only the right role can approve at the right time.
-   * e.g., Head of Marketing can only act if status is 'Pending'.
    */
   const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus === status;
   const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
+
+  // TOP-UP LOGIC: Eligibility check for Officers
+  // A customer is eligible if the loan is fully disbursed/completed
+  const isEligibleForTopUp = (status === 'Disbursed' || status === 'APPROVED_FINANCE') && normalizedRole === 'officer';
 
   const stages = [
     { id: 'Pending', label: 'Marketing/Supervisor' },
@@ -97,6 +100,24 @@ export default function LoanDetails() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+const handleTopUpRequest = () => {
+    Alert.alert(
+      "Confirm Top-Up",
+      `Are you sure you want to initiate a Top-Up application for ${customerName}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          // Cast the pathname to any to bypass the strict route check
+          text: "Yes, Proceed", 
+          onPress: () => router.push({ 
+            pathname: '/(tabs)/nigerians' as any, 
+            params: { bvn: bvn } 
+          })
+        }
+      ]
+    );
   };
 
   const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => {
@@ -162,6 +183,7 @@ export default function LoanDetails() {
           <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport" />
           <DocumentCard label="Signature" uri={signatureUrl} placeholder="No Signature" />
 
+          {/* Action Buttons Section */}
           {canPerformAction ? (
             <View style={styles.actionRow}>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BRAND.danger }]} onPress={() => setRejectModalVisible(true)}>
@@ -171,6 +193,11 @@ export default function LoanDetails() {
                 {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>{userAuthority.label}</Text>}
               </TouchableOpacity>
             </View>
+          ) : isEligibleForTopUp ? (
+            <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUpRequest}>
+              <Ionicons name="rocket-outline" size={20} color="#fff" style={{marginRight: 8}} />
+              <Text style={styles.btnText}>Apply for Top-Up</Text>
+            </TouchableOpacity>
           ) : (
             <View style={styles.readOnlyBadge}>
               <Text style={styles.readOnlyText}>
@@ -224,6 +251,7 @@ const styles = StyleSheet.create({
   noDoc: { width: '100%', height: 100, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
   actionRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
   actionBtn: { flex: 1, padding: 18, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  topUpBtn: { backgroundColor: BRAND.accent, padding: 18, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 20, flexDirection: 'row' },
   btnText: { color: '#fff', fontWeight: 'bold' },
   readOnlyBadge: { backgroundColor: '#E2E8F0', padding: 15, borderRadius: 12, alignItems: 'center' },
   readOnlyText: { color: '#475569', fontWeight: 'bold' },

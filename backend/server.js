@@ -92,10 +92,12 @@ const isManagement = (req, res, next) => {
     const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
+    // UPDATED: Added 'officer' to allow read-access to customer lists
     const managementUnits = [
         'cco', 'md', 'head of credit', 'cfo', 'admin', 
         'super admin', 'manager', 'supervisor', 
-        'head of marketing', 'head of control', 'credit officer'
+        'head of marketing', 'head of control', 'credit officer',
+        'officer'
     ];
     
     const hasManagementAccess = 
@@ -244,7 +246,7 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     }
 });
 
-// GET ALL REGISTERED CUSTOMERS (MANAGEMENT ONLY)
+// GET ALL REGISTERED CUSTOMERS (MANAGEMENT & OFFICER)
 app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
@@ -254,7 +256,7 @@ app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req
     }
 });
 
-// GET SPECIFIC CUSTOMER LOANS (MANAGEMENT ONLY)
+// GET SPECIFIC CUSTOMER LOANS (MANAGEMENT & OFFICER)
 app.get('/api/v1/manager/customer-loans/:bvn', authenticateToken, isManagement, async (req, res) => {
     const { bvn } = req.params;
     try {
@@ -285,7 +287,7 @@ app.get('/api/v1/notifications', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to load notifications" }); }
 });
 
-// ADDED: GET UNREAD NOTIFICATION COUNT
+// GET UNREAD NOTIFICATION COUNT (ALL AUTHENTICATED USERS)
 app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
     try {
         const result = await db.query(
@@ -294,7 +296,6 @@ app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res
         );
         res.json({ count: parseInt(result.rows[0].count) });
     } catch (err) {
-        // Fallback if 'is_read' column doesn't exist yet
         res.json({ count: 0 });
     }
 });
@@ -414,5 +415,21 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 });
 
 app.get('/', (req, res) => res.send("🚀 sflApp API Live"));
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`));
+
+// --- FINAL SERVER STARTUP WITH CONFLICT PROTECTION ---
+app.listen(PORT, '0.0.0.0', () => {
+    console.log('-------------------------------------------');
+    console.log(`🚀 TrustMicro Backend is LIVE`);
+    console.log(`📡 Local:   http://localhost:${PORT}`);
+    console.log(`📱 Network: http://192.168.100.73:${PORT} (Verify via ipconfig)`);
+    console.log('-------------------------------------------');
+}).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is busy! Kill existing processes first.`);
+        console.error(`💡 Run: taskkill /F /IM node.exe`);
+    } else {
+        console.error("Server Error:", err);
+    }
+});
+
 module.exports = { db };
