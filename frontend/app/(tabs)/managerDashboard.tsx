@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import api from '../../services/api';
 import useUserData from '../../store/userSignUp';
 
@@ -26,11 +26,12 @@ interface LoanItem {
   branchName?: string;
   branch?: string;
   createdAt?: string;
+  assignedCreditStaffId?: string; // Field for routing
 }
 
 export default function ManagerDashboard() {
   const { 
-    token, funame, branch, role,
+    token, funame, branch, role, id: userId,
     isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD,
     _hasHydrated 
   } = useUserData();
@@ -41,23 +42,24 @@ export default function ManagerDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0); 
 
-  // Derived role check for Head of Marketing
+  // Derived role checks
   const isHeadOfMarketing = role?.toLowerCase().trim() === 'head of marketing';
+  const isCreditStaff = role?.toLowerCase().trim() === 'credit staff' || isCreditOfficer;
 
   // --- SECURITY GATE: ROLE-BASED ACCESS CONTROL (RBAC) ---
   useEffect(() => {
     if (!_hasHydrated) return;
     
     const userRole = role?.toLowerCase().trim() || '';
-    const isManagement = isSupervisor || isCreditOfficer || isHeadOfCredit || isHeadOfControl || 
+    const isManagementOrCredit = isSupervisor || isCreditStaff || isHeadOfCredit || isHeadOfControl || 
                          isCCO || isMD || isHeadOfMarketing || 
-                         ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control', 'head of marketing'].includes(userRole);
+                         ['manager', 'supervisor', 'admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control', 'head of marketing', 'credit staff'].includes(userRole);
 
-    if (!isManagement) {
-      // Redirect regular staff to the main tabs
+    if (!isManagementOrCredit) {
+      // Redirect regular staff (Sales Officers) to the main tabs
       router.replace('/(tabs)');
     }
-  }, [_hasHydrated, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing]);
+  }, [_hasHydrated, role, isSupervisor, isCreditStaff, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing]);
 
   // --- WORKFLOW: GET APPROPRIATE TITLE ---
   const getDashboardTitle = () => {
@@ -65,25 +67,19 @@ export default function ManagerDashboard() {
     if (isCCO) return "CCO Approval Basket";
     if (isHeadOfControl) return "Internal Control Desk";
     if (isHeadOfCredit) return "Credit Management Portal";
-    if (isCreditOfficer) return "Credit Review Basket";
-    if (isHeadOfMarketing) return "Marketing Approval Desk"; // Added Marketing Title
+    if (isCreditStaff) return "My Credit Queue";
+    if (isHeadOfMarketing) return "Marketing Approval Desk";
     if (isSupervisor) return "Branch Supervisor Portal";
     return "Management Dashboard";
   };
 
   // --- WORKFLOW: GET RELEVANT STATUS FILTER ---
   const getTargetStatus = () => {
-    // Stage 1: Initial submission from Sales Staff
     if (isHeadOfMarketing || isSupervisor) return 'Pending'; 
-    // Stage 2: After Marketing/Supervisor approval
-    if (isCreditOfficer) return 'PENDING_CREDIT';
-    // Stage 3: After Credit Officer review
+    if (isCreditStaff) return 'PENDING_CREDIT';
     if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
-    // Stage 4: After Head of Credit review
     if (isHeadOfControl) return 'PENDING_CONTROL';
-    // Stage 5: After Control review
     if (isCCO) return 'PENDING_CCO';
-    // Stage 6: Final Management Review
     if (isMD) return 'PENDING_MD';
     
     return 'Pending';
@@ -94,7 +90,9 @@ export default function ManagerDashboard() {
 
     setIsLoading(true);
     try {
-      let endpoint = selectedIndex === 1 ? '/manager/approved-loans' : '/manager/all-loans';
+      // Logic: Credit Staff should only access 'all-loans' for their basket. 
+      // Only Management/Admin see the 'approved-loans' history flow.
+      let endpoint = (selectedIndex === 1 && !isCreditStaff) ? '/manager/approved-loans' : '/manager/all-loans';
       
       const response = await api.get(endpoint);
       const allFetchedLoans = response.data || [];
@@ -102,24 +100,35 @@ export default function ManagerDashboard() {
       if (selectedIndex === 0) {
         const targetStatus = getTargetStatus();
         
-        // HQ management sees everything. Branch Supervisors see only their branch.
         const workBasket = allFetchedLoans.filter((loan: LoanItem) => {
           const statusMatch = loan.status === targetStatus;
           
+          // --- ROUTING LOGIC ---
+          // Show if unassigned OR assigned to this specific user
+          let assignmentMatch = true;
+          if (isCreditStaff) {
+            assignmentMatch = !loan.assignedCreditStaffId || loan.assignedCreditStaffId === userId;
+          }
+
           const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit || isHeadOfMarketing; 
           const loanBranch = loan.branchName || loan.branch;
           const branchMatch = isHQManagement ? true : (loanBranch === branch);
           
-          return statusMatch && branchMatch;
+          return statusMatch && branchMatch && assignmentMatch;
         });
         setLoans(workBasket);
       } else {
-        const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit || isHeadOfMarketing;
-        if (isHQManagement) {
-            setLoans(allFetchedLoans);
+        // HISTORY VIEW: Blocked for regular Credit Staff
+        if (isCreditStaff) {
+          setLoans([]);
         } else {
-            const branchHistory = allFetchedLoans.filter((loan: LoanItem) => (loan.branchName === branch || loan.branch === branch));
-            setLoans(branchHistory);
+          const isHQManagement = isMD || isCCO || isHeadOfControl || isHeadOfCredit || isHeadOfMarketing;
+          if (isHQManagement) {
+              setLoans(allFetchedLoans);
+          } else {
+              const branchHistory = allFetchedLoans.filter((loan: LoanItem) => (loan.branchName === branch || loan.branch === branch));
+              setLoans(branchHistory);
+          }
         }
       }
       
@@ -127,21 +136,13 @@ export default function ManagerDashboard() {
       if (error.response?.status === 403 || error.response?.status === 401) {
         return; 
       }
-
       console.error("Dashboard Fetch Error:", error.message);
-      
-      if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
-        Alert.alert(
-          "Connection Problem", 
-          "The server is taking too long to wake up. Please pull to refresh in a few seconds."
-        );
-      }
       setLoans([]); 
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, isSupervisor, isCreditOfficer, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing, selectedIndex, branch]);
+  }, [token, isSupervisor, isCreditStaff, isHeadOfCredit, isHeadOfControl, isCCO, isMD, isHeadOfMarketing, selectedIndex, branch, userId]);
 
   useEffect(() => {
     if (token && _hasHydrated) fetchData();

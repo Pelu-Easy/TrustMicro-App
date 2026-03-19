@@ -10,11 +10,12 @@ const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "
 
 /**
  * UPDATED ROLE CONFIGURATION & WORKFLOW
- * Order: Marketing/Supervisor -> Credit -> Head of Credit -> Control -> CCO -> MD
+ * Order: Marketing/Supervisor -> Credit Staff -> Head of Credit -> Control -> CCO -> MD
  */
 const ROLE_AUTHORITY_MAP: Record<string, { nextStatus: string, label: string, authorizedStatus: string }> = {
   'head of marketing': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
   'supervisor': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'credit staff': { authorizedStatus: 'PENDING_CREDIT', nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
   'credit officer': { authorizedStatus: 'PENDING_CREDIT', nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
   'head of credit': { authorizedStatus: 'PENDING_HEAD_CREDIT', nextStatus: 'PENDING_CONTROL', label: 'Forward to Head of Control' },
   'head of control': { authorizedStatus: 'PENDING_CONTROL', nextStatus: 'PENDING_CCO', label: 'Forward to CCO' },
@@ -50,16 +51,15 @@ export default function LoanDetails() {
   const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
 
   // TOP-UP LOGIC: Eligibility check for Officers
-  // A customer is eligible if the loan is fully disbursed/completed
   const isEligibleForTopUp = (status === 'Disbursed' || status === 'APPROVED_FINANCE') && normalizedRole === 'officer';
 
   const stages = [
     { id: 'Pending', label: 'Marketing/Supervisor' },
-    { id: 'PENDING_CREDIT', label: 'Credit Officer' },
+    { id: 'PENDING_CREDIT', label: 'Credit Analysis' },
     { id: 'PENDING_HEAD_CREDIT', label: 'Head of Credit' },
-    { id: 'PENDING_CONTROL', label: 'Head of Control' },
+    { id: 'PENDING_CONTROL', label: 'Internal Control' },
     { id: 'PENDING_CCO', label: 'CCO' },
-    { id: 'PENDING_MD', label: 'MD' },
+    { id: 'PENDING_MD', label: 'MD Approval' },
     { id: 'APPROVED_FINANCE', label: 'Finance' }
   ];
 
@@ -102,14 +102,13 @@ export default function LoanDetails() {
     }
   };
 
-const handleTopUpRequest = () => {
+  const handleTopUpRequest = () => {
     Alert.alert(
       "Confirm Top-Up",
       `Are you sure you want to initiate a Top-Up application for ${customerName}?`,
       [
         { text: "Cancel", style: "cancel" },
         { 
-          // Cast the pathname to any to bypass the strict route check
           text: "Yes, Proceed", 
           onPress: () => router.push({ 
             pathname: '/(tabs)/nigerians' as any, 
@@ -212,7 +211,7 @@ const handleTopUpRequest = () => {
         <View style={styles.modalOverlay}>
             <View style={styles.rejectModalContent}>
                 <Text style={styles.rejectTitle}>Reject Application</Text>
-                <TextInput style={styles.reasonInput} placeholder="Reason..." multiline value={rejectionReason} onChangeText={setRejectionReason} />
+                <TextInput style={styles.reasonInput} placeholder="Reason for rejection..." multiline value={rejectionReason} onChangeText={setRejectionReason} />
                 <View style={styles.modalActionRow}>
                     <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={styles.modalCancel}><Text>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => handleAction('Rejected', rejectionReason)} style={styles.modalConfirm}><Text style={{color: BRAND.danger, fontWeight: 'bold'}}>Confirm Reject</Text></TouchableOpacity>
