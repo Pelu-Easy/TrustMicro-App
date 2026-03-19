@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const { calculateRiskScore } = require('../util/riskEvaluator');
 
-// --- SUBMIT NEW LOAN APPLICATION ---
+// --- SUBMIT NEW LOAN APPLICATION (Supports Top-Ups) ---
 router.post('/', async (req, res) => {
     // We import db inside the route to prevent circular dependency crashes
     const { db } = require('../server'); 
@@ -16,12 +17,22 @@ router.post('/', async (req, res) => {
         bankName,
         accountNumber,
         employerName,
-        staffEmail, // This comes from your frontend
+        staffEmail,
         status,
         nin,
         gender,
         monthlyIncome,
-        repaymentCycle
+        repaymentCycle,
+        // Document URLs
+        ninImageUrl,
+        idImageUrl,
+        passportImageUrl,
+        utilityBillUrl,
+        workIdUrl,
+        statementUrl,
+        signatureUrl,
+        // TOP-UP FIELD: Links this loan to a previous one
+        parentLoanId 
     } = req.body;
 
     // Generate a unique ID
@@ -43,7 +54,7 @@ router.post('/', async (req, res) => {
         `;
         await db.query(customerQuery, [customerName, bvn, phone || 'N/A', nin || 'N/A']);
 
-        // 2. Insert into Loans table
+        // 2. Insert into Loans table (Includes parentLoanId for Top-Ups)
         const loanQuery = `
             INSERT INTO loans (
                 "id",
@@ -61,8 +72,20 @@ router.post('/', async (req, res) => {
                 "gender",
                 "monthlyIncome",
                 "repaymentCycle",
-                "submittedDate"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_DATE)
+                "submittedDate",
+                "ninImageUrl",
+                "idImageUrl",
+                "passportImageUrl",
+                "utilityBillUrl",
+                "workIdUrl",
+                "statementUrl",
+                "signatureUrl",
+                "parentLoanId"
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+                $11, $12, $13, $14, $15, CURRENT_DATE, 
+                $16, $17, $18, $19, $20, $21, $22, $23
+            )
             RETURNING id;
         `;
 
@@ -76,12 +99,20 @@ router.post('/', async (req, res) => {
             bankName,
             accountNumber,
             employerName || 'N/A',
-            staffEmail || 'system@trustmicro.com', // Maps to createdByEmail
+            staffEmail || 'system@trustmicro.com', 
             status || 'Pending',
             nin,
             gender,
             monthlyIncome || 0,
-            repaymentCycle
+            repaymentCycle,
+            ninImageUrl || null,
+            idImageUrl || null,
+            passportImageUrl || null,
+            utilityBillUrl || null,
+            workIdUrl || null,
+            statementUrl || null,
+            signatureUrl || null,
+            parentLoanId || null 
         ];
 
         const result = await db.query(loanQuery, values);
@@ -90,7 +121,7 @@ router.post('/', async (req, res) => {
 
         res.status(201).json({
             status: "success",
-            message: "Loan application saved successfully",
+            message: parentLoanId ? "Top-Up application submitted" : "Loan application saved successfully",
             loanId: result.rows[0].id
         });
 
@@ -100,6 +131,43 @@ router.post('/', async (req, res) => {
         res.status(500).json({ 
             error: `Database Error: ${error.message}` 
         });
+    }
+});
+
+// --- GET LOAN HISTORY BY BVN ---
+// Used to display all previous applications for a specific customer
+router.get('/history/:bvn', async (req, res) => {
+    const { db } = require('../server');
+    const { bvn } = req.params;
+
+    try {
+        if (!db) throw new Error("Database connection not initialized");
+
+        const query = `
+            SELECT 
+                id, 
+                "loanAmount", 
+                status, 
+                "submittedDate", 
+                "loanType",
+                "parentLoanId"
+            FROM loans 
+            WHERE bvn = $1 
+            ORDER BY "submittedDate" DESC;
+        `;
+        
+        const result = await db.query(query, [bvn]);
+        
+        // Use the utility function to analyze the history
+        const riskAnalysis = calculateRiskScore(result.rows);
+
+        res.json({
+            status: "success",
+            data: result.rows,
+            riskAnalysis: riskAnalysis // New field
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 

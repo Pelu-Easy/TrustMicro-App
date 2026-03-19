@@ -324,8 +324,8 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
 });
 
 app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req, res) => {
-    const userRole = req.user.role?.toLowerCase();
-    const userUnit = req.user.unit?.toLowerCase();
+    const userRole = (req.user.role || "").toLowerCase().trim();
+    const userUnit = (req.user.unit || "").toLowerCase().trim();
     const userId = req.user.id;
     const userBranch = req.user.branch;
 
@@ -333,22 +333,33 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
         const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
-        let query = `SELECT l.*, s.full_name as "staffName", s.branch as "branchName" FROM loans l LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))`;
+        // EXPLICIT SELECT to ensure all Image URLs are returned to the frontend
+        let query = `
+            SELECT l.*, 
+            s.full_name as "staffName", 
+            s.branch as "branchName" 
+            FROM loans l 
+            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))`;
+        
         let params = [];
 
-        // If Credit Staff, only show loans specifically assigned to them
-        if (userRole === 'credit staff') {
+        // If Credit Staff or Credit Officer, only show loans specifically assigned to them
+        if (userRole === 'credit staff' || userRole === 'credit officer') {
             query += ` WHERE l."assignedCreditStaffId" = $1`;
             params = [userId];
         } else if (!isHQAccess) {
             query += ` WHERE s.branch = $1`;
             params = [userBranch];
         }
+        
         query += ` ORDER BY l."submittedDate" DESC`;
 
         const result = await db.query(query, params);
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
+    } catch (err) { 
+        console.error("❌ ALL-LOANS FETCH ERROR:", err.message);
+        res.status(500).json({ error: "Failed to fetch loans" }); 
+    }
 });
 
 app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
@@ -383,9 +394,18 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     try {
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE LOWER(TRIM(email)) = $1", [tokenEmail]);
         const supervisorName = staffRes.rows[0]?.supervisor_name;
+        
         const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", "gender") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`;
-        const values = [`LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, requestedAmount, requestedAmount, 'Pending', tokenEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A', loan.ninImageUrl, loan.idImageUrl, loan.passportImageUrl, loan.utilityBillUrl, loan.workIdUrl, loan.statementUrl, loan.signatureUrl, loan.monthlyIncome, loan.loanType, loan.repaymentCycle, loan.gender];
+        
+        const values = [
+            `LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, requestedAmount, requestedAmount, 'Pending', 
+            tokenEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A', 
+            loan.ninImageUrl, loan.idImageUrl, loan.passportImageUrl, loan.utilityBillUrl, loan.workIdUrl, loan.statementUrl, 
+            loan.signatureUrl, loan.monthlyIncome, loan.loanType, loan.repaymentCycle, loan.gender
+        ];
+
         await db.query(query, values);
+
         if (supervisorName) {
             const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [supervisorName]);
             if (supRes.rows[0]) {
