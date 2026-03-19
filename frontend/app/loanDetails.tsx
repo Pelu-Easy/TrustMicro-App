@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import api from '../services/api';
 import useUserData from '../store/userSignUp';
@@ -10,7 +10,6 @@ const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "
 
 /**
  * UPDATED ROLE CONFIGURATION & WORKFLOW
- * Order: Marketing/Supervisor -> Credit Staff -> Head of Credit -> Control -> CCO -> MD
  */
 const ROLE_AUTHORITY_MAP: Record<string, { nextStatus: string, label: string, authorizedStatus: string }> = {
   'head of marketing': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
@@ -30,9 +29,9 @@ export default function LoanDetails() {
   
   const { 
     id, customerName, amount, loanType, staffName, bvn,
-    phone, bankName, accountNumber, status,
+    phone, bankName, accountNumber, status, nin,
     ninImageUrl, idImageUrl, passportImageUrl, utilityBillUrl,
-    workIdUrl, statementUrl, signatureUrl 
+    workIdUrl, statementUrl, signatureUrl, monthlyIncome, gender, repaymentCycle
   } = useLocalSearchParams();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,18 +39,37 @@ export default function LoanDetails() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isRejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [loanHistory, setLoanHistory] = useState([]);
+  const [riskData, setRiskData] = useState({ score: 0, level: 'Low', activeCount: 0 });
 
   const normalizedRole = (role || '').toLowerCase().trim();
   const userAuthority = ROLE_AUTHORITY_MAP[normalizedRole];
 
-  /**
-   * UPDATED: Strict logic to ensure only the right role can approve at the right time.
-   */
   const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus === status;
   const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(status as string);
 
-  // TOP-UP LOGIC: Eligibility check for Officers
-  const isEligibleForTopUp = (status === 'Disbursed' || status === 'APPROVED_FINANCE') && normalizedRole === 'officer';
+  // Check if user is a credit officer/staff to hide flow chart
+  const isCreditDept = normalizedRole === 'credit officer' || normalizedRole === 'credit staff';
+
+  const isEligibleForTopUp = (status === 'Disbursed' || status === 'APPROVED_FINANCE') && (normalizedRole === 'officer' || normalizedRole === 'credit officer');
+
+  // FETCH LOAN HISTORY AND RISK SCORE
+  useEffect(() => {
+    const fetchHistory = async () => {
+        try {
+            const res = await api.get(`/loans/history/${bvn}`);
+            if (res.data.status === 'success') {
+                setLoanHistory(res.data.data);
+                if (res.data.riskAnalysis) {
+                    setRiskData(res.data.riskAnalysis);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load history", e);
+        }
+    };
+    if (bvn) fetchHistory();
+  }, [bvn]);
 
   const stages = [
     { id: 'Pending', label: 'Marketing/Supervisor' },
@@ -76,21 +94,16 @@ export default function LoanDetails() {
 
   const handleAction = async (decision: 'Approved' | 'Rejected', reason?: string) => {
     if (!userAuthority && decision !== 'Rejected') return;
-    
     setIsSubmitting(true);
     try {
       const targetStatus = decision === 'Rejected' ? 'Rejected' : userAuthority.nextStatus;
-      
       await api.patch(`/manager/update-status/${id}`, { 
           status: targetStatus,
           rejection_reason: reason || null 
       });
 
       Alert.alert("Success", `Loan has been ${decision === 'Rejected' ? 'rejected' : 'forwarded'}.`, [
-        { 
-          text: "OK", 
-          onPress: () => router.replace('/(tabs)/managerDashboard') 
-        }
+        { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
       ]);
       setRejectModalVisible(false);
     } catch (error: any) {
@@ -108,19 +121,16 @@ export default function LoanDetails() {
       `Are you sure you want to initiate a Top-Up application for ${customerName}?`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Yes, Proceed", 
-          onPress: () => router.push({ 
-            pathname: '/(tabs)/nigerians' as any, 
-            params: { bvn: bvn } 
-          })
-        }
+        { text: "Yes, Proceed", onPress: () => router.push({ pathname: '/(tabs)/loanForm' as any, params: { bvn: bvn, id: id } }) }
       ]
     );
   };
 
   const DocumentCard = ({ label, uri, placeholder }: { label: string, uri: any, placeholder: string }) => {
-    const safeUri = uri && typeof uri === 'string' ? (uri.includes('%') ? decodeURIComponent(uri) : uri) : null;
+    const safeUri = uri && typeof uri === 'string' && uri !== 'null' && uri !== '' 
+        ? (uri.includes('%') ? decodeURIComponent(uri) : uri) 
+        : null;
+
     return (
       <View style={styles.docCard}>
         <Text style={styles.docLabel}>{label}</Text>
@@ -146,43 +156,109 @@ export default function LoanDetails() {
         </View>
 
         <View style={styles.content}>
-          <View style={styles.timelineCard}>
-            <Text style={styles.sectionTitle}>Loan Journey</Text>
-            <View style={styles.timelineContainer}>
-              {stages.map((stage, index) => {
-                const state = getStageStatus(stage.id, status as string);
-                return (
-                  <View key={stage.id} style={styles.timelineItem}>
-                    <View style={styles.timelineLeft}>
-                      <View style={[styles.timelineDot, state === 'completed' && { backgroundColor: BRAND.success }, state === 'active' && { backgroundColor: BRAND.accent, borderWidth: 3, borderColor: '#DBEAFE' }]}>
-                        {state === 'completed' && <Ionicons name="checkmark" size={12} color="#fff" />}
-                      </View>
-                      {index !== stages.length - 1 && <View style={[styles.timelineLine, state === 'completed' && { backgroundColor: BRAND.success }]} />}
-                    </View>
-                    <View style={styles.timelineRight}>
-                      <Text style={[styles.stageLabel, state === 'active' && { color: BRAND.accent, fontWeight: 'bold' }]}>{stage.label}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
+          
+          {/* RISK SCORE BADGE */}
+          <View style={[
+              styles.riskBadge, 
+              { backgroundColor: riskData.level === 'High' ? '#FEE2E2' : riskData.level === 'Medium' ? '#FEF3C7' : '#DCFCE7' }
+          ]}>
+              <Ionicons 
+                  name={riskData.level === 'High' ? "warning" : "shield-checkmark"} 
+                  size={20} 
+                  color={riskData.level === 'High' ? BRAND.danger : riskData.level === 'Medium' ? '#B45309' : BRAND.success} 
+              />
+              <Text style={[
+                  styles.riskText, 
+                  { color: riskData.level === 'High' ? BRAND.danger : riskData.level === 'Medium' ? '#B45309' : BRAND.success }
+              ]}>
+                  Risk Level: {riskData.level} ({riskData.score}/100) — {riskData.activeCount} Active Loans
+              </Text>
           </View>
+
+          {!isCreditDept && (
+            <View style={styles.timelineCard}>
+                <Text style={styles.sectionTitle}>Loan Journey</Text>
+                <View style={styles.timelineContainer}>
+                {stages.map((stage, index) => {
+                    const state = getStageStatus(stage.id, status as string);
+                    return (
+                    <View key={stage.id} style={styles.timelineItem}>
+                        <View style={styles.timelineLeft}>
+                        <View style={[styles.timelineDot, state === 'completed' && { backgroundColor: BRAND.success }, state === 'active' && { backgroundColor: BRAND.accent, borderWidth: 3, borderColor: '#DBEAFE' }]}>
+                            {state === 'completed' && <Ionicons name="checkmark" size={12} color="#fff" />}
+                        </View>
+                        {index !== stages.length - 1 && <View style={[styles.timelineLine, state === 'completed' && { backgroundColor: BRAND.success }]} />}
+                        </View>
+                        <View style={styles.timelineRight}>
+                        <Text style={[styles.stageLabel, state === 'active' && { color: BRAND.accent, fontWeight: 'bold' }]}>{stage.label}</Text>
+                        </View>
+                    </View>
+                    );
+                })}
+                </View>
+            </View>
+          )}
 
           <View style={styles.card}>
             <Text style={styles.label}>CUSTOMER NAME</Text>
             <Text style={styles.value}>{customerName}</Text>
             <View style={styles.divider} />
-            <Text style={styles.label}>LOAN AMOUNT</Text>
-            <Text style={styles.amountText}>₦{Number(amount || 0).toLocaleString()}</Text>
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <View>
+                    <Text style={styles.label}>LOAN AMOUNT</Text>
+                    <Text style={styles.amountText}>₦{Number(amount || 0).toLocaleString()}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.label}>LOAN TYPE</Text>
+                    <Text style={styles.value}>{loanType}</Text>
+                </View>
+            </View>
+
+            <View style={styles.divider} />
+            <Text style={styles.label}>BVN / NIN</Text>
+            <Text style={styles.value}>{bvn} / {nin || 'N/A'}</Text>
+            
             <View style={styles.divider} />
             <Text style={styles.label}>CURRENT STATUS</Text>
             <Text style={[styles.value, {color: BRAND.accent, fontWeight: 'bold'}]}>{status?.toString().replace(/_/g, ' ')}</Text>
           </View>
 
-          <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport" />
-          <DocumentCard label="Signature" uri={signatureUrl} placeholder="No Signature" />
+          {/* CUSTOMER LOAN HISTORY SECTION */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Customer Loan History</Text>
+            {loanHistory.length > 0 ? (
+                loanHistory.map((hist: any) => (
+                <View key={hist.id} style={styles.historyItem}>
+                    <View>
+                    <Text style={styles.historyDate}>{new Date(hist.submittedDate).toLocaleDateString()}</Text>
+                    <Text style={styles.historyType}>
+                        {hist.loanType} {hist.parentLoanId ? '(Top-Up)' : '(New)'}
+                    </Text>
+                    <Text style={styles.historyId}>{hist.id}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.historyAmount}>₦{Number(hist.loanAmount).toLocaleString()}</Text>
+                    <Text style={[styles.historyStatus, { color: hist.status === 'Rejected' ? BRAND.danger : BRAND.success }]}>
+                        {hist.status.replace(/_/g, ' ')}
+                    </Text>
+                    </View>
+                </View>
+                ))
+            ) : (
+                <Text style={{ color: '#94A3B8', fontStyle: 'italic', marginTop: 10 }}>No previous loan history found.</Text>
+            )}
+          </View>
 
-          {/* Action Buttons Section */}
+          <Text style={styles.sectionTitle}>Attached Documents</Text>
+          <DocumentCard label="Passport Photograph" uri={passportImageUrl} placeholder="No Passport Uploaded" />
+          <DocumentCard label="Digital Signature" uri={signatureUrl} placeholder="No Signature Uploaded" />
+          <DocumentCard label="NIN Slip / Card" uri={ninImageUrl} placeholder="No NIN Document" />
+          <DocumentCard label="Government Issued ID" uri={idImageUrl} placeholder="No ID Document" />
+          <DocumentCard label="Work ID Card" uri={workIdUrl} placeholder="No Work ID Document" />
+          <DocumentCard label="Utility Bill" uri={utilityBillUrl} placeholder="No Utility Bill Document" />
+          <DocumentCard label="Bank Statement" uri={statementUrl} placeholder="No Bank Statement" />
+
           {canPerformAction ? (
             <View style={styles.actionRow}>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BRAND.danger }]} onPress={() => setRejectModalVisible(true)}>
@@ -207,6 +283,7 @@ export default function LoanDetails() {
         </View>
       </ScrollView>
 
+      {/* Rejection Modal */}
       <Modal visible={isRejectModalVisible} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
             <View style={styles.rejectModalContent}>
@@ -220,6 +297,7 @@ export default function LoanDetails() {
         </View>
       </Modal>
 
+      {/* Image Zoom Modal */}
       <Modal visible={isModalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.zoomContainer}>
           <TouchableOpacity style={styles.closeZoom} onPress={() => setModalVisible(false)}>
@@ -243,11 +321,11 @@ const styles = StyleSheet.create({
   value: { fontSize: 16, color: '#1E293B', marginTop: 4 },
   amountText: { fontSize: 22, color: BRAND.primary, fontWeight: 'bold' },
   divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  docCard: { backgroundColor: '#fff', padding: 10, borderRadius: 12, marginBottom: 20 },
-  docLabel: { fontSize: 14, fontWeight: '600', marginBottom: 10 },
-  docImage: { width: '100%', height: 200, borderRadius: 8 },
-  noDoc: { width: '100%', height: 100, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#1E293B' },
+  docCard: { backgroundColor: '#fff', padding: 12, borderRadius: 12, marginBottom: 20, elevation: 1 },
+  docLabel: { fontSize: 14, fontWeight: '600', marginBottom: 10, color: '#475569' },
+  docImage: { width: '100%', height: 220, borderRadius: 8 },
+  noDoc: { width: '100%', height: 100, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderRadius: 8, borderStyle: 'dashed', borderWidth: 1, borderColor: '#CBD5E1' },
   actionRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
   actionBtn: { flex: 1, padding: 18, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   topUpBtn: { backgroundColor: BRAND.accent, padding: 18, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 20, flexDirection: 'row' },
@@ -271,5 +349,33 @@ const styles = StyleSheet.create({
   modalConfirm: { padding: 10 },
   zoomContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   closeZoom: { position: 'absolute', top: 50, right: 20, zIndex: 10 },
-  fullImage: { width: width, height: height * 0.8 }
+  fullImage: { width: width, height: height * 0.8 },
+  // History specific styles
+  historyItem: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    paddingVertical: 12, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F1F5F9' 
+  },
+  historyDate: { fontSize: 11, color: '#64748B' },
+  historyType: { fontSize: 13, fontWeight: '600', color: '#1E293B' },
+  historyId: { fontSize: 10, color: '#94A3B8' },
+  historyAmount: { fontSize: 14, fontWeight: 'bold', color: BRAND.primary },
+  historyStatus: { fontSize: 11, fontWeight: 'bold', marginTop: 2 },
+  // Risk specific styles
+  riskBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)'
+  },
+  riskText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 8
+  },
 });
