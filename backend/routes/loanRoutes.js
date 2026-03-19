@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { calculateRiskScore } = require('../util/riskEvaluator');
+const { calculateRiskScore } = require('../utils/riskEvaluator');
 
 // --- SUBMIT NEW LOAN APPLICATION (Supports Top-Ups) ---
 router.post('/', async (req, res) => {
