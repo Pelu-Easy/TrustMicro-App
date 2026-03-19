@@ -5,12 +5,26 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Expo } = require('expo-server-sdk');
+const os = require('os'); // Added for IP detection
 
 // --- 0. INITIALIZE APP FIRST ---
 const app = express();
 const expo = new Expo();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
+
+// Helper to get local IP address dynamically
+const getLocalIp = () => {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+};
 
 // --- 1. MIDDLEWARE SETUP ---
 app.use(cors({ 
@@ -133,7 +147,6 @@ const handleLogin = async (req, res) => {
             return res.status(403).json({ error: "Account Deactivated." });
         }
 
-        // Updated to use 'password' if your column is named password, or 'password_hash' if that is the name.
         const isMatch = await bcrypt.compare(password, user.password || user.password_hash);
         if (!isMatch) {
             const newCount = (user.failed_attempts || 0) + 1;
@@ -166,9 +179,13 @@ const handleSignup = async (req, res) => {
     } = req.body;
     
     try {
+        // Validation check before DB hit
+        if (!email || !password || !full_name) {
+            return res.status(400).json({ error: "Missing required fields: email, password, or full_name" });
+        }
+
         const hash = await bcrypt.hash(password, 10);
         
-        // --- UPDATED INSERT QUERY: Including is_supervisor ($12) ---
         const query = `
             INSERT INTO staff_users (
                 full_name, email, phone_no, password, role, branch, 
@@ -180,23 +197,26 @@ const handleSignup = async (req, res) => {
         const values = [
             full_name, 
             email.trim().toLowerCase(), 
-            phone_no, 
+            phone_no || null, 
             hash, 
             role || 'Officer', 
-            branch, 
-            supervisor_name, 
+            branch || 'Main', 
+            supervisor_name || null, 
             true, 
             0, 
             unit || 'Operations', 
             is_loan_officer === true || is_loan_officer === 1,
-            is_supervisor === true || is_supervisor === 1 // The new column
+            is_supervisor === true || is_supervisor === 1
         ];
 
         await db.query(query, values);
-        res.status(201).json({ message: "Staff created" });
+        console.log(`✅ User Created: ${email}`);
+        res.status(201).json({ message: "Staff created successfully" });
+
     } catch (e) { 
-        console.error("❌ SIGNUP ERROR:", e.message);
-        res.status(500).json({ error: "Signup failed: " + e.message }); 
+        console.error("❌ SIGNUP DATABASE ERROR:");
+        console.error(e); 
+        res.status(500).json({ error: "Signup failed", details: e.message }); 
     }
 };
 
@@ -388,7 +408,6 @@ app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (re
     } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
 });
 
-// REMOVED authenticateToken so Signup screen can access this list
 app.get('/api/v1/manager/supervisors', async (req, res) => {
     try {
         const query = `
@@ -397,9 +416,9 @@ app.get('/api/v1/manager/supervisors', async (req, res) => {
             WHERE is_active = true 
             AND (
                is_supervisor = true
-               OR role ILIKE 'Manager' 
-               OR role ILIKE 'Admin' 
-               OR role ILIKE 'Supervisor'
+               OR role ILIKE '%Manager%' 
+               OR role ILIKE '%Admin%' 
+               OR role ILIKE '%Supervisor%'
                OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations')
             )
             ORDER BY full_name ASC
@@ -407,8 +426,9 @@ app.get('/api/v1/manager/supervisors', async (req, res) => {
         const result = await db.query(query);
         res.json(result.rows);
     } catch (err) { 
-        console.error("Supervisor load error:", err.message);
-        res.status(500).json({ error: "Failed to load supervisors" }); 
+        console.error("❌ SUPERVISOR LOAD DATABASE ERROR:");
+        console.error(err); 
+        res.status(500).json({ error: "Failed to load supervisors", details: err.message }); 
     }
 });
 
@@ -460,11 +480,13 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
 app.get('/', (req, res) => res.send("🚀 sflApp API Live"));
 
 // --- FINAL SERVER STARTUP ---
+const CURRENT_IP = getLocalIp();
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log('-------------------------------------------');
     console.log(`🚀 TrustMicro Backend is LIVE`);
     console.log(`📡 Local:   http://localhost:${PORT}`);
-    console.log(`📱 Network: http://192.168.100.73:${PORT}`);
+    console.log(`📱 Network: http://${CURRENT_IP}:${PORT}`);
     console.log('-------------------------------------------');
 }).on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
