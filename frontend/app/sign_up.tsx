@@ -131,8 +131,11 @@ export default function SignUpScreen() {
     if (!formData.department) currentErrors.department = "Please select a department";
     if (!formData.unit) currentErrors.unit = "Please select a Unit/Role";
     
-    if (needsSupervisor && !formData.isSupervisor && !formData.supervisor) {
-        currentErrors.supervisor = "Please select a supervisor";
+    // Inside validateForm()
+    if (needsSupervisor && !formData.isSupervisor) {
+        if (!formData.supervisor) {
+            currentErrors.supervisor = "Please select a supervisor";
+        }
     }
     
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
@@ -142,7 +145,7 @@ export default function SignUpScreen() {
     return Object.keys(currentErrors).length === 0;
   };
 
-  const handleSignUp = async () => {
+ const handleSignUp = async () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -151,16 +154,21 @@ export default function SignUpScreen() {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone_no: formData.phone.trim(),
-        branch: formData.branch.trim(),
+        branch: formData.branch.trim() || 'Main Headquarters',
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
+        // Ensure supervisor_name is handled correctly
         supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), 
         role: formData.isSupervisor ? 'Manager' : formData.unit,
-        is_loan_officer: formData.isLoanOfficer ? 1 : 0,
-        is_supervisor: (formData.isSupervisor || formData.unit === "Head of Control" || formData.unit === "MD" || formData.unit === "CCO") ? 1 : 0,
-        is_active: 1 
+        // Send actual booleans to avoid PostgreSQL type mismatches
+        is_loan_officer: !!formData.isLoanOfficer,
+        is_supervisor: !!(formData.isSupervisor || formData.unit === "Head of Control" || formData.unit === "MD" || formData.unit === "CCO"),
+        is_active: true 
       };
+
+      // LOG THIS to check your console if it fails
+      console.log("📤 Sending Signup Payload:", payload);
 
       const response = await api.post('/auth/signup', payload);
 
@@ -172,7 +180,8 @@ export default function SignUpScreen() {
       );
     } catch (error: any) {
       setIsLoading(false);
-      const serverError = error.response?.data?.error || "Registration failed. Please try again.";
+      console.error("❌ Frontend Signup Error:", error.response?.data || error.message);
+      const serverError = error.response?.data?.details || error.response?.data?.error || "Registration failed.";
       Alert.alert("Registration Issue", serverError);
     }
   };

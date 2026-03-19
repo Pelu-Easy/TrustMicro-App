@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import useUserData from '../store/userSignUp';
 
 // API Configuration - Set to local IP for development
+// IMPORTANT: Ensure this matches the "Network" IP shown in your terminal when starting the backend
 export const API_URL = 'http://192.168.43.60:5000/api/v1';
 
 const api = axios.create({
@@ -39,6 +40,7 @@ api.interceptors.response.use(
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
       console.log('Status:', status);
+      console.log('Data:', error.response?.data);
       console.log('Code:', error.code); 
       console.groupEnd();
     }
@@ -79,7 +81,7 @@ api.interceptors.response.use(
       errorMessage = "The server is taking too long to respond. This may happen during large data audits. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
       // FIX: Dynamically show the current API_URL in the error message
-      errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')}`;
+      errorMessage = `Cannot connect to server. Ensure your backend is running and your phone is on the same WiFi as ${API_URL.replace('/api/v1', '')}`;
     } else if (error.response) {
       // Backend-specific error messages
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";

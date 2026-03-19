@@ -84,12 +84,11 @@ export default function LoginScreen() {
       // --- AUTHENTICATION & ROLE LOGIC ---
       const userRole = user.role?.toLowerCase() || '';
       
-      // Check if user is a supervisor via boolean, numeric (MySQL), or string role
-      // ADDED: 'head of control' to the management check
+      // Improved check to handle Boolean (Postgres), Numeric (MySQL fallback), and Role Strings
       const isUserSupervisor = 
           user.is_supervisor === true || 
           user.is_supervisor === 1 ||
-          ['manager', 'supervisor', 'admin', 'super admin', 'cco', 'md', 'head of credit', 'credit officer', 'head of control'].includes(userRole);
+          ['manager', 'supervisor', 'admin', 'super admin', 'cco', 'md', 'head of credit', 'head of control'].includes(userRole);
 
       // Save token for the API interceptor/SecureStore
       setToken(token);
@@ -99,7 +98,7 @@ export default function LoginScreen() {
       updateUserData({
         isLoggedIn: true,
         role: user.role,
-        funame: user.full_name, // Map MySQL full_name to funame
+        funame: user.full_name, 
         email: user.email,
         phone: user.phone_no,
         branch: user.branch,
@@ -107,7 +106,7 @@ export default function LoginScreen() {
         isSupervisor: isUserSupervisor,
         id: user.id, 
         lastLogin: new Date().toISOString(), 
-        isLoanOfficer: user.is_loan_officer === true || user.is_loan_officer === 1 || userRole === 'officer'
+        isLoanOfficer: user.is_loan_officer === true || user.is_loan_officer === 1 || userRole === 'credit officer'
       });
 
       // Sync the loanStore specifically for loan application context
@@ -134,7 +133,7 @@ export default function LoginScreen() {
       const errorCode = error.response?.data?.code;
 
       // Handle specific backend error for missing account
-      if (status === 404 && errorCode === "USER_NOT_FOUND") {
+      if (status === 404 || errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
         return; 
       }
@@ -154,14 +153,14 @@ export default function LoginScreen() {
         setIsLockedOut(true);
         setErrors({ general: "Account Deactivated: Too many failed attempts." });
 
-        // Sync lockout with backend to deactivate account in MySQL
+        // Sync lockout with backend to deactivate account
         api.post('/auth/deactivate', { 
           email: trimmedEmail.toLowerCase()
         }).catch(err => console.error("Deactivation sync failed", err));
         
         Alert.alert(
           "Security Lockout", 
-          "Your account is now deactivated. Please contact support to reactivate.",
+          "Your account is now deactivated due to multiple failed attempts. Please contact system admin.",
           [{ text: "Understood" }]
         );
       } else {
