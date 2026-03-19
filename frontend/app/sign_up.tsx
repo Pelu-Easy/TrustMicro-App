@@ -23,6 +23,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 interface Supervisor {
   id: string;
   full_name: string;
+  email: string;
+  role: string;
+  branch: string; // Added to fix the 'Property does not exist' error
 }
 
 interface ValidationErrors {
@@ -60,7 +63,7 @@ export default function SignUpScreen() {
 
   const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services", "Sales"];
   
-  // ROLES LIST - Added "Head of Control"
+  // ROLES LIST
   const units = [
     "Credit Officer", 
     "Supervisor", 
@@ -79,8 +82,6 @@ export default function SignUpScreen() {
 
   const isMarketingOrSales = formData.department === "Marketing" || formData.department === "Sales";
   
-  // Dynamic validation: Supervisor is required for Credit Officers or General Staff
-  // MD, CCO, and Head of Control do not require supervisors
   const needsSupervisor = formData.unit === "Credit Officer" || 
                           (!formData.isSupervisor && 
                            formData.unit !== "MD" && 
@@ -90,7 +91,6 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        // Fetching existing supervisors so new staff can select their manager
         const response = await api.get('/manager/supervisors');
         if (response.data) {
           setSupervisors(response.data);
@@ -109,12 +109,10 @@ export default function SignUpScreen() {
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
       
-      // Auto-set isLoanOfficer if role is Credit Officer
       if (field === 'unit' && value === "Credit Officer") {
         newData.isLoanOfficer = true;
       }
       
-      // Reset isLoanOfficer if role changes away from Credit Officer or Mkt/Sales
       if (field === 'unit' && value !== "Credit Officer" && !isMarketingOrSales) {
         newData.isLoanOfficer = false;
       }
@@ -133,7 +131,6 @@ export default function SignUpScreen() {
     if (!formData.department) currentErrors.department = "Please select a department";
     if (!formData.unit) currentErrors.unit = "Please select a Unit/Role";
     
-    // Only validate supervisor if the role requires one
     if (needsSupervisor && !formData.isSupervisor && !formData.supervisor) {
         currentErrors.supervisor = "Please select a supervisor";
     }
@@ -150,7 +147,6 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      // Map fields to match your MySQL database schema exactly
       const payload = {
         full_name: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -159,11 +155,10 @@ export default function SignUpScreen() {
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
-        // If they are a supervisor, name is N/A, else use the selected supervisor
         supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), 
         role: formData.isSupervisor ? 'Manager' : formData.unit,
-        is_loan_officer: formData.isLoanOfficer ? 1 : 0, // Sending as bit/int for MySQL
-        is_supervisor: (formData.isSupervisor || formData.unit === "Head of Control") ? 1 : 0,
+        is_loan_officer: formData.isLoanOfficer ? 1 : 0,
+        is_supervisor: (formData.isSupervisor || formData.unit === "Head of Control" || formData.unit === "MD" || formData.unit === "CCO") ? 1 : 0,
         is_active: 1 
       };
 
@@ -350,9 +345,12 @@ export default function SignUpScreen() {
                 {supervisors.length === 0 ? (
                   <Text style={{ textAlign: 'center', marginVertical: 20, color: '#64748B' }}>No supervisors available.</Text>
                 ) : (
-                  <FlatList data={supervisors} keyExtractor={(item) => item.id} renderItem={({ item }) => (
+                  <FlatList data={supervisors} keyExtractor={(item) => item.email || item.id} renderItem={({ item }) => (
                       <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}>
-                      <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
+                        <View>
+                          <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
+                          <Text style={{fontSize: 12, color: '#94A3B8'}}>{item.role} - {item.branch}</Text>
+                        </View>
                       </TouchableOpacity>
                   )} />
                 )}
