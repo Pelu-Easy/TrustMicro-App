@@ -43,12 +43,16 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- 2. DATABASE INITIALIZATION (UPDATED FOR SUPABASE) ---
+// --- 2. DATABASE INITIALIZATION (OPTIMIZED FOR SUPABASE POOLER) ---
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { 
         rejectUnauthorized: false 
-    }
+    },
+    // Pooler-specific settings to prevent hung connections
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
 });
 
 // Test Database Connection on Startup
