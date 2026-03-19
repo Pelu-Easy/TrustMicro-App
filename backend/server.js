@@ -43,22 +43,24 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- 2. DATABASE INITIALIZATION (OPTIMIZED FOR SUPABASE POOLER) ---
+// --- 2. DATABASE INITIALIZATION (STRICT FOR SUPABASE POOLER) ---
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { 
         rejectUnauthorized: false 
     },
-    // Pooler-specific settings to prevent hung connections
-    max: 20,
+    // Essential settings for Supabase Port 6543
+    max: 10,                 // Lowering max connections helps avoid pooler exhaustion
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000, // Increased to 10 seconds to allow for cloud latency
+    keepAlive: true         // Helps keep the socket open
 });
 
 // Test Database Connection on Startup
 db.connect((err, client, release) => {
     if (err) {
-        return console.error('❌ DATABASE CONNECTION ERROR:', err.stack);
+        console.error('❌ DATABASE CONNECTION ERROR:', err.message);
+        return;
     }
     console.log('✅ Connected to Supabase Successfully');
     release();
