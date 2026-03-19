@@ -1,17 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import axios from 'axios';
+// --- CHANGE THIS LINE ---
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import api from '../services/api'; // Import your custom instance, not raw axios
 
 const CustomerList = () => {
   const navigation = useNavigation<any>();
@@ -27,7 +28,8 @@ const CustomerList = () => {
   const fetchCustomers = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await axios.get('/api/v1/manager/customers', {
+      // --- USE THE API INSTANCE HERE ---
+      const response = await api.get('/manager/customers', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCustomers(response.data);
