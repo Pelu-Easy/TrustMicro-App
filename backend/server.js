@@ -43,10 +43,21 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- 2. DATABASE INITIALIZATION ---
+// --- 2. DATABASE INITIALIZATION (UPDATED FOR SUPABASE) ---
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { 
+        rejectUnauthorized: false 
+    }
+});
+
+// Test Database Connection on Startup
+db.connect((err, client, release) => {
+    if (err) {
+        return console.error('❌ DATABASE CONNECTION ERROR:', err.stack);
+    }
+    console.log('✅ Connected to Supabase Successfully');
+    release();
 });
 
 // --- CONFIGURATION & LIMITS ---
@@ -179,7 +190,6 @@ const handleSignup = async (req, res) => {
     } = req.body;
     
     try {
-        // Validation check before DB hit
         if (!email || !password || !full_name) {
             return res.status(400).json({ error: "Missing required fields: email, password, or full_name" });
         }
@@ -426,9 +436,8 @@ app.get('/api/v1/manager/supervisors', async (req, res) => {
         const result = await db.query(query);
         res.json(result.rows);
     } catch (err) { 
-        console.error("❌ SUPERVISOR LOAD DATABASE ERROR:");
-        console.error(err); 
-        res.status(500).json({ error: "Failed to load supervisors", details: err.message }); 
+        console.error("❌ SUPERVISOR LOAD DATABASE ERROR:", err.message); 
+        res.status(500).json({ error: "Failed to load supervisors" }); 
     }
 });
 
