@@ -317,6 +317,7 @@ app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req
         const result = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
         res.json(result.rows);
     } catch (err) {
+        console.error("Error fetching customers:", err.message);
         res.status(500).json({ error: "Failed to fetch customer list" });
     }
 });
@@ -427,7 +428,6 @@ app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async
         const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
-        // We filter by status = 'Approved'
         let query = `
             SELECT l.*, s.full_name as "staffName", s.branch as "branchName" 
             FROM loans l 
@@ -436,7 +436,6 @@ app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async
         `;
         let params = [];
 
-        // If not HQ, only show approved loans from their own branch
         if (!isHQAccess) {
             query += ` AND s.branch = $1`;
             params = [userBranch];
