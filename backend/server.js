@@ -417,6 +417,41 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     } catch (err) { res.status(500).json({ error: "Failed to fetch loans" }); }
 });
 
+// Get specifically approved loans for the history tab
+app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
+    const userRole = req.user.role?.toLowerCase();
+    const userUnit = req.user.unit?.toLowerCase();
+    const userBranch = req.user.branch;
+
+    try {
+        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
+        const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
+
+        // We filter by status = 'Approved'
+        let query = `
+            SELECT l.*, s.full_name as "staffName", s.branch as "branchName" 
+            FROM loans l 
+            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+            WHERE l.status = 'Approved'
+        `;
+        let params = [];
+
+        // If not HQ, only show approved loans from their own branch
+        if (!isHQAccess) {
+            query += ` AND s.branch = $1`;
+            params = [userBranch];
+        }
+
+        query += ` ORDER BY l."submittedDate" DESC`;
+
+        const result = await db.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching approved loans:", err.message);
+        res.status(500).json({ error: "Failed to fetch approved loans" });
+    }
+});
+
 app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, unit, branch, is_active FROM staff_users ORDER BY full_name ASC');
