@@ -53,7 +53,8 @@ const CustomerList = () => {
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.card}
-      onPress={() => navigation.navigate('CustomerDetail', { customer: item })}
+      // FIXED: Added JSON.stringify to prevent "Unexpected character: o" parsing error
+      onPress={() => navigation.navigate('CustomerDetail', { customer: JSON.stringify(item) })}
     >
       <View style={styles.info}>
         <Text style={styles.name}>{item.full_name}</Text>

@@ -4,12 +4,12 @@ import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -17,10 +17,34 @@ const CustomerDetail = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   
-  // Parse the customer object passed via navigation
-  const customer = typeof params.customer === 'string' 
-    ? JSON.parse(params.customer) 
-    : params;
+  // FIXED: Improved parsing logic to prevent "Unexpected character: o"
+  // We extract the customer string first, then parse it safely.
+  const getCustomerData = () => {
+    try {
+      // 1. If it's a string, it's likely our stringified JSON
+      if (typeof params.customer === 'string') {
+        // Only parse if it looks like a JSON string
+        if (params.customer.startsWith('{')) {
+          return JSON.parse(params.customer);
+        }
+        // If it's a string but not JSON, return it as part of an object
+        return { full_name: params.customer };
+      }
+      
+      // 2. Check if the properties exist directly on params (already an object)
+      if (params.full_name || params.bvn) {
+        return params;
+      }
+
+      // 3. Fallback to params as a last resort
+      return params;
+    } catch (e) {
+      console.error("Parsing error:", e);
+      return params; 
+    }
+  };
+
+  const customer = getCustomerData();
 
   const [loans, setLoans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +58,9 @@ const CustomerDetail = () => {
   const fetchLoanHistory = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      // Using relative path to utilize your axios base configuration
+      // Ensure the bvn exists before calling the API
+      if (!customer.bvn) return;
+
       const response = await axios.get(`/api/v1/manager/customer-loans/${customer.bvn}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -83,12 +109,12 @@ const CustomerDetail = () => {
           <>
             <View style={styles.profileHeader}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{customer.full_name?.charAt(0)}</Text>
+                <Text style={styles.avatarText}>{customer.full_name?.charAt(0) || '?'}</Text>
               </View>
-              <Text style={styles.customerName}>{customer.full_name}</Text>
+              <Text style={styles.customerName}>{customer.full_name || 'Unknown Customer'}</Text>
               <View style={styles.badgeRow}>
                 <View style={[styles.kycBadge, { backgroundColor: customer.kyc_status === 'VERIFIED' ? '#10B981' : '#F59E0B' }]}>
-                  <Text style={styles.kycText}>{customer.kyc_status}</Text>
+                  <Text style={styles.kycText}>{customer.kyc_status || 'UNVERIFIED'}</Text>
                 </View>
               </View>
             </View>
@@ -97,12 +123,14 @@ const CustomerDetail = () => {
               <View style={styles.infoRow}>
                 <Ionicons name="finger-print" size={20} color="#64748B" />
                 <Text style={styles.infoLabel}>BVN:</Text>
-                <Text style={styles.infoValue}>{customer.bvn}</Text>
+                <Text style={styles.infoValue}>{customer.bvn || 'N/A'}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Ionicons name="calendar-outline" size={20} color="#64748B" />
                 <Text style={styles.infoLabel}>Joined:</Text>
-                <Text style={styles.infoValue}>{new Date(customer.created_at).toLocaleDateString()}</Text>
+                <Text style={styles.infoValue}>
+                  {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : 'N/A'}
+                </Text>
               </View>
             </View>
 
