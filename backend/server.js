@@ -217,7 +217,19 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
     try {
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
-        if (result.rows.length > 0) return res.json({ status: "success", data: { fullName: result.rows[0].full_name, bvn: result.rows[0].bvn, verificationStatus: "VERIFIED" } });
+        if (result.rows.length > 0) {
+            return res.json({ 
+                status: "success", 
+                data: { 
+                    fullName: result.rows[0].full_name, 
+                    bvn: result.rows[0].bvn, 
+                    phoneNumber: result.rows[0].phone,
+                    dateOfBirth: result.rows[0].dob,
+                    verificationStatus: "VERIFIED" 
+                } 
+            });
+        }
+        // Fallback if not found in DB but you want to simulate a verification
         res.json({ status: "success", data: { fullName: "Verified Customer", bvn: bvn, verificationStatus: "VERIFIED" } });
     } catch (e) { res.status(500).json({ error: "Service Unavailable" }); }
 });
