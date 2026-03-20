@@ -6,6 +6,8 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Expo } = require('expo-server-sdk');
 const os = require('os');
+const fs = require('fs'); // Added for JSON registry
+const path = require('path'); // Added for path resolution
 
 // --- 0. INITIALIZE APP FIRST ---
 const app = express();
@@ -216,6 +218,7 @@ app.post('/api/v1/verify-identity', async (req, res) => {
 app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
     try {
+        // STEP 1: Check Database First
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
         if (result.rows.length > 0) {
             const customer = result.rows[0];
@@ -230,7 +233,18 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                 } 
             });
         }
-        // Fallback for verification testing
+
+        // STEP 2: Check JSON Mock Registry
+        const mockDataPath = path.join(__dirname, 'mock_identity.json');
+        if (fs.existsSync(mockDataPath)) {
+            const mockData = JSON.parse(fs.readFileSync(mockDataPath, 'utf8'));
+            const found = mockData.find(item => item.bvn === bvn);
+            if (found) {
+                return res.json({ status: "success", data: found });
+            }
+        }
+
+        // Step 3: Global Fallback for testing
         res.json({ 
             status: "success", 
             data: { 
@@ -412,6 +426,14 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const limit = LOAN_LIMITS[loan.loanType] || 250000;
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded` });
     try {
+        // Automatically save/onboard customer to database if they don't exist yet
+        await db.query(`
+            INSERT INTO customers (bvn, full_name, phone, dob, kyc_status)
+            VALUES ($1, $2, $3, $4, 'VERIFIED')
+            ON CONFLICT (bvn) DO NOTHING`, 
+            [loan.bvn, loan.customerName, loan.phone, loan.dob]
+        );
+
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE LOWER(TRIM(email)) = $1", [tokenEmail]);
         const supervisorName = staffRes.rows[0]?.supervisor_name;
         
