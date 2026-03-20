@@ -58,6 +58,16 @@ export default function TabLayout() {
         }}
       />
 
+      {/* NEW ANALYTICS TAB FOR MANAGEMENT */}
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: 'Insights',
+          tabBarIcon: ({ color }) => <Ionicons name="bar-chart" size={24} color={color} />,
+          href: !isManagement ? null : undefined, 
+        }}
+      />
+
       <Tabs.Screen
         name="profile"
         options={{
