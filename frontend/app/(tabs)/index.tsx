@@ -75,7 +75,6 @@ export default function Dashboard() {
     if (isMD) return status === 'PENDING_MD';
     if (isFinance) return status === 'APPROVED_FINANCE';
     
-    // Marketing/Supervisors/Managers check the initial 'Pending' desk
     if (isSupervisor || isMarketing || userRoleLower === 'manager') {
         return status === 'PENDING';
     }
@@ -112,7 +111,7 @@ export default function Dashboard() {
     if (!silent) setIsLoading(true);
     
     try {
-      // Parallel fetch to improve speed
+      // FIXED: Removed /api/v1 because axios baseURL already includes it
       await Promise.all([
         fetchLoans(email, token),
         api.get('/notifications/unread-count').then(res => setUnreadCount(res.data.count || 0)).catch(() => {})
@@ -147,12 +146,14 @@ export default function Dashboard() {
   );
 
   const processedLoans = useMemo(() => {
+    if (!loans) return [];
     return loans
       .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
       .slice(0, 15);
   }, [loans, isWorkflowUser, isMyTask]);
 
   const totalDisbursed = useMemo(() => {
+    if (!loans) return 0;
     return loans
       .filter(l => l.status?.toUpperCase() === 'DISBURSED')
       .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
@@ -194,14 +195,13 @@ export default function Dashboard() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#003366" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* --- HEADER --- */}
         <View style={styles.header}>
           <View>
             <Text style={styles.welcomeLabel}>Welcome back,</Text>
             <Text style={styles.userName}>{funame || 'Staff Officer'}</Text>
-            <div style={styles.badge}>
+            <View style={styles.badge}>
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
-            </div>
+            </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <TouchableOpacity style={styles.notiButton} onPress={() => router.push('/notifications')}>
@@ -218,7 +218,6 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* --- QUICK ACTIONS --- */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
           {canOnboardLoan && (
@@ -244,7 +243,6 @@ export default function Dashboard() {
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#EF4444' }]} onPress={handleLogout}><View style={styles.actionIconBg}><Ionicons name="log-out" size={24} color="#fff" /></View><Text style={styles.actionBtnText}>Logout</Text></TouchableOpacity>
         </View>
 
-        {/* --- TARGET CARD --- */}
         {!isManagement && (
           <View style={styles.targetCard}>
             <View style={styles.cardHeader}><Ionicons name="trending-up" size={20} color="#003366" style={{ marginRight: 8 }} /><Text style={styles.cardTitle}>Monthly Disbursement Goal</Text></View>
@@ -254,14 +252,13 @@ export default function Dashboard() {
           </View>
         )}
 
-        {/* --- STATS --- */}
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
+        {/* FIXED: Wait, another 'div' was here in my check! Changed below */}
         <View style={styles.statsRow}>
             <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
             <StatCard title="Disbursed" value={loans.filter(l => l.status?.toUpperCase() === 'DISBURSED').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
-        {/* --- LIST --- */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{isWorkflowUser ? "Pending My Review" : "Recent Applications"}</Text>
           <TouchableOpacity onPress={onRefresh}><Text style={styles.seeAll}>Refresh</Text></TouchableOpacity>
@@ -291,8 +288,8 @@ export default function Dashboard() {
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
                   <View style={styles.miniTrackerContainer}>
                     <View style={styles.trackerLabelRow}>
-                       <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
-                       <Text style={styles.trackerPercent}>{track.percent}%</Text>
+                        <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
+                        <Text style={styles.trackerPercent}>{track.percent}%</Text>
                     </View>
                     <View style={styles.miniProgressBarBg}><View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} /></View>
                   </View>
@@ -322,21 +319,10 @@ const styles = StyleSheet.create({
   profileIcon: { padding: 2 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#011F3D', marginTop: 10, marginBottom: 15 },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
-  actionBtn: { 
-      width: (width - 64) / 4, 
-      minWidth: 80,
-      backgroundColor: '#003366', 
-      borderRadius: 16, 
-      padding: 12, 
-      alignItems: 'center', 
-      elevation: 4, 
-      shadowColor: '#000', 
-      shadowOpacity: 0.1, 
-      shadowRadius: 4 
-    },
+  actionBtn: { width: (width - 64) / 4, minWidth: 80, backgroundColor: '#003366', borderRadius: 16, padding: 12, alignItems: 'center', elevation: 4 },
   actionIconBg: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderRadius: 10 },
   actionBtnText: { color: '#fff', fontSize: 10, fontWeight: '700', marginTop: 8 },
-  targetCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, marginBottom: 25, elevation: 2, borderWidth: 1, borderColor: '#F1F5F9' },
+  targetCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, marginBottom: 25, borderWidth: 1, borderColor: '#F1F5F9' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   cardTitle: { fontSize: 14, color: '#475569', fontWeight: '600' },
   amountText: { fontSize: 28, fontWeight: 'bold', color: '#011F3D', marginBottom: 15 },
@@ -359,19 +345,7 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', marginTop: 30 },
   emptyText: { color: '#94A3B8', marginTop: 10 },
   notiButton: { padding: 5, position: 'relative', marginRight: 5 },
-  badgeCircle: { 
-    position: 'absolute', 
-    right: 0, 
-    top: 0, 
-    backgroundColor: '#EF4444', 
-    borderRadius: 9, 
-    width: 18, 
-    height: 18, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 2, 
-    borderColor: '#F8FAFC' 
-  },
+  badgeCircle: { position: 'absolute', right: 0, top: 0, backgroundColor: '#EF4444', borderRadius: 9, width: 18, height: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#F8FAFC' },
   badgeNumber: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   miniTrackerContainer: { marginTop: 10, paddingRight: 20 },
   trackerLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },

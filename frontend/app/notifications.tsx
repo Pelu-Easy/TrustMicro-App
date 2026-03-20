@@ -21,8 +21,15 @@ export default function NotificationsScreen() {
 
     const loadNotifications = async () => {
         try {
+            // Path relative to baseURL (e.g., /api/v1/notifications)
             const res = await api.get('/notifications');
             setNotifications(res.data);
+            
+            // If there are unread notifications, mark them as read
+            const hasUnread = res.data.some((n: any) => !n.is_read);
+            if (hasUnread) {
+                markAsRead();
+            }
         } catch (e) { 
             console.error("Failed to load notifications:", e); 
         } finally {
@@ -34,6 +41,7 @@ export default function NotificationsScreen() {
     const markAsRead = async () => {
         try {
             // Tells server all notifications for this user are now seen
+            // Path relative to baseURL (e.g., /api/v1/notifications/mark-read)
             await api.patch('/notifications/mark-read');
         } catch (e) { 
             console.error("Failed to mark notifications as read:", e); 
@@ -42,7 +50,6 @@ export default function NotificationsScreen() {
 
     useEffect(() => {
         loadNotifications();
-        markAsRead();
     }, []);
 
     const onRefresh = () => {

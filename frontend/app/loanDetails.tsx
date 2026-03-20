@@ -287,11 +287,22 @@ export default function LoanDetails() {
         <View style={styles.modalOverlay}>
             <View style={styles.rejectModalContent}>
                 <Text style={styles.rejectTitle}>Reject Application</Text>
-                <TextInput style={styles.reasonInput} placeholder="Reason for rejection..." multiline value={rejectionReason} onChangeText={setRejectionReason} />
-                <div style={styles.modalActionRow}>
-                    <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={styles.modalCancel}><Text>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleAction('Rejected', rejectionReason)} style={styles.modalConfirm}><Text style={{color: BRAND.danger, fontWeight: 'bold'}}>Confirm Reject</Text></TouchableOpacity>
-                </div>
+                <TextInput 
+                  style={styles.reasonInput} 
+                  placeholder="Reason for rejection..." 
+                  multiline 
+                  value={rejectionReason} 
+                  onChangeText={setRejectionReason} 
+                />
+                {/* Fixed: Changed <div> to <View> */}
+                <View style={styles.modalActionRow}>
+                    <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={styles.modalCancel}>
+                        <Text>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleAction('Rejected', rejectionReason)} style={styles.modalConfirm}>
+                        <Text style={{color: BRAND.danger, fontWeight: 'bold'}}>Confirm Reject</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         </View>
       </Modal>
