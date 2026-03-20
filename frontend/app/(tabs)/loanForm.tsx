@@ -151,35 +151,32 @@ export default function CompleteLoanForm() {
   };
 
   const handleVerifyIdentity = async () => {
-    setFormData(current => {
-      const bvnToVerify = current.bvn;
-      if (bvnToVerify.length < 11) {
-        Alert.alert("Error", "Enter 11-digit BVN");
-        return current;
-      }
+    if (formData.bvn.length < 11) {
+      Alert.alert("Error", "Enter 11-digit BVN");
+      return;
+    }
 
-      setIsVerifying(true);
-      api.post('/manager/verify-bvn', { bvn: bvnToVerify })
-        .then(res => {
-          if (res.data.status === "success") {
-            updateData('customerName', res.data.data.fullName);
-            if (res.data.data.dateOfBirth) updateData('dob', res.data.data.dateOfBirth);
-            if (res.data.data.phoneNumber) updateData('phone', res.data.data.phoneNumber);
-            Alert.alert("Success", "Identity Verified");
-          } else {
-            Alert.alert("Verification Failed", "BVN not found.");
-          }
-        })
-        .catch(e => {
-          console.error("Verification error:", e);
-          Alert.alert("Error", "Verification service unavailable.");
-        })
-        .finally(() => {
-          setIsVerifying(false);
-        });
-      
-      return current;
-    });
+    setIsVerifying(true);
+    try {
+      const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
+      if (res.data.status === "success") {
+        // Correctly update multiple fields using functional state update
+        setFormData(prev => ({
+          ...prev,
+          customerName: res.data.data.fullName || '',
+          dob: res.data.data.dateOfBirth || prev.dob,
+          phone: res.data.data.phoneNumber || prev.phone
+        }));
+        Alert.alert("Success", "Identity Verified");
+      } else {
+        Alert.alert("Verification Failed", "BVN not found.");
+      }
+    } catch (e) {
+      console.error("Verification error:", e);
+      Alert.alert("Error", "Verification service unavailable.");
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleFinalSubmit = async () => {
@@ -233,7 +230,7 @@ export default function CompleteLoanForm() {
                 </TouchableOpacity>
             </View>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} />
+            <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Verified Customer Name" />
             <TouchableOpacity 
               style={styles.primaryBtn} 
               onPress={() => (formData.customerName) ? setStep(2) : Alert.alert("Missing Info", "Please verify BVN before proceeding.")}>
