@@ -218,7 +218,6 @@ app.post('/api/v1/verify-identity', async (req, res) => {
 app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
     try {
-        // STEP 1: Check Database First
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
         if (result.rows.length > 0) {
             const customer = result.rows[0];
@@ -234,7 +233,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
             });
         }
 
-        // STEP 2: Check JSON Mock Registry
         const mockDataPath = path.join(__dirname, 'mock_identity.json');
         if (fs.existsSync(mockDataPath)) {
             const mockData = JSON.parse(fs.readFileSync(mockDataPath, 'utf8'));
@@ -244,7 +242,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
             }
         }
 
-        // Step 3: Global Fallback for testing
         res.json({ 
             status: "success", 
             data: { 
@@ -292,7 +289,32 @@ app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res
     } catch (err) { res.json({ count: 0 }); }
 });
 
-// --- 8. MANAGER WORKFLOW ROUTES (UPDATED FOR CREDIT STAFF LOAD BALANCING) ---
+// --- 8. MANAGER WORKFLOW ROUTES ---
+
+// NEW: Added route for fetching specific loan details to fix 404
+app.get('/api/v1/manager/loan-details/:id', authenticateToken, isManagement, async (req, res) => {
+    try {
+        const query = `
+            SELECT l.*, 
+            s.full_name as "staffName", 
+            s.branch as "branchName" 
+            FROM loans l 
+            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+            WHERE l.id = $1`;
+        
+        const result = await db.query(query, [req.params.id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Loan details not found" });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error("Fetch Loan Details Error:", err.message);
+        res.status(500).json({ error: "Failed to fetch loan details" });
+    }
+});
+
 app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, async (req, res) => {
     const { status, rejection_reason } = req.body; 
     const userRole = (req.user.role || "").toLowerCase().trim();
@@ -310,7 +332,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
 
         let assignedStaffId = loanCheck.rows[0].assignedCreditStaffId;
 
-        // SMART ROUTING: If moving to Credit, find the least busy Credit Staff member
         if (status === 'PENDING_CREDIT') {
             const staffFinderQuery = `
                 SELECT u.id, u.push_token, COUNT(l.id) as active_count
@@ -326,7 +347,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
             if (staffResult.rows.length > 0) {
                 assignedStaffId = staffResult.rows[0].id;
                 
-                // Notify the assigned Credit Staff
                 const title = "New Loan Assigned 📝";
                 const body = `You have been assigned the loan for ${loanCheck.rows[0].customerName}.`;
                 await db.query("INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)", [assignedStaffId, title, body]);
@@ -341,7 +361,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
         
         const updatedLoan = result.rows[0];
 
-        // Notify original creator of the update
         const creatorRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [updatedLoan.createdByEmail]);
         if (creatorRes.rows[0]) {
             const staff = creatorRes.rows[0];
@@ -364,10 +383,10 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     const userBranch = req.user.branch;
 
     try {
+        // UPDATED: Added 'head of marketing' to hqRoles for global visibility
         const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
-        // EXPLICIT SELECT to ensure all Image URLs are returned to the frontend
         let query = `
             SELECT l.*, 
             s.full_name as "staffName", 
@@ -377,7 +396,6 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
         
         let params = [];
 
-        // If Credit Staff or Credit Officer, only show loans specifically assigned to them
         if (userRole === 'credit staff' || userRole === 'credit officer') {
             query += ` WHERE l."assignedCreditStaffId" = $1`;
             params = [userId];
@@ -426,7 +444,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const limit = LOAN_LIMITS[loan.loanType] || 250000;
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded` });
     try {
-        // Automatically save/onboard customer to database if they don't exist yet
         await db.query(`
             INSERT INTO customers (bvn, full_name, phone, dob, kyc_status)
             VALUES ($1, $2, $3, $4, 'VERIFIED')
