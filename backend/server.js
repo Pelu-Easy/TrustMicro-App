@@ -289,6 +289,17 @@ app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res
     } catch (err) { res.json({ count: 0 }); }
 });
 
+// FIXED: Added missing route to mark notifications as read
+app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res) => {
+    try {
+        await db.query("UPDATE notification_history SET is_read = true WHERE user_id = $1 AND is_read = false", [req.user.id]);
+        res.json({ message: "Notifications marked as read" });
+    } catch (err) {
+        console.error("Mark Read Error:", err.message);
+        res.status(500).json({ error: "Failed to update notifications" });
+    }
+});
+
 // --- 8. MANAGER WORKFLOW ROUTES ---
 
 // NEW: Added route for fetching specific loan details to fix 404
