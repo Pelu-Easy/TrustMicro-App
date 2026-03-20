@@ -59,36 +59,43 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0); 
 
   // --- REFINED ROLE LOGIC ---
-  const isWorkflowUser = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD || isFinance;
-  const isManagement = isWorkflowUser || ['admin', 'manager'].includes(role?.toLowerCase() || '');
+  const userRoleLower = role?.toLowerCase() || '';
+  const isMarketing = userRoleLower.includes('marketing');
+  const isWorkflowUser = isSupervisor || isCreditOfficer || isHeadOfCredit || isCCO || isMD || isFinance || isMarketing;
+  const isManagement = isWorkflowUser || ['admin', 'manager'].includes(userRoleLower);
   
-  // Only non-management roles (Sales/Staff/Officer) can onboard new loans
-  const canOnboardLoan = !isManagement || ['sales', 'officer', 'staff', 'loan officer'].includes(role?.toLowerCase() || '');
+  const canOnboardLoan = !isManagement || ['sales', 'officer', 'staff', 'loan officer'].includes(userRoleLower);
 
   // Helper to determine if a loan needs this specific user's attention
   const isMyTask = useCallback((loanStatus: string) => {
-    if (isCreditOfficer) return loanStatus === 'PENDING_CREDIT';
-    if (isHeadOfCredit) return loanStatus === 'PENDING_HEAD_CREDIT';
-    if (isCCO) return loanStatus === 'PENDING_CCO';
-    if (isMD) return loanStatus === 'PENDING_MD';
-    if (isFinance) return loanStatus === 'APPROVED_FINANCE';
-    if (isSupervisor || role?.toLowerCase() === 'manager') return loanStatus === 'Pending';
+    const status = loanStatus?.toUpperCase();
+    if (isCreditOfficer) return status === 'PENDING_CREDIT';
+    if (isHeadOfCredit) return status === 'PENDING_HEAD_CREDIT';
+    if (isCCO) return status === 'PENDING_CCO';
+    if (isMD) return status === 'PENDING_MD';
+    if (isFinance) return status === 'APPROVED_FINANCE';
+    
+    // Marketing/Supervisors/Managers check the initial 'Pending' desk
+    if (isSupervisor || isMarketing || userRoleLower === 'manager') {
+        return status === 'PENDING';
+    }
     return false;
-  }, [isCreditOfficer, isHeadOfCredit, isCCO, isMD, isFinance, isSupervisor, role]);
+  }, [isCreditOfficer, isHeadOfCredit, isCCO, isMD, isFinance, isSupervisor, isMarketing, userRoleLower]);
 
   // --- TRACKER LOGIC ---
   const getStatusProgress = (status: string) => {
-    switch (status) {
-      case 'Draft': return { label: 'Saved Draft', percent: 10, color: '#94A3B8' };
-      case 'Pending': return { label: 'Supervisor Desk', percent: 25, color: '#EAB308' };
+    const s = status?.toUpperCase();
+    switch (s) {
+      case 'DRAFT': return { label: 'Saved Draft', percent: 10, color: '#94A3B8' };
+      case 'PENDING': return { label: 'Supervisor Desk', percent: 25, color: '#EAB308' };
       case 'PENDING_CREDIT': 
       case 'PENDING_HEAD_CREDIT': return { label: 'Credit Dept', percent: 50, color: '#3B82F6' };
       case 'PENDING_CCO':
       case 'PENDING_MD': return { label: 'Management Review', percent: 75, color: '#8B5CF6' };
-      case 'Approved':
+      case 'APPROVED':
       case 'APPROVED_FINANCE': return { label: 'Final Approval', percent: 90, color: '#10B981' };
-      case 'Disbursed': return { label: 'Fully Disbursed', percent: 100, color: '#059669' };
-      case 'Rejected': return { label: 'Rejected', percent: 100, color: '#EF4444' };
+      case 'DISBURSED': return { label: 'Fully Disbursed', percent: 100, color: '#059669' };
+      case 'REJECTED': return { label: 'Rejected', percent: 100, color: '#EF4444' };
       default: return { label: status, percent: 20, color: '#64748B' };
     }
   };
@@ -100,10 +107,16 @@ export default function Dashboard() {
     ]);
   };
 
-  const fetchAllLoans = useCallback(async () => {
+  const fetchDashboardData = useCallback(async (silent = false) => {
     if (!_hasHydrated || !token || !email) return;
+    if (!silent) setIsLoading(true);
+    
     try {
-      await fetchLoans(email, token);
+      // Parallel fetch to improve speed
+      await Promise.all([
+        fetchLoans(email, token),
+        api.get('/notifications/unread-count').then(res => setUnreadCount(res.data.count || 0)).catch(() => {})
+      ]);
     } catch (error) {
       console.log("Dashboard sync failed.");
     } finally {
@@ -112,20 +125,9 @@ export default function Dashboard() {
     }
   }, [_hasHydrated, token, email, fetchLoans]);
 
-  const fetchUnreadCount = useCallback(async () => {
-    if (!token || !_hasHydrated) return;
-    try {
-      const res = await api.get('/notifications/unread-count');
-      setUnreadCount(res.data.count || 0);
-    } catch (e) {
-      console.log("Failed to fetch unread count");
-    }
-  }, [token, _hasHydrated]);
-
   useEffect(() => {
     const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
-      fetchUnreadCount();
-      fetchAllLoans();
+      fetchDashboardData(true);
     });
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
       router.push('/notifications');
@@ -134,15 +136,14 @@ export default function Dashboard() {
       foregroundSubscription.remove();
       responseSubscription.remove();
     };
-  }, [fetchUnreadCount, fetchAllLoans, router]);
+  }, [fetchDashboardData, router]);
 
   useFocusEffect(
     useCallback(() => {
       if (token && token.length > 10 && email && _hasHydrated) {
-        fetchAllLoans();
-        fetchUnreadCount(); 
+        fetchDashboardData();
       }
-    }, [token, email, _hasHydrated, fetchAllLoans, fetchUnreadCount])
+    }, [token, email, _hasHydrated, fetchDashboardData])
   );
 
   const processedLoans = useMemo(() => {
@@ -153,7 +154,7 @@ export default function Dashboard() {
 
   const totalDisbursed = useMemo(() => {
     return loans
-      .filter(l => l.status === 'Disbursed')
+      .filter(l => l.status?.toUpperCase() === 'DISBURSED')
       .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
   }, [loans]);
 
@@ -163,8 +164,7 @@ export default function Dashboard() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchAllLoans();
-    fetchUnreadCount(); 
+    fetchDashboardData(true);
   };
 
   const StatCard = ({ title, value, icon, color }: StatCardProps) => (
@@ -199,9 +199,9 @@ export default function Dashboard() {
           <View>
             <Text style={styles.welcomeLabel}>Welcome back,</Text>
             <Text style={styles.userName}>{funame || 'Staff Officer'}</Text>
-            <View style={styles.badge}>
+            <div style={styles.badge}>
               <Text style={styles.badgeText}>{role || 'Staff'} • {branch || 'Branch'}</Text>
-            </View>
+            </div>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <TouchableOpacity style={styles.notiButton} onPress={() => router.push('/notifications')}>
@@ -234,7 +234,6 @@ export default function Dashboard() {
                 <Text style={styles.actionBtnText}>Approvals</Text>
               </TouchableOpacity>
               
-              {/* NEW CUSTOMERS BUTTON FOR MANAGEMENT */}
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#8B5CF6' }]} onPress={() => router.push('/CustomerList')}>
                 <View style={styles.actionIconBg}><Ionicons name="people" size={24} color="#fff" /></View>
                 <Text style={styles.actionBtnText}>Customers</Text>
@@ -259,7 +258,7 @@ export default function Dashboard() {
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
             <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
-            <StatCard title="Disbursed" value={loans.filter(l => l.status === 'Disbursed').length.toString()} icon="cash-outline" color="#10B981" />
+            <StatCard title="Disbursed" value={loans.filter(l => l.status?.toUpperCase() === 'DISBURSED').length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
         {/* --- LIST --- */}
@@ -275,9 +274,10 @@ export default function Dashboard() {
             const track = getStatusProgress(loan.status);
             return (
               <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {
-                if (loan.status === 'Draft' && canOnboardLoan) {
+                const s = loan.status?.toUpperCase();
+                if (s === 'DRAFT' && canOnboardLoan) {
                   router.push({ pathname: '/loanForm', params: { draftId: loan.id } });
-                } else if (loan.status === 'Rejected') {
+                } else if (s === 'REJECTED') {
                   Alert.alert("Loan Rejected", `REASON: ${loan.rejection_reason || 'Check docs.'}`, [
                     { text: "Dismiss", style: "cancel" },
                     { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/loanForm', params: { draftId: loan.id } }) }

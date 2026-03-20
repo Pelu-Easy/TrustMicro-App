@@ -72,9 +72,9 @@ export default function LoanDetails() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id]);
+  }, [id, refreshing]);
 
-  useEffect(() => { if (id) fetchLoanData(); }, [id]);
+  useEffect(() => { if (id) fetchLoanData(); }, [id, fetchLoanData]);
 
   const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus === loan?.status;
   const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(loan?.status as string);
@@ -250,13 +250,13 @@ export default function LoanDetails() {
           </View>
 
           <Text style={styles.sectionTitle}>Attached Documents</Text>
-          <DocumentCard label="Passport Photograph" uri={loan?.passportImageUrl} placeholder="No Passport Uploaded" />
-          <DocumentCard label="Digital Signature" uri={loan?.signatureUrl} placeholder="No Signature Uploaded" />
-          <DocumentCard label="NIN Slip / Card" uri={loan?.ninImageUrl} placeholder="No NIN Document" />
-          <DocumentCard label="Government Issued ID" uri={loan?.idImageUrl} placeholder="No ID Document" />
-          <DocumentCard label="Work ID Card" uri={loan?.workIdUrl} placeholder="No Work ID Document" />
-          <DocumentCard label="Utility Bill" uri={loan?.utilityBillUrl} placeholder="No Utility Bill Document" />
-          <DocumentCard label="Bank Statement" uri={loan?.statementUrl} placeholder="No Bank Statement" />
+          <DocumentCard label="Passport Photograph" uri={loan?.passportImageUrl || loan?.passportPhoto} placeholder="No Passport Uploaded" />
+          <DocumentCard label="Digital Signature" uri={loan?.signatureUrl || loan?.signature} placeholder="No Signature Uploaded" />
+          <DocumentCard label="NIN Slip / Card" uri={loan?.ninImageUrl || loan?.ninHardCopy} placeholder="No NIN Document" />
+          <DocumentCard label="Government Issued ID" uri={loan?.idImageUrl || loan?.idCard} placeholder="No ID Document" />
+          <DocumentCard label="Work ID Card" uri={loan?.workIdUrl || loan?.workId} placeholder="No Work ID Document" />
+          <DocumentCard label="Utility Bill" uri={loan?.utilityBillUrl || loan?.utilityBill} placeholder="No Utility Bill Document" />
+          <DocumentCard label="Bank Statement" uri={loan?.statementUrl || loan?.bankStatement} placeholder="No Bank Statement" />
 
           {canPerformAction ? (
             <View style={styles.actionRow}>
@@ -288,10 +288,10 @@ export default function LoanDetails() {
             <View style={styles.rejectModalContent}>
                 <Text style={styles.rejectTitle}>Reject Application</Text>
                 <TextInput style={styles.reasonInput} placeholder="Reason for rejection..." multiline value={rejectionReason} onChangeText={setRejectionReason} />
-                <View style={styles.modalActionRow}>
+                <div style={styles.modalActionRow}>
                     <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={styles.modalCancel}><Text>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => handleAction('Rejected', rejectionReason)} style={styles.modalConfirm}><Text style={{color: BRAND.danger, fontWeight: 'bold'}}>Confirm Reject</Text></TouchableOpacity>
-                </View>
+                </div>
             </View>
         </View>
       </Modal>

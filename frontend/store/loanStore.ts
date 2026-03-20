@@ -83,26 +83,34 @@ export const useLoanStore = create<LoanState>()(
         if (!email || !token) return;
 
         try {
+          // Optimization: Use a clean query and lower-case email
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           const serverLoans = response.data;
-          const localDrafts = get().loans.filter(l => l.status === 'Draft');
-          const mergedLoans = [...localDrafts];
           
+          // Get existing drafts from local state
+          const localDrafts = get().loans.filter(l => l.status === 'Draft');
+          
+          // Create a Map for faster merging performance
+          const loanMap = new Map();
+          
+          // 1. Add local drafts first
+          localDrafts.forEach(loan => loanMap.set(loan.id, loan));
+          
+          // 2. Add server loans (Server data overrides local non-drafts)
           serverLoans.forEach((sLoan: Loan) => {
-            const index = mergedLoans.findIndex(l => l.id === sLoan.id);
-            if (index === -1) {
-              mergedLoans.push(sLoan);
-            } else if (mergedLoans[index].status !== 'Draft') {
-              mergedLoans[index] = sLoan;
+            const existing = loanMap.get(sLoan.id);
+            if (!existing || existing.status !== 'Draft') {
+              loanMap.set(sLoan.id, sLoan);
             }
           });
 
+          const mergedLoans = Array.from(loanMap.values());
           set({ loans: mergedLoans });
+          
         } catch (error: any) {
-          // --- PERMANENT SOLUTION FOR 403 ERROR ---
           if (error.response && error.response.status === 403) {
             Alert.alert("Session Expired", "Your session has timed out. Please login again.");
-            useUserData.getState().clearUserData(); // Log user out
+            useUserData.getState().clearUserData(); 
           }
           console.error("Fetch failed:", error.message);
         }
@@ -138,7 +146,6 @@ export const useLoanStore = create<LoanState>()(
             await api.post('/loans', ownedLoan);
             console.log("Loan successfully synced.");
           } catch (error: any) {
-            // --- PERMANENT SOLUTION FOR 403 ERROR ---
             if (error.response && error.response.status === 403) {
               Alert.alert("Session Expired", "Please log in again to sync your data.");
               useUserData.getState().clearUserData();
@@ -166,16 +173,26 @@ export const useLoanStore = create<LoanState>()(
         })),
 
       clearAllData: () => {
-        // --- FIX: Use Zustand persist API to clear storage ---
         useLoanStore.persist.clearStorage();
-        // Also reset in-memory state
         set({ loans: [] });
       },
     }),
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // --- UPDATE: Handle Hydration ---
+      // --- OPTIMIZATION: Do not persist huge images to disk to prevent slow loading ---
+      partialize: (state) => ({
+        loans: state.loans.map(loan => ({
+          ...loan,
+          // We remove the Base64 data before saving to disk
+          // This keeps the storage small and the app fast
+          idCard: loan.status === 'Draft' ? loan.idCard : null,
+          signature: loan.status === 'Draft' ? loan.signature : null,
+          passportPhoto: loan.status === 'Draft' ? loan.passportPhoto : null,
+          bankStatement: loan.status === 'Draft' ? loan.bankStatement : null,
+        })),
+        staffProfile: state.staffProfile,
+      }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
