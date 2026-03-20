@@ -151,22 +151,27 @@ export default function CompleteLoanForm() {
   };
 
   const handleVerifyIdentity = async () => {
-    if (formData.bvn.length < 11) {
+    const bvnToVerify = formData.bvn;
+    if (bvnToVerify.length < 11) {
       Alert.alert("Error", "Enter 11-digit BVN");
       return;
     }
 
     setIsVerifying(true);
     try {
-      const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
-      if (res.data.status === "success") {
-        // Correctly update multiple fields using functional state update
+      const res = await api.post('/manager/verify-bvn', { bvn: bvnToVerify });
+      
+      if (res.data.status === "success" && res.data.data) {
+        const customer = res.data.data;
+        
+        // Use functional state update to ensure UI re-renders with new data
         setFormData(prev => ({
           ...prev,
-          customerName: res.data.data.fullName || '',
-          dob: res.data.data.dateOfBirth || prev.dob,
-          phone: res.data.data.phoneNumber || prev.phone
+          customerName: customer.fullName || '',
+          dob: customer.dateOfBirth || prev.dob,
+          phone: customer.phoneNumber || prev.phone
         }));
+        
         Alert.alert("Success", "Identity Verified");
       } else {
         Alert.alert("Verification Failed", "BVN not found.");
@@ -230,7 +235,12 @@ export default function CompleteLoanForm() {
                 </TouchableOpacity>
             </View>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Verified Customer Name" />
+            <TextInput 
+              style={[styles.input, styles.disabledInput]} 
+              value={formData.customerName} 
+              editable={false} 
+              placeholder="Verified Name will appear here"
+            />
             <TouchableOpacity 
               style={styles.primaryBtn} 
               onPress={() => (formData.customerName) ? setStep(2) : Alert.alert("Missing Info", "Please verify BVN before proceeding.")}>
@@ -269,7 +279,7 @@ export default function CompleteLoanForm() {
           </View>
         )}
 
-        {/* STEP 4: DOCUMENTS (UPDATED LIST) */}
+        {/* STEP 4: DOCUMENTS */}
         {step === 4 && (
           <View>
             <Text style={styles.title}>Documents</Text>
