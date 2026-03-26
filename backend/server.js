@@ -218,7 +218,11 @@ app.post('/api/v1/verify-identity', async (req, res) => {
 
 app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     const { bvn } = req.body;
+    const isMockMode = process.env.USE_MOCK_DATA === 'true';
+    if (!bvn) return res.status(400).json({ error: "BVN is required" });
+
     try {
+        // 1. Check existing Database first
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
         if (result.rows.length > 0) {
             const customer = result.rows[0];
@@ -229,29 +233,61 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                     bvn: customer.bvn, 
                     phoneNumber: customer.phone || "",
                     dateOfBirth: customer.dob || "",
+                    gender: customer.gender || "Male",
                     verificationStatus: "VERIFIED" 
                 } 
             });
         }
 
-        const mockDataPath = path.join(__dirname, 'mock_identity.json');
-        if (fs.existsSync(mockDataPath)) {
-            const mockData = JSON.parse(fs.readFileSync(mockDataPath, 'utf8'));
-            const found = mockData.find(item => item.bvn === bvn);
-            if (found) {
-                return res.json({ status: "success", data: found });
+        // 2. Mock Logic vs Real API Logic
+        if (isMockMode) {
+            console.log(`[TEST MODE] Fetching mock data for BVN: ${bvn}`);
+            let foundMock = null;
+            const mockDataPath = path.join(__dirname, 'mock_identity.json');
+            
+            if (fs.existsSync(mockDataPath)) {
+                const mockData = JSON.parse(fs.readFileSync(mockDataPath, 'utf8'));
+                foundMock = mockData.find(item => item.bvn === bvn);
             }
+
+            const finalCustomerData = foundMock ? {
+                fullName: foundMock.fullName || `${foundMock.firstName} ${foundMock.lastName}`,
+                bvn: foundMock.bvn,
+                phoneNumber: foundMock.phoneNumber || foundMock.phone || "08000000000",
+                dateOfBirth: foundMock.dateOfBirth || foundMock.dob || "1990-01-01",
+                gender: foundMock.gender || "Male",
+                verificationStatus: "VERIFIED"
+            } : {
+                fullName: "Verified Test Customer",
+                bvn: bvn,
+                phoneNumber: "08012345678",
+                dateOfBirth: "1995-05-20",
+                gender: "Male",
+                verificationStatus: "VERIFIED"
+            };
+
+            // AUTO-SAVE to DB
+            try {
+                await db.query(
+                    `INSERT INTO customers (bvn, full_name, phone, dob, kyc_status, gender) 
+                     VALUES ($1, $2, $3, $4, 'VERIFIED', $5) 
+                     ON CONFLICT (bvn) DO NOTHING`,
+                    [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
+                );
+            } catch (dbErr) {
+                console.error("Silent Database Save Error:", dbErr.message);
+            }
+
+            return res.json({ status: "success", data: finalCustomerData });
+        } else {
+            // FUTURE: Add real API integration here (e.g. Paystack/Flutterwave)
+            return res.status(501).json({ error: "Real-world BVN API integration is not active. Set USE_MOCK_DATA=true to test." });
         }
 
-        res.json({ 
-            status: "success", 
-            data: { 
-                fullName: "Verified Customer", 
-                bvn: bvn, 
-                verificationStatus: "VERIFIED" 
-            } 
-        });
-    } catch (e) { res.status(500).json({ error: "Service Unavailable" }); }
+    } catch (e) { 
+        console.error("BVN Route Crash:", e);
+        res.status(500).json({ error: "Service Unavailable", details: e.message }); 
+    }
 });
 
 app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req, res) => {
