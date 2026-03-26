@@ -7,54 +7,64 @@ import Constants from 'expo-constants';
 export async function registerForPushNotificationsAsync() {
   let token;
 
-  // 1. Check if it's a physical device
-  if (!Device.isDevice) {
-    console.log('Must use physical device for Push Notifications');
-    return null;
-  }
-
-  // 2. Handle Permissions
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    console.log('Failed to get push token for push notification!');
-    return null;
-  }
-
-  // 3. Get Project ID safely from app.json
-  // --- FIX: Use Constants.expoConfig.extra correctly ---
-  const projectId = 
-    Constants.expoConfig?.extra?.eas?.projectId;
-
-  if (!projectId) {
-    console.error('Project ID not found in app.json. Ensure you ran npx eas-cli project:init');
-    return null;
-  }
-
-  // 4. Get the actual token
   try {
-    token = (await Notifications.getExpoPushTokenAsync({
-      projectId: projectId,
-    })).data;
-    console.log("Generated Push Token:", token);
-  } catch (error) {
-    console.error("Error fetching push token:", error);
-  }
+    // 1. Check if it's a physical device
+    if (!Device.isDevice) {
+      console.log('Must use physical device for Push Notifications');
+      return null;
+    }
 
-  // 5. Android Specific Channel Configuration
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'Default Channel',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#003366',
-    });
+    // 2. Handle Permissions
+    // SAFETY: Wrapped in try/catch to prevent startup crashes if service is unreachable
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.log('Failed to get push token for push notification!');
+      return null;
+    }
+
+    // 3. Get Project ID safely from app.json
+    // --- FIX: Use Constants.expoConfig.extra correctly ---
+    const projectId = 
+      Constants.expoConfig?.extra?.eas?.projectId || 
+      Constants.easConfig?.projectId;
+
+    if (!projectId) {
+      console.warn('Project ID not found. Ensure EAS is configured. Notifications will be disabled.');
+      return null;
+    }
+
+    // 4. Get the actual token
+    try {
+      token = (await Notifications.getExpoPushTokenAsync({
+        projectId: projectId,
+      })).data;
+      console.log("Generated Push Token:", token);
+    } catch (tokenError) {
+      console.error("Error fetching expo push token specifically:", tokenError);
+      return null;
+    }
+
+    // 5. Android Specific Channel Configuration
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default Channel',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#003366',
+      });
+    }
+
+  } catch (globalError) {
+    // This catch ensures the app keeps running even if the entire notification module fails
+    console.error("Global Notification Utility Error:", globalError);
+    return null;
   }
 
   return token;

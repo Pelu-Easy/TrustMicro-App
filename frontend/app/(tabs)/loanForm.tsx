@@ -155,7 +155,10 @@ export default function CompleteLoanForm() {
         }));
         Alert.alert("Success", "Identity Verified");
       } else { Alert.alert("Verification Failed", "BVN not found."); }
-    } catch (e) { Alert.alert("Error", "Verification service unavailable."); } finally { setIsVerifying(false); }
+    } catch (e) { 
+        console.error("BVN Verification Error:", e);
+        Alert.alert("Error", "Verification service unavailable."); 
+    } finally { setIsVerifying(false); }
   };
 
   const handleFinalSubmit = async () => {

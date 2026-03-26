@@ -46,12 +46,13 @@ app.use((req, res, next) => {
 });
 
 // --- 2. DATABASE INITIALIZATION ---
+// UPDATED: Increased timeout and max connections to prevent Supabase timeouts
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
-    max: 10,
+    max: 20, 
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    connectionTimeoutMillis: 30000, 
     keepAlive: true
 });
 
@@ -289,7 +290,6 @@ app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res
     } catch (err) { res.json({ count: 0 }); }
 });
 
-// FIXED: Added missing route to mark notifications as read
 app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res) => {
     try {
         await db.query("UPDATE notification_history SET is_read = true WHERE user_id = $1 AND is_read = false", [req.user.id]);
@@ -302,15 +302,15 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
 
 // --- 8. MANAGER WORKFLOW ROUTES ---
 
-// NEW: Added route for fetching specific loan details to fix 404
 app.get('/api/v1/manager/loan-details/:id', authenticateToken, isManagement, async (req, res) => {
     try {
+        // OPTIMIZED: Simplified Join for faster performance
         const query = `
             SELECT l.*, 
             s.full_name as "staffName", 
             s.branch as "branchName" 
             FROM loans l 
-            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+            LEFT JOIN staff_users s ON l."createdByEmail" = s.email
             WHERE l.id = $1`;
         
         const result = await db.query(query, [req.params.id]);
@@ -372,7 +372,7 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
         
         const updatedLoan = result.rows[0];
 
-        const creatorRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", [updatedLoan.createdByEmail]);
+        const creatorRes = await db.query("SELECT id, push_token FROM staff_users WHERE email = $1", [updatedLoan.createdByEmail]);
         if (creatorRes.rows[0]) {
             const staff = creatorRes.rows[0];
             const title = `Loan Update: ${status.replace(/_/g, ' ')}`;
@@ -394,16 +394,16 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     const userBranch = req.user.branch;
 
     try {
-        // UPDATED: Added 'head of marketing' to hqRoles for global visibility
         const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
+        // OPTIMIZED: Simplified Join for faster performance
         let query = `
             SELECT l.*, 
             s.full_name as "staffName", 
             s.branch as "branchName" 
             FROM loans l 
-            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))`;
+            LEFT JOIN staff_users s ON l."createdByEmail" = s.email`;
         
         let params = [];
 
@@ -427,7 +427,14 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
 
 app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
     try {
-        const result = await db.query("SELECT l.*, s.full_name as \"staffName\" FROM loans l LEFT JOIN staff_users s ON LOWER(TRIM(l.\"createdByEmail\")) = LOWER(TRIM(s.email)) WHERE l.status = 'Approved' ORDER BY l.\"submittedDate\" DESC");
+        // OPTIMIZED: Simplified Join
+        const result = await db.query(`
+            SELECT l.*, s.full_name as "staffName" 
+            FROM loans l 
+            LEFT JOIN staff_users s ON l."createdByEmail" = s.email 
+            WHERE l.status = 'Approved' 
+            ORDER BY l."submittedDate" DESC
+        `);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Failed to fetch approved loans" }); }
 });
@@ -462,7 +469,7 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             [loan.bvn, loan.customerName, loan.phone, loan.dob]
         );
 
-        const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE LOWER(TRIM(email)) = $1", [tokenEmail]);
+        const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
         const supervisorName = staffRes.rows[0]?.supervisor_name;
         
         const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", "gender") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`;
