@@ -51,16 +51,19 @@ api.interceptors.response.use(
         const { logout, role } = useUserData.getState();
         console.warn(`Access issue (${status}) for role: ${role}. Clearing session...`);
         
-        // Clear global state and redirect logic trigger
-        logout(); 
-        
+        // --- ALERT FIRST, THEN LOGOUT ---
+        // This prevents the app from wiping state before the user reads the reason
         if (originalRequest?.url !== '/users/me') {
           const alertTitle = status === 401 ? "Session Expired" : "Access Revoked";
           const alertMsg = status === 401 
             ? "Your security token is invalid or expired. Please login again."
             : "Your permissions have been updated or your session timed out. Please login again.";
 
-          Alert.alert(alertTitle, alertMsg, [{ text: "OK" }]);
+          Alert.alert(alertTitle, alertMsg, [
+            { text: "OK", onPress: () => logout() }
+          ]);
+        } else {
+          logout();
         }
       } else if (status === 403) {
         // Forbidden during an active login/signup attempt
@@ -78,10 +81,10 @@ api.interceptors.response.use(
     
     // --- Specific handling for timeouts and network refusals ---
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      errorMessage = "The server is taking too long to respond. This may happen during large data audits. Please try again.";
+      errorMessage = "The server is taking too long to respond. This may happen during high-traffic loan approvals. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
       // FIX: Dynamically show the current API_URL in the error message
-      errorMessage = `Cannot connect to server. Ensure your backend is running and your phone is on the same WiFi as ${API_URL.replace('/api/v1', '')}`;
+      errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')} and your device is on the same WiFi.`;
     } else if (error.response) {
       // Backend-specific error messages
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";

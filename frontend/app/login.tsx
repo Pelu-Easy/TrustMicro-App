@@ -99,7 +99,7 @@ export default function LoginScreen() {
         isLoggedIn: true,
         role: user.role,
         funame: user.full_name, 
-        email: user.email,
+        email: user.email, // Ensure this is correctly mapped from the response
         phone: user.phone_no,
         branch: user.branch,
         unit: user.unit,
@@ -114,6 +114,7 @@ export default function LoginScreen() {
         staffProfile: {
           ...state.staffProfile,
           funame: user.full_name,
+          email: user.email, // FIX: Ensure email is also updated here to prevent "system@" fallback
         }
       }));
 

@@ -77,14 +77,15 @@ export default function ManagerDashboard() {
 
   // --- WORKFLOW: GET RELEVANT STATUS FILTER ---
   const getTargetStatus = () => {
-    if (isHeadOfMarketing || isSupervisor) return 'Pending'; 
-    if (isCreditStaff) return 'PENDING_CREDIT';
-    if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
-    if (isHeadOfControl) return 'PENDING_CONTROL';
-    if (isCCO) return 'PENDING_CCO';
+    // Priority order for status filtering
     if (isMD) return 'PENDING_MD';
+    if (isCCO) return 'PENDING_CCO';
+    if (isHeadOfControl) return 'PENDING_CONTROL';
+    if (isHeadOfCredit) return 'PENDING_HEAD_CREDIT';
+    if (isCreditStaff) return 'PENDING_CREDIT';
+    if (isHeadOfMarketing || isSupervisor) return 'PENDING'; 
     
-    return 'Pending';
+    return 'PENDING';
   };
 
   const fetchData = useCallback(async () => {
@@ -103,7 +104,10 @@ export default function ManagerDashboard() {
         const targetStatus = getTargetStatus();
         
         const workBasket = allFetchedLoans.filter((loan: LoanItem) => {
-          const statusMatch = loan.status === targetStatus;
+          // Normalize status comparison to avoid case-sensitivity issues
+          const loanStatus = loan.status?.toUpperCase();
+          const filterStatus = targetStatus.toUpperCase();
+          const statusMatch = loanStatus === filterStatus;
           
           // --- ROUTING LOGIC ---
           // Show if unassigned OR assigned to this specific user

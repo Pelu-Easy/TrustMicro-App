@@ -14,15 +14,15 @@ const { width, height } = Dimensions.get('window');
 const BRAND = { primary: "#003366", success: "#2E7D32", danger: "#C62828", bg: "#F8FAFC", accent: "#3B82F6" };
 
 const ROLE_AUTHORITY_MAP: Record<string, { nextStatus: string, label: string, authorizedStatus: string }> = {
-  'head of marketing': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
-  'supervisor': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'head of marketing': { authorizedStatus: 'PENDING', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'supervisor': { authorizedStatus: 'PENDING', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
   'credit staff': { authorizedStatus: 'PENDING_CREDIT', nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
   'credit officer': { authorizedStatus: 'PENDING_CREDIT', nextStatus: 'PENDING_HEAD_CREDIT', label: 'Forward to Head of Credit' },
   'head of credit': { authorizedStatus: 'PENDING_HEAD_CREDIT', nextStatus: 'PENDING_CONTROL', label: 'Forward to Head of Control' },
   'head of control': { authorizedStatus: 'PENDING_CONTROL', nextStatus: 'PENDING_CCO', label: 'Forward to CCO' },
   'cco': { authorizedStatus: 'PENDING_CCO', nextStatus: 'PENDING_MD', label: 'Forward to MD' },
   'md': { authorizedStatus: 'PENDING_MD', nextStatus: 'APPROVED_FINANCE', label: 'Final Approval' },
-  'manager': { authorizedStatus: 'Pending', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
+  'manager': { authorizedStatus: 'PENDING', nextStatus: 'PENDING_CREDIT', label: 'Forward to Credit' },
 };
 
 export default function LoanDetails() {
@@ -76,13 +76,16 @@ export default function LoanDetails() {
 
   useEffect(() => { if (id) fetchLoanData(); }, [id, fetchLoanData]);
 
-  const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus === loan?.status;
-  const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['Approved', 'Rejected', 'Disbursed', 'APPROVED_FINANCE'].includes(loan?.status as string);
+  // Normalize status comparison to handle case differences between DB and Logic
+  const currentLoanStatus = loan?.status?.toUpperCase();
+  const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus?.toUpperCase() === currentLoanStatus;
+  
+  const canPerformAction = !!userAuthority && isAuthorizedForCurrentStatus && !['APPROVED', 'REJECTED', 'DISBURSED', 'APPROVED_FINANCE'].includes(currentLoanStatus);
   const isCreditDept = normalizedRole === 'credit officer' || normalizedRole === 'credit staff';
-  const isEligibleForTopUp = (loan?.status === 'Disbursed' || loan?.status === 'APPROVED_FINANCE') && (normalizedRole === 'officer' || normalizedRole === 'credit officer');
+  const isEligibleForTopUp = (currentLoanStatus === 'DISBURSED' || currentLoanStatus === 'APPROVED_FINANCE') && (normalizedRole === 'officer' || normalizedRole === 'credit officer');
 
   const stages = [
-    { id: 'Pending', label: 'Marketing/Supervisor' },
+    { id: 'PENDING', label: 'Marketing/Supervisor' },
     { id: 'PENDING_CREDIT', label: 'Credit Analysis' },
     { id: 'PENDING_HEAD_CREDIT', label: 'Head of Credit' },
     { id: 'PENDING_CONTROL', label: 'Internal Control' },
@@ -92,12 +95,13 @@ export default function LoanDetails() {
   ];
 
   const getStageStatus = (stageId: string, currentStatus: string) => {
-    const statusOrder = ['Draft', 'Pending', 'PENDING_CREDIT', 'PENDING_HEAD_CREDIT', 'PENDING_CONTROL', 'PENDING_CCO', 'PENDING_MD', 'APPROVED_FINANCE', 'Disbursed'];
-    const currentIdx = statusOrder.indexOf(currentStatus as string);
-    const stageIdx = statusOrder.indexOf(stageId);
-    if (currentStatus === 'Rejected') return 'rejected';
+    const statusOrder = ['DRAFT', 'PENDING', 'PENDING_CREDIT', 'PENDING_HEAD_CREDIT', 'PENDING_CONTROL', 'PENDING_CCO', 'PENDING_MD', 'APPROVED_FINANCE', 'DISBURSED'];
+    const currentIdx = statusOrder.indexOf(currentStatus?.toUpperCase() || '');
+    const stageIdx = statusOrder.indexOf(stageId.toUpperCase());
+    
+    if (currentStatus?.toUpperCase() === 'REJECTED') return 'rejected';
     if (stageIdx < currentIdx) return 'completed';
-    if (stageId === currentStatus) return 'active';
+    if (stageId.toUpperCase() === currentStatus?.toUpperCase()) return 'active';
     return 'upcoming';
   };
 
@@ -275,7 +279,7 @@ export default function LoanDetails() {
           ) : (
             <View style={styles.readOnlyBadge}>
               <Text style={styles.readOnlyText}>
-                {loan?.status === 'Rejected' ? 'Application Rejected' : 'View Only Mode (Pending Other Dept)'}
+                {loan?.status?.toUpperCase() === 'REJECTED' ? 'Application Rejected' : 'View Only Mode (Pending Other Dept)'}
               </Text>
             </View>
           )}
@@ -294,7 +298,6 @@ export default function LoanDetails() {
                   value={rejectionReason} 
                   onChangeText={setRejectionReason} 
                 />
-                {/* Fixed: Changed <div> to <View> */}
                 <View style={styles.modalActionRow}>
                     <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={styles.modalCancel}>
                         <Text>Cancel</Text>

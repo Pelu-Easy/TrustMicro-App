@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import api from '../services/api';
@@ -31,7 +30,7 @@ export interface Loan {
   nokPhone: string;
   bankName: string;
   accountNumber: string;
-  status: 'Draft' | 'Pending' | 'Approved' | 'Disbursed' | 'Rejected' | 'PENDING_CREDIT' | 'PENDING_HEAD_CREDIT' | 'PENDING_CCO' | 'PENDING_MD' | 'APPROVED_FINANCE';
+  status: 'Draft' | 'Pending' | 'Approved' | 'Disbursed' | 'Rejected' | 'PENDING' | 'PENDING_CREDIT' | 'PENDING_HEAD_CREDIT' | 'PENDING_CONTROL' | 'PENDING_CCO' | 'PENDING_MD' | 'APPROVED_FINANCE';
   idCard: string | null;
   ninHardCopy: string | null;
   bvnHardCopy: string | null;
@@ -108,9 +107,10 @@ export const useLoanStore = create<LoanState>()(
           set({ loans: mergedLoans });
           
         } catch (error: any) {
-          if (error.response && error.response.status === 403) {
-            Alert.alert("Session Expired", "Your session has timed out. Please login again.");
-            useUserData.getState().clearUserData(); 
+          if (error.response && (error.response.status === 403 || error.response.status === 401)) {
+            // Note: api.ts already handles the alert, we just need to wipe local state
+            get().clearAllData();
+            useUserData.getState().logout(); 
           }
           console.error("Fetch failed:", error.message);
         }
@@ -147,8 +147,8 @@ export const useLoanStore = create<LoanState>()(
             console.log("Loan successfully synced.");
           } catch (error: any) {
             if (error.response && error.response.status === 403) {
-              Alert.alert("Session Expired", "Please log in again to sync your data.");
-              useUserData.getState().clearUserData();
+              get().clearAllData();
+              useUserData.getState().logout();
             }
             console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
           }
@@ -173,8 +173,8 @@ export const useLoanStore = create<LoanState>()(
         })),
 
       clearAllData: () => {
-        useLoanStore.persist.clearStorage();
         set({ loans: [] });
+        useLoanStore.persist.clearStorage();
       },
     }),
     {
@@ -190,6 +190,10 @@ export const useLoanStore = create<LoanState>()(
           signature: loan.status === 'Draft' ? loan.signature : null,
           passportPhoto: loan.status === 'Draft' ? loan.passportPhoto : null,
           bankStatement: loan.status === 'Draft' ? loan.bankStatement : null,
+          ninHardCopy: loan.status === 'Draft' ? loan.ninHardCopy : null,
+          bvnHardCopy: loan.status === 'Draft' ? loan.bvnHardCopy : null,
+          employmentLetter: loan.status === 'Draft' ? loan.employmentLetter : null,
+          workId: loan.status === 'Draft' ? loan.workId : null,
         })),
         staffProfile: state.staffProfile,
       }),

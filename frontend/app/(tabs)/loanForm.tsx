@@ -30,12 +30,6 @@ const BRAND = {
   border: "#E2E8F0" 
 };
 
-const LOAN_LIMITS: Record<string, number> = {
-  'Federal': 1000000,
-  'State': 500000,
-  'Private': 250000
-};
-
 const ReviewItem = ({ label, value }: { label: string, value: string }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
     <Text style={styles.revLabel}>{label}:</Text>
@@ -75,9 +69,9 @@ export default function CompleteLoanForm() {
     signatureUrl: '',
     ninImageUrl: '',
     monthlyIncome: '₦50,000.00 - ₦100,000.00',
-    loanType: 'Federal',
+    loanType: '', 
     repaymentCycle: 'Monthly',
-    gender: '', // Empty so "Select Gender" shows first
+    gender: '', 
     tenure: '12 Months'
   });
 
@@ -90,6 +84,7 @@ export default function CompleteLoanForm() {
 
   useEffect(() => {
     if (_hasHydrated && assignedSupervisor) {
+      // FIX: Ensure supervisorId is set so it appears in the Work Basket
       setFormData(prev => ({ ...prev, supervisorName: assignedSupervisor, supervisorId: assignedSupervisor }));
     }
   }, [_hasHydrated, assignedSupervisor]);
@@ -131,6 +126,7 @@ export default function CompleteLoanForm() {
           customerName: customer.fullName || 'Verified Customer',
           dob: customer.dateOfBirth || prev.dob,
           phone: customer.phoneNumber || prev.phone,
+          nin: customer.nin || prev.nin, // FIX: Capture NIN from verification
           gender: customer.gender || 'Male'
         }));
         Alert.alert("Success", "Identity Verified");
@@ -146,7 +142,16 @@ export default function CompleteLoanForm() {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const payload = { ...formData, staffName: staffFullName, createdByEmail: staffEmail, branchName: staffBranch, status: 'Pending', parentLoanId: params.id || null };
+      // FIX: Explicitly mapping staffEmail to ensure it's not system@trustmicro.com
+      const payload = { 
+        ...formData, 
+        staffName: staffFullName, 
+        createdByEmail: staffEmail || 'unknown@trustmicro.com', 
+        branchName: staffBranch, 
+        status: 'Pending', 
+        parentLoanId: params.id || null 
+      };
+      
       const response = await api.post('/loans', payload);
       if (response.status === 201 || response.status === 200) {
         Alert.alert("Success", "Loan Application Submitted!", [{ text: "OK", onPress: () => router.replace('/') }]);
@@ -180,6 +185,12 @@ export default function CompleteLoanForm() {
             <Text style={styles.label}>Full Name</Text>
             <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Verified Name" />
             
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput style={styles.input} value={formData.phone} onChangeText={v=>updateData('phone', v)} keyboardType="phone-pad" placeholder="Customer Phone" />
+
+            <Text style={styles.label}>NIN (National Identity Number)</Text>
+            <TextInput style={styles.input} value={formData.nin} onChangeText={v=>updateData('nin', v)} keyboardType="numeric" maxLength={11} placeholder="Enter NIN" />
+
             <Text style={styles.label}>Gender</Text>
             <View style={styles.pickerContainer}>
               <Picker selectedValue={formData.gender} onValueChange={(v) => updateData('gender', v)}>
@@ -229,12 +240,29 @@ export default function CompleteLoanForm() {
           <View>
             <Text style={styles.title}>Financials</Text>
             <Text style={styles.label}>Loan Type</Text>
-            <TextInput style={styles.input} value={formData.loanType} editable={false} />
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={formData.loanType}
+                onValueChange={(v) => updateData('loanType', v)}
+              >
+                <Picker.Item label="Select Loan Type" value="" />
+                <Picker.Item label="SME/Business Loans" value="SME/Business Loans" />
+                <Picker.Item label="Micro Loans" value="Micro Loans" />
+                <Picker.Item label="Salary Advance" value="Salary Advance" />
+                <Picker.Item label="Personal/Consumer Loans" value="Personal/Consumer Loans" />
+              </Picker>
+            </View>
+
             <Text style={styles.label}>Requested Amount</Text>
             <TextInput style={styles.input} value={formData.loanAmount} onChangeText={v=>updateData('loanAmount', v)} keyboardType="numeric" />
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(2)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={()=> setStep(4)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.primaryBtn} 
+                  onPress={()=> (!formData.loanType || !formData.loanAmount) ? Alert.alert("Error", "Please fill all fields") : setStep(4)}
+                >
+                  <Text style={styles.btnText}>Next</Text>
+                </TouchableOpacity>
             </View>
           </View>
         )}
@@ -268,6 +296,9 @@ export default function CompleteLoanForm() {
             <Text style={styles.title}>Review & Submit</Text>
             <View style={styles.reviewCard}>
                 <ReviewItem label="Customer" value={formData.customerName} />
+                <ReviewItem label="NIN" value={formData.nin} />
+                <ReviewItem label="Phone" value={formData.phone} />
+                <ReviewItem label="Loan Type" value={formData.loanType} />
                 <ReviewItem label="Amount" value={`₦${parseFloat(formData.loanAmount || '0').toLocaleString()}`} />
                 <ReviewItem label="Reporting to" value={formData.supervisorName} />
             </View>
