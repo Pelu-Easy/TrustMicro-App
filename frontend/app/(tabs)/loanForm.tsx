@@ -16,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 // --- STORES & UTILS ---
 import api from '../../services/api';
-import { useLoanStore } from '../../store/loanStore';
 import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
@@ -37,7 +36,6 @@ const LOAN_LIMITS: Record<string, number> = {
   'Private': 250000
 };
 
-// --- SUB-COMPONENTS ---
 const ReviewItem = ({ label, value }: { label: string, value: string }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
     <Text style={styles.revLabel}>{label}:</Text>
@@ -50,8 +48,6 @@ export default function CompleteLoanForm() {
   const params = useLocalSearchParams();
   
   const [step, setStep] = useState(1);
-  const { loans: allLoans } = useLoanStore();
-  
   const { 
     funame: staffFullName, 
     email: staffEmail,
@@ -81,7 +77,7 @@ export default function CompleteLoanForm() {
     monthlyIncome: '₦50,000.00 - ₦100,000.00',
     loanType: 'Federal',
     repaymentCycle: 'Monthly',
-    gender: 'Male',
+    gender: '', // Empty so "Select Gender" shows first
     tenure: '12 Months'
   });
 
@@ -102,7 +98,7 @@ export default function CompleteLoanForm() {
     if (_hasHydrated && params.bvn) {
       const incomingBvn = Array.isArray(params.bvn) ? params.bvn[0] : params.bvn;
       setFormData(prev => ({ ...prev, bvn: incomingBvn }));
-      setTimeout(() => handleVerifyIdentity(), 600);
+      setTimeout(() => handleVerifyIdentity(incomingBvn), 600);
     }
   }, [_hasHydrated, params.bvn]);
 
@@ -118,45 +114,30 @@ export default function CompleteLoanForm() {
     } catch (e) { Alert.alert("Error", "Could not pick document."); }
   };
 
-  // --- VALIDATION LOGIC ---
-  const validateStep2 = () => {
-    if (!formData.bankName) {
-      Alert.alert("Invalid Input", "Please select a bank.");
-      return false;
+  const handleVerifyIdentity = async (passedBvn?: string) => {
+    const bvnToVerify = passedBvn || formData.bvn;
+    if (!bvnToVerify || bvnToVerify.length < 11) { 
+        Alert.alert("Error", "Enter 11-digit BVN"); 
+        return; 
     }
-    if (formData.accountNumber.length !== 10) {
-      Alert.alert("Invalid Account", "Account number must be exactly 10 digits.");
-      return false;
-    }
-    return true;
-  };
 
-  const validateAmount = () => {
-    const amount = parseFloat(formData.loanAmount);
-    const limit = LOAN_LIMITS[formData.loanType] || 0;
-    if (isNaN(amount) || amount <= 0) return { valid: false, msg: "Enter a valid amount." };
-    if (amount > limit) return { valid: false, msg: `Limit for ${formData.loanType} is ₦${limit.toLocaleString()}.` };
-    return { valid: true, msg: "" };
-  };
-
-  const handleVerifyIdentity = async () => {
-    if (formData.bvn.length < 11) { Alert.alert("Error", "Enter 11-digit BVN"); return; }
     setIsVerifying(true);
     try {
-      const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
+      const res = await api.post('/manager/verify-bvn', { bvn: bvnToVerify });
       if (res.data.status === "success" && res.data.data) {
         const customer = res.data.data;
         setFormData(prev => ({
           ...prev,
-          customerName: customer.fullName || '',
+          customerName: customer.fullName || 'Verified Customer',
           dob: customer.dateOfBirth || prev.dob,
           phone: customer.phoneNumber || prev.phone,
-          gender: customer.gender || prev.gender
+          gender: customer.gender || 'Male'
         }));
         Alert.alert("Success", "Identity Verified");
-      } else { Alert.alert("Verification Failed", "BVN not found."); }
+      } else { 
+        Alert.alert("Verification Failed", "BVN not found."); 
+      }
     } catch (e) { 
-        console.error("BVN Verification Error:", e);
         Alert.alert("Error", "Verification service unavailable."); 
     } finally { setIsVerifying(false); }
   };
@@ -185,41 +166,43 @@ export default function CompleteLoanForm() {
           </View>
         </View>
 
-        {/* STEP 1: KYC */}
         {step === 1 && (
           <View>
             <Text style={styles.title}>KYC Registration</Text>
             <Text style={styles.label}>BVN *</Text>
             <View style={styles.row}>
-                <TextInput style={[styles.input, {flex:1}]} value={formData.bvn} onChangeText={v=>updateData('bvn',v)} keyboardType="numeric" maxLength={11} />
-                <TouchableOpacity style={[styles.verifyBtn, {backgroundColor: BRAND.accent}]} onPress={handleVerifyIdentity}>
+                <TextInput style={[styles.input, {flex:1}]} value={formData.bvn} onChangeText={v=>updateData('bvn',v)} keyboardType="numeric" maxLength={11} placeholder="Enter BVN" />
+                <TouchableOpacity style={[styles.verifyBtn, {backgroundColor: BRAND.accent}]} onPress={() => handleVerifyIdentity()}>
                     {isVerifying ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Verify</Text>}
                 </TouchableOpacity>
             </View>
+            
             <Text style={styles.label}>Full Name</Text>
             <TextInput style={[styles.input, styles.disabledInput]} value={formData.customerName} editable={false} placeholder="Verified Name" />
             
             <Text style={styles.label}>Gender</Text>
             <View style={styles.pickerContainer}>
               <Picker selectedValue={formData.gender} onValueChange={(v) => updateData('gender', v)}>
+                <Picker.Item label="Select Gender" value="" />
                 <Picker.Item label="Male" value="Male" />
                 <Picker.Item label="Female" value="Female" />
               </Picker>
             </View>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => (formData.customerName) ? setStep(2) : Alert.alert("Missing Info", "Please verify BVN.")}>
+            <TouchableOpacity 
+                style={[styles.primaryBtn, !formData.customerName ? {backgroundColor: BRAND.draft} : {}]} 
+                onPress={() => (formData.customerName) ? setStep(2) : Alert.alert("Missing Info", "Please verify BVN.")}
+            >
                 <Text style={styles.btnText}>Next</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* STEP 2: EMPLOYMENT & BANK */}
         {step === 2 && (
           <View>
             <Text style={styles.title}>Employment & Bank</Text>
             <Text style={styles.label}>Employer Name</Text>
             <TextInput style={styles.input} value={formData.employerName} onChangeText={v=>updateData('employerName', v)} />
-            
             <Text style={styles.label}>Bank Name *</Text>
             <View style={styles.pickerContainer}>
               <Picker selectedValue={formData.bankName} onValueChange={(v) => updateData('bankName', v)}>
@@ -233,65 +216,29 @@ export default function CompleteLoanForm() {
                 <Picker.Item label="Palmpay" value="Palmpay" />
               </Picker>
             </View>
-            
-            <Text style={styles.label}>Account Number * ({formData.accountNumber.length}/10)</Text>
-            <TextInput 
-              style={[styles.input, formData.accountNumber.length > 0 && formData.accountNumber.length !== 10 ? {borderColor: BRAND.danger} : {}]} 
-              value={formData.accountNumber} 
-              onChangeText={v=>updateData('accountNumber', v)} 
-              keyboardType="numeric" 
-              maxLength={10} 
-              placeholder="0123456789"
-            />
-            
+            <Text style={styles.label}>Account Number *</Text>
+            <TextInput style={styles.input} value={formData.accountNumber} onChangeText={v=>updateData('accountNumber', v)} keyboardType="numeric" maxLength={10} />
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(1)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity 
-                    style={[styles.primaryBtn, formData.accountNumber.length !== 10 ? {backgroundColor: BRAND.draft} : {}]} 
-                    onPress={()=> validateStep2() && setStep(3)}
-                >
-                    <Text style={styles.btnText}>Next</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=> (formData.accountNumber.length === 10) ? setStep(3) : Alert.alert("Error", "Invalid Account Number")}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STEP 3: FINANCIALS */}
         {step === 3 && (
           <View>
             <Text style={styles.title}>Financials</Text>
             <Text style={styles.label}>Loan Type</Text>
             <TextInput style={styles.input} value={formData.loanType} editable={false} />
-            
             <Text style={styles.label}>Requested Amount</Text>
             <TextInput style={styles.input} value={formData.loanAmount} onChangeText={v=>updateData('loanAmount', v)} keyboardType="numeric" />
-            
-            <Text style={styles.label}>Monthly Income Range</Text>
-            <View style={styles.pickerContainer}>
-              <Picker selectedValue={formData.monthlyIncome} onValueChange={(v) => updateData('monthlyIncome', v)}>
-                <Picker.Item label="₦50,000.00 - ₦100,000.00" value="₦50,000.00 - ₦100,000.00" />
-                <Picker.Item label="₦100,001.00 - ₦250,000.00" value="₦100,001.00 - ₦250,000.00" />
-                <Picker.Item label="₦250,001.00 - ₦500,000.00" value="₦250,001.00 - ₦500,000.00" />
-                <Picker.Item label="Over ₦500,000.00" value="Over ₦500,000.00" />
-              </Picker>
-            </View>
-
-            <Text style={styles.label}>Repayment Cycle</Text>
-            <View style={styles.pickerContainer}>
-              <Picker selectedValue={formData.repaymentCycle} onValueChange={(v) => updateData('repaymentCycle', v)}>
-                <Picker.Item label="Monthly" value="Monthly" />
-                <Picker.Item label="Weekly" value="Weekly" />
-              </Picker>
-            </View>
-
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.secBtn} onPress={()=>setStep(2)}><Text>Back</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn} onPress={()=> validateAmount().valid ? setStep(4) : Alert.alert("Error", validateAmount().msg)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={()=> setStep(4)}><Text style={styles.btnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STEP 4: DOCUMENTS */}
         {step === 4 && (
           <View>
             <Text style={styles.title}>Documents</Text>
@@ -316,15 +263,13 @@ export default function CompleteLoanForm() {
           </View>
         )}
 
-        {/* STEP 5: REVIEW */}
         {step === 5 && (
           <View>
             <Text style={styles.title}>Review & Submit</Text>
             <View style={styles.reviewCard}>
                 <ReviewItem label="Customer" value={formData.customerName} />
-                <ReviewItem label="Amount" value={`₦${parseFloat(formData.loanAmount).toLocaleString()}`} />
+                <ReviewItem label="Amount" value={`₦${parseFloat(formData.loanAmount || '0').toLocaleString()}`} />
                 <ReviewItem label="Reporting to" value={formData.supervisorName} />
-                <ReviewItem label="Officer Email" value={staffEmail || 'N/A'} />
             </View>
             <TouchableOpacity style={styles.primaryBtn} onPress={handleFinalSubmit} disabled={isSubmitting}>
                 {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Confirm & Submit</Text>}
@@ -340,7 +285,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
   headerRow: { flexDirection: 'row', marginBottom: 20 },
   stepText: { fontSize: 10, fontWeight: 'bold', color: BRAND.primary },
-  barBg: { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2 },
+  barBg: { height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, flex: 1 },
   barFill: { height: 4, backgroundColor: BRAND.primary, borderRadius: 2 },
   title: { fontSize: 22, fontWeight: 'bold', color: BRAND.primary, marginBottom: 15 },
   label: { fontSize: 12, fontWeight: 'bold', marginTop: 15, color: '#64748b' },
