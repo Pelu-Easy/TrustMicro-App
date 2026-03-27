@@ -6,8 +6,8 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Expo } = require('expo-server-sdk');
 const os = require('os');
-const fs = require('fs'); // Added for JSON registry
-const path = require('path'); // Added for path resolution
+const fs = require('fs'); 
+const path = require('path'); 
 
 // --- 0. INITIALIZE APP FIRST ---
 const app = express();
@@ -46,7 +46,6 @@ app.use((req, res, next) => {
 });
 
 // --- 2. DATABASE INITIALIZATION ---
-// UPDATED: Increased timeout and max connections to prevent Supabase timeouts
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
@@ -67,6 +66,10 @@ db.connect((err, client, release) => {
 
 // --- CONFIGURATION & LIMITS ---
 const LOAN_LIMITS = {
+    'SME/Business Loans': 1000000,
+    'Micro Loans': 500000,
+    'Salary Advance': 250000,
+    'Personal/Consumer Loans': 500000,
     'Federal': 1000000,
     'State': 500000,
     'Private': 250000
@@ -232,7 +235,7 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                     fullName: customer.full_name, 
                     bvn: customer.bvn, 
                     phoneNumber: customer.phone || "",
-                    dateOfBirth: customer.dob || "",
+                    dateOfBirth: customer.date_of_birth || customer.dob || "",
                     gender: customer.gender || "Male",
                     verificationStatus: "VERIFIED" 
                 } 
@@ -269,18 +272,27 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
             // AUTO-SAVE to DB
             try {
                 await db.query(
-                    `INSERT INTO customers (bvn, full_name, phone, dob, kyc_status, gender) 
+                    `INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender) 
                      VALUES ($1, $2, $3, $4, 'VERIFIED', $5) 
                      ON CONFLICT (bvn) DO NOTHING`,
                     [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
                 );
             } catch (dbErr) {
-                console.error("Silent Database Save Error:", dbErr.message);
+                console.error("Silent Database Save Error (Retrying with 'dob' column):", dbErr.message);
+                try {
+                    await db.query(
+                        `INSERT INTO customers (bvn, full_name, phone, dob, kyc_status, gender) 
+                         VALUES ($1, $2, $3, $4, 'VERIFIED', $5) 
+                         ON CONFLICT (bvn) DO NOTHING`,
+                        [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
+                    );
+                } catch (retryErr) {
+                    console.error("Final Database Save failure:", retryErr.message);
+                }
             }
 
             return res.json({ status: "success", data: finalCustomerData });
         } else {
-            // FUTURE: Add real API integration here (e.g. Paystack/Flutterwave)
             return res.status(501).json({ error: "Real-world BVN API integration is not active. Set USE_MOCK_DATA=true to test." });
         }
 
@@ -340,7 +352,6 @@ app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res)
 
 app.get('/api/v1/manager/loan-details/:id', authenticateToken, isManagement, async (req, res) => {
     try {
-        // OPTIMIZED: Simplified Join for faster performance
         const query = `
             SELECT l.*, 
             s.full_name as "staffName", 
@@ -433,7 +444,6 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
         const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
-        // OPTIMIZED: Simplified Join for faster performance
         let query = `
             SELECT l.*, 
             s.full_name as "staffName", 
@@ -463,7 +473,6 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
 
 app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
     try {
-        // OPTIMIZED: Simplified Join
         const result = await db.query(`
             SELECT l.*, s.full_name as "staffName" 
             FROM loans l 
@@ -496,31 +505,44 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const loan = req.body;
     const requestedAmount = parseFloat(loan.loanAmount || 0);
     const limit = LOAN_LIMITS[loan.loanType] || 250000;
-    if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded` });
+
+    if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
+    
     try {
-        await db.query(`
-            INSERT INTO customers (bvn, full_name, phone, dob, kyc_status)
-            VALUES ($1, $2, $3, $4, 'VERIFIED')
-            ON CONFLICT (bvn) DO NOTHING`, 
-            [loan.bvn, loan.customerName, loan.phone, loan.dob]
-        );
+        // Customer Persistence
+        try {
+            await db.query(`
+                INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender)
+                VALUES ($1, $2, $3, $4, 'VERIFIED', $5)
+                ON CONFLICT (bvn) DO UPDATE SET full_name = EXCLUDED.full_name, phone = EXCLUDED.phone`, 
+                [loan.bvn, loan.customerName, loan.phone, loan.dob, loan.gender]
+            );
+        } catch (e) {
+            await db.query(`
+                INSERT INTO customers (bvn, full_name, phone, kyc_status, gender)
+                VALUES ($1, $2, $3, 'VERIFIED', $4)
+                ON CONFLICT (bvn) DO NOTHING`, 
+                [loan.bvn, loan.customerName, loan.phone, loan.gender]
+            ).catch(() => {});
+        }
 
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
-        const supervisorName = staffRes.rows[0]?.supervisor_name;
+        const supervisorNameFromStaff = staffRes.rows[0]?.supervisor_name;
         
-        const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", "gender") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`;
+        const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", "gender", "supervisor_name") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`;
         
         const values = [
             `LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, requestedAmount, requestedAmount, 'Pending', 
             tokenEmail, new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, loan.employerName || 'N/A', 
             loan.ninImageUrl, loan.idImageUrl, loan.passportImageUrl, loan.utilityBillUrl, loan.workIdUrl, loan.statementUrl, 
-            loan.signatureUrl, loan.monthlyIncome, loan.loanType, loan.repaymentCycle, loan.gender
+            loan.signatureUrl, loan.monthlyIncome, loan.loanType, loan.repaymentCycle, loan.gender, (loan.supervisorName || supervisorNameFromStaff)
         ];
 
         await db.query(query, values);
 
-        if (supervisorName) {
-            const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [supervisorName]);
+        if (loan.supervisorName || supervisorNameFromStaff) {
+            const targetSup = loan.supervisorName || supervisorNameFromStaff;
+            const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [targetSup]);
             if (supRes.rows[0]) {
                 const staff = supRes.rows[0];
                 await db.query("INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)", [staff.id, "New Loan!", `Review needed for ${loan.customerName}`]);
@@ -528,7 +550,10 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             }
         }
         res.status(201).json({ message: "Loan Submitted" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error("Loan Submission Error:", err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
