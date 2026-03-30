@@ -125,11 +125,12 @@ const isManagement = (req, res, next) => {
     const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
+    // Added 'sales' and 'marketing' to management units to allow proper route access
     const managementUnits = [
         'cco', 'md', 'head of credit', 'cfo', 'admin', 
         'super admin', 'manager', 'supervisor', 
         'head of marketing', 'head of control', 'credit officer',
-        'credit staff', 'officer'
+        'credit staff', 'officer', 'sales', 'marketing'
     ];
     
     const hasManagementAccess = 
@@ -195,8 +196,28 @@ const handleSignup = async (req, res) => {
     try {
         if (!email || !password || !full_name) return res.status(400).json({ error: "Missing required fields" });
         const hash = await bcrypt.hash(password, 10);
+        
+        // Ensure unit defaults to 'Operations' but accepts 'Sales' or 'Marketing' from frontend
+        const finalUnit = unit || 'Operations';
+        const finalRole = role || 'Officer';
+
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password, role, branch, supervisor_name, is_active, failed_attempts, unit, is_loan_officer, is_supervisor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
-        const values = [full_name, email.trim().toLowerCase(), phone_no || null, hash, role || 'Officer', branch || 'Main', supervisor_name || null, true, 0, unit || 'Operations', is_loan_officer === true || is_loan_officer === 1, is_supervisor === true || is_supervisor === 1];
+        
+        const values = [
+            full_name, 
+            email.trim().toLowerCase(), 
+            phone_no || null, 
+            hash, 
+            finalRole, 
+            branch || 'Main', 
+            supervisor_name || null, 
+            true, 
+            0, 
+            finalUnit, 
+            is_loan_officer === true || is_loan_officer === 1, 
+            is_supervisor === true || is_supervisor === 1
+        ];
+
         await db.query(query, values);
         res.status(201).json({ message: "Staff created successfully" });
     } catch (e) { res.status(500).json({ error: "Signup failed", details: e.message }); }
@@ -225,7 +246,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
     if (!bvn) return res.status(400).json({ error: "BVN is required" });
 
     try {
-        // 1. Check existing Database first
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
         if (result.rows.length > 0) {
             const customer = result.rows[0];
@@ -242,7 +262,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
             });
         }
 
-        // 2. Mock Logic vs Real API Logic
         if (isMockMode) {
             console.log(`[TEST MODE] Fetching mock data for BVN: ${bvn}`);
             let foundMock = null;
@@ -269,7 +288,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                 verificationStatus: "VERIFIED"
             };
 
-            // AUTO-SAVE to DB
             try {
                 await db.query(
                     `INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender) 
@@ -278,7 +296,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                     [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
                 );
             } catch (dbErr) {
-                console.error("Silent Database Save Error (Retrying with 'dob' column):", dbErr.message);
                 try {
                     await db.query(
                         `INSERT INTO customers (bvn, full_name, phone, dob, kyc_status, gender) 
@@ -290,12 +307,10 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                     console.error("Final Database Save failure:", retryErr.message);
                 }
             }
-
             return res.json({ status: "success", data: finalCustomerData });
         } else {
             return res.status(501).json({ error: "Real-world BVN API integration is not active. Set USE_MOCK_DATA=true to test." });
         }
-
     } catch (e) { 
         console.error("BVN Route Crash:", e);
         res.status(500).json({ error: "Service Unavailable", details: e.message }); 
@@ -361,11 +376,7 @@ app.get('/api/v1/manager/loan-details/:id', authenticateToken, isManagement, asy
             WHERE l.id = $1`;
         
         const result = await db.query(query, [req.params.id]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "Loan details not found" });
-        }
-        
+        if (result.rows.length === 0) return res.status(404).json({ error: "Loan details not found" });
         res.json(result.rows[0]);
     } catch (err) {
         console.error("Fetch Loan Details Error:", err.message);
@@ -404,7 +415,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
             const staffResult = await db.query(staffFinderQuery);
             if (staffResult.rows.length > 0) {
                 assignedStaffId = staffResult.rows[0].id;
-                
                 const title = "New Loan Assigned 📝";
                 const body = `You have been assigned the loan for ${loanCheck.rows[0].customerName}.`;
                 await db.query("INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)", [assignedStaffId, title, body]);
@@ -418,7 +428,6 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
         );
         
         const updatedLoan = result.rows[0];
-
         const creatorRes = await db.query("SELECT id, push_token FROM staff_users WHERE email = $1", [updatedLoan.createdByEmail]);
         if (creatorRes.rows[0]) {
             const staff = creatorRes.rows[0];
@@ -426,10 +435,8 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
             const body = `The loan for ${updatedLoan.customerName} has moved to ${status.replace(/_/g, ' ')}.`;
             if (staff.push_token) sendPushNotification(staff.push_token, title, body, { loanId: updatedLoan.id, type: 'STATUS_UPDATE' });
         }
-
         res.json({ message: "Status updated", loan: updatedLoan });
     } catch (err) { 
-        console.error("Update failed:", err.message);
         res.status(500).json({ error: "Update failed" }); 
     }
 });
@@ -441,7 +448,7 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     const userBranch = req.user.branch;
 
     try {
-        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
+        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing', 'sales', 'marketing'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
         let query = `
@@ -452,7 +459,6 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
             LEFT JOIN staff_users s ON l."createdByEmail" = s.email`;
         
         let params = [];
-
         if (userRole === 'credit staff' || userRole === 'credit officer') {
             query += ` WHERE l."assignedCreditStaffId" = $1`;
             params = [userId];
@@ -462,11 +468,9 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
         }
         
         query += ` ORDER BY l."submittedDate" DESC`;
-
         const result = await db.query(query, params);
         res.json(result.rows);
     } catch (err) { 
-        console.error("❌ ALL-LOANS FETCH ERROR:", err.message);
         res.status(500).json({ error: "Failed to fetch loans" }); 
     }
 });
@@ -493,7 +497,19 @@ app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (re
 
 app.get('/api/v1/manager/supervisors', async (req, res) => {
     try {
-        const query = `SELECT id, full_name, email, role, branch FROM staff_users WHERE is_active = true AND (is_supervisor = true OR role ILIKE '%Manager%' OR role ILIKE '%Admin%' OR role ILIKE '%Supervisor%' OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations')) ORDER BY full_name ASC`;
+        // Expanded supervisor query to include Sales/Marketing leadership
+        const query = `
+            SELECT id, full_name, email, role, branch 
+            FROM staff_users 
+            WHERE is_active = true 
+            AND (
+                is_supervisor = true 
+                OR role ILIKE '%Manager%' 
+                OR role ILIKE '%Admin%' 
+                OR role ILIKE '%Supervisor%' 
+                OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations', 'Sales', 'Marketing')
+            ) 
+            ORDER BY full_name ASC`;
         const result = await db.query(query);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
@@ -509,7 +525,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
     
     try {
-        // Customer Persistence
         try {
             await db.query(`
                 INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender)
@@ -551,7 +566,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         }
         res.status(201).json({ message: "Loan Submitted" });
     } catch (err) { 
-        console.error("Loan Submission Error:", err.message);
         res.status(500).json({ error: err.message }); 
     }
 });

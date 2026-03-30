@@ -25,7 +25,7 @@ interface Supervisor {
   full_name: string;
   email: string;
   role: string;
-  branch: string; // Added to fix the 'Property does not exist' error
+  branch: string; 
 }
 
 interface ValidationErrors {
@@ -61,9 +61,10 @@ export default function SignUpScreen() {
 
   const [errors, setErrors] = useState<ValidationErrors>({});
 
-  const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services", "Sales"];
+  // Departments
+  const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services"];
   
-  // ROLES LIST
+  // Units (Sales included)
   const units = [
     "Credit Officer", 
     "Supervisor", 
@@ -72,7 +73,7 @@ export default function SignUpScreen() {
     "MD", 
     "Head of Control",
     "Finance", 
-    "Disbursement",
+    "Sales",
     "Cashier", 
     "Internal Control", 
     "IT Support", 
@@ -80,13 +81,15 @@ export default function SignUpScreen() {
     "Customer Experience"
   ];
 
-  const isMarketingOrSales = formData.department === "Marketing" || formData.department === "Sales";
+  // Logic Update: Sales is now checked via the Unit field
+  const isMarketingOrSales = formData.department === "Marketing" || formData.unit === "Sales";
   
   const needsSupervisor = formData.unit === "Credit Officer" || 
+                          formData.unit === "Sales" ||
                           (!formData.isSupervisor && 
-                           formData.unit !== "MD" && 
-                           formData.unit !== "CCO" && 
-                           formData.unit !== "Head of Control");
+                            formData.unit !== "MD" && 
+                            formData.unit !== "CCO" && 
+                            formData.unit !== "Head of Control");
 
   useEffect(() => {
     const fetchSupervisors = async () => {
@@ -109,11 +112,17 @@ export default function SignUpScreen() {
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
       
-      if (field === 'unit' && value === "Credit Officer") {
+      // Auto-set Loan Officer status for Credit and Sales/Marketing
+      if (field === 'unit' && (value === "Credit Officer" || value === "Sales")) {
         newData.isLoanOfficer = true;
       }
       
-      if (field === 'unit' && value !== "Credit Officer" && !isMarketingOrSales) {
+      if (field === 'department' && value === "Marketing") {
+        newData.isLoanOfficer = true;
+      }
+
+      // Reset Loan Officer if moving to a purely administrative role
+      if (field === 'unit' && value !== "Credit Officer" && value !== "Sales" && prev.department !== "Marketing") {
         newData.isLoanOfficer = false;
       }
 
@@ -131,7 +140,6 @@ export default function SignUpScreen() {
     if (!formData.department) currentErrors.department = "Please select a department";
     if (!formData.unit) currentErrors.unit = "Please select a Unit/Role";
     
-    // Inside validateForm()
     if (needsSupervisor && !formData.isSupervisor) {
         if (!formData.supervisor) {
             currentErrors.supervisor = "Please select a supervisor";
@@ -158,16 +166,13 @@ export default function SignUpScreen() {
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
-        // Ensure supervisor_name is handled correctly
         supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), 
         role: formData.isSupervisor ? 'Manager' : formData.unit,
-        // Send actual booleans to avoid PostgreSQL type mismatches
         is_loan_officer: !!formData.isLoanOfficer,
         is_supervisor: !!(formData.isSupervisor || formData.unit === "Head of Control" || formData.unit === "MD" || formData.unit === "CCO"),
         is_active: true 
       };
 
-      // LOG THIS to check your console if it fails
       console.log("📤 Sending Signup Payload:", payload);
 
       const response = await api.post('/auth/signup', payload);
