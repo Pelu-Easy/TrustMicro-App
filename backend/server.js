@@ -125,7 +125,6 @@ const isManagement = (req, res, next) => {
     const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
 
-    // Added 'sales' and 'marketing' to management units to allow proper route access
     const managementUnits = [
         'cco', 'md', 'head of credit', 'cfo', 'admin', 
         'super admin', 'manager', 'supervisor', 
@@ -197,7 +196,6 @@ const handleSignup = async (req, res) => {
         if (!email || !password || !full_name) return res.status(400).json({ error: "Missing required fields" });
         const hash = await bcrypt.hash(password, 10);
         
-        // Ensure unit defaults to 'Operations' but accepts 'Sales' or 'Marketing' from frontend
         const finalUnit = unit || 'Operations';
         const finalRole = role || 'Officer';
 
@@ -249,14 +247,18 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
         const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
         if (result.rows.length > 0) {
             const customer = result.rows[0];
+            const nameParts = (customer.full_name || "").split(" ");
             return res.json({ 
                 status: "success", 
                 data: { 
+                    firstName: nameParts[0] || "",
+                    lastName: nameParts[nameParts.length - 1] || "",
+                    middleName: nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "",
                     fullName: customer.full_name, 
                     bvn: customer.bvn, 
                     phoneNumber: customer.phone || "",
                     dateOfBirth: customer.date_of_birth || customer.dob || "",
-                    gender: customer.gender || "Male",
+                    gender: customer.gender || "",
                     verificationStatus: "VERIFIED" 
                 } 
             });
@@ -273,21 +275,26 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
             }
 
             const finalCustomerData = foundMock ? {
+                firstName: foundMock.firstName || (foundMock.fullName ? foundMock.fullName.split(" ")[0] : "Verified"),
+                lastName: foundMock.lastName || (foundMock.fullName ? foundMock.fullName.split(" ").pop() : "Customer"),
                 fullName: foundMock.fullName || `${foundMock.firstName} ${foundMock.lastName}`,
                 bvn: foundMock.bvn,
                 phoneNumber: foundMock.phoneNumber || foundMock.phone || "08000000000",
                 dateOfBirth: foundMock.dateOfBirth || foundMock.dob || "1990-01-01",
-                gender: foundMock.gender || "Male",
+                gender: foundMock.gender || "",
                 verificationStatus: "VERIFIED"
             } : {
+                firstName: "Verified",
+                lastName: "Customer",
                 fullName: "Verified Test Customer",
                 bvn: bvn,
                 phoneNumber: "08012345678",
                 dateOfBirth: "1995-05-20",
-                gender: "Male",
+                gender: "",
                 verificationStatus: "VERIFIED"
             };
 
+            // Wrap in extra try/catch to prevent ECONNRESET from crashing the entire response
             try {
                 await db.query(
                     `INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender) 
@@ -296,17 +303,9 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                     [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
                 );
             } catch (dbErr) {
-                try {
-                    await db.query(
-                        `INSERT INTO customers (bvn, full_name, phone, dob, kyc_status, gender) 
-                         VALUES ($1, $2, $3, $4, 'VERIFIED', $5) 
-                         ON CONFLICT (bvn) DO NOTHING`,
-                        [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
-                    );
-                } catch (retryErr) {
-                    console.error("Final Database Save failure:", retryErr.message);
-                }
+                console.error("Database save failed, but continuing with mock response:", dbErr.message);
             }
+
             return res.json({ status: "success", data: finalCustomerData });
         } else {
             return res.status(501).json({ error: "Real-world BVN API integration is not active. Set USE_MOCK_DATA=true to test." });
@@ -497,7 +496,6 @@ app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (re
 
 app.get('/api/v1/manager/supervisors', async (req, res) => {
     try {
-        // Expanded supervisor query to include Sales/Marketing leadership
         const query = `
             SELECT id, full_name, email, role, branch 
             FROM staff_users 
