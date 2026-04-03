@@ -9,7 +9,9 @@ router.post('/', async (req, res) => {
     const { db } = require('../server'); 
 
     const {
-        customerName,
+        firstName,
+        lastName,
+        middleName,
         bvn,
         phone,
         loanAmount,
@@ -21,8 +23,17 @@ router.post('/', async (req, res) => {
         status,
         nin,
         gender,
+        title,
         monthlyIncome,
         repaymentCycle,
+        // New Fields from Updated loanForm.tsx
+        clientSector,
+        stateOfOrigin,
+        lga,
+        fullAddress,
+        residentialStatus,
+        employerState,
+        employmentType,
         // Document URLs
         ninImageUrl,
         idImageUrl,
@@ -35,6 +46,9 @@ router.post('/', async (req, res) => {
         parentLoanId 
     } = req.body;
 
+    // Construct full name for legacy support in database
+    const customerName = `${title} ${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim();
+
     // Generate a unique ID
     const loanId = `LOAN-${crypto.randomUUID().substring(0, 8).toUpperCase()}`;
 
@@ -43,18 +57,19 @@ router.post('/', async (req, res) => {
 
         await db.query('BEGIN');
 
-        // 1. Insert/Update Customers table 
+        // 1. Insert/Update Customers table (Updated to include gender/title)
         const customerQuery = `
-            INSERT INTO customers (full_name, bvn, phone, nin, kyc_status)
-            VALUES ($1, $2, $3, $4, 'Verified')
+            INSERT INTO customers (full_name, bvn, phone, nin, gender, kyc_status)
+            VALUES ($1, $2, $3, $4, $5, 'Verified')
             ON CONFLICT (bvn) DO UPDATE SET 
                 full_name = EXCLUDED.full_name,
-                phone = EXCLUDED.phone
+                phone = EXCLUDED.phone,
+                gender = EXCLUDED.gender
             RETURNING id;
         `;
-        await db.query(customerQuery, [customerName, bvn, phone || 'N/A', nin || 'N/A']);
+        await db.query(customerQuery, [customerName, bvn, phone || 'N/A', nin || 'N/A', gender]);
 
-        // 2. Insert into Loans table (Includes parentLoanId for Top-Ups)
+        // 2. Insert into Loans table (Includes parentLoanId for Top-Ups + New Form Fields)
         const loanQuery = `
             INSERT INTO loans (
                 "id",
@@ -80,11 +95,13 @@ router.post('/', async (req, res) => {
                 "workIdUrl",
                 "statementUrl",
                 "signatureUrl",
-                "parentLoanId"
+                "parentLoanId",
+                "clientSector",
+                "residentialStatus"
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
                 $11, $12, $13, $14, $15, CURRENT_DATE, 
-                $16, $17, $18, $19, $20, $21, $22, $23
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
             RETURNING id;
         `;
@@ -93,8 +110,8 @@ router.post('/', async (req, res) => {
             loanId,
             customerName,
             bvn,
-            parseFloat(loanAmount), 
-            parseFloat(loanAmount), 
+            parseFloat(loanAmount) || 0, 
+            parseFloat(loanAmount) || 0, 
             loanType,
             bankName,
             accountNumber,
@@ -104,7 +121,7 @@ router.post('/', async (req, res) => {
             nin,
             gender,
             monthlyIncome || 0,
-            repaymentCycle,
+            repaymentCycle || 'Monthly',
             ninImageUrl || null,
             idImageUrl || null,
             passportImageUrl || null,
@@ -112,7 +129,9 @@ router.post('/', async (req, res) => {
             workIdUrl || null,
             statementUrl || null,
             signatureUrl || null,
-            parentLoanId || null 
+            parentLoanId || null,
+            clientSector || 'Federal',
+            residentialStatus || 'Tenant'
         ];
 
         const result = await db.query(loanQuery, values);
@@ -135,7 +154,6 @@ router.post('/', async (req, res) => {
 });
 
 // --- GET LOAN HISTORY BY BVN ---
-// Used to display all previous applications for a specific customer
 router.get('/history/:bvn', async (req, res) => {
     const { db } = require('../server');
     const { bvn } = req.params;
