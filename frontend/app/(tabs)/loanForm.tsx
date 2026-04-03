@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for persistence
 import { Picker } from '@react-native-picker/picker';
+import Checkbox from 'expo-checkbox';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Platform,
   ScrollView,
   StyleSheet,
   Text, TextInput, TouchableOpacity,
@@ -15,133 +16,110 @@ import {
 } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// --- STORES & UTILS ---
+import { NIGERIAN_STATES } from '../../constants/StateData';
 import api from '../../services/api';
 import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
-const PERSIST_KEY = 'TRUSTMICRO_LOAN_DRAFT'; // Key for auto-save
 
 const BRAND = { 
-  primary: "#0056D2", accent: "#10B981", warning: "#F59E0B", danger: "#EF4444",
-  draft: "#94A3B8", bg: "#F8FAFC", border: "#E2E8F0", card: "#FFFFFF", inputBg: "#F1F5F9"
+  primary: "#0056D2", 
+  accent: "#10B981", 
+  warning: "#F59E0B", 
+  danger: "#EF4444",
+  draft: "#94A3B8", 
+  bg: "#F8FAFC", 
+  border: "#E2E8F0",
+  card: "#FFFFFF",
+  inputBg: "#F1F5F9"
 };
 
 const STAGES = [
-  "Personal Info", "Residential Information", "Employment Info",
-  "Next of Kin", "Bank Information", "Document Upload",
-  "Social Media", "Referral & Exposure", "Declaration"
+  "Personal Info",
+  "Residential Information",
+  "Employment Info",
+  "Next of Kin",
+  "Bank Information",
+  "Document Upload",
+  "Social Media",
+  "Referral & Exposure",
+  "Declaration"
 ];
-
-const NIGERIAN_STATES: { [key: string]: string[] } = {
-    "Abia": ["Aba North", "Aba South", "Arochukwu", "Bende", "Ikwuano", "Isiala Ngwa North", "Isiala Ngwa South", "Isuikwuato", "Obingwa", "Ohafia", "Osisioma", "Ugwunagbo", "Ukwa East", "Ukwa West", "Umuahia North", "Umuahia South", "Umu-Nneochi"],
-    "Adamawa": ["Demsa", "Fufore", "Ganye", "Girei", "Gombi", "Guyuk", "Hong", "Jada", "Lamurde", "Madagali", "Maiha", "Mayo-Belwa", "Michika", "Mubi North", "Mubi South", "Numan", "Shelleng", "Song", "Toungo", "Yola North", "Yola South"],
-    "Akwa Ibom": ["Abak", "Eastern Obolo", "Eket", "Esit Eket", "Essien Udim", "Etim Ekpo", "Etinan", "Ibeno", "Ibesikpo Asutan", "Ibiono Ibom", "Ika", "Ikono", "Ikot Abasi", "Ikot Ekpene", "Ini", "Itu", "Mbo", "Mkpat Enin", "Nsit Atai", "Nsit Ibom", "Nsit Ubium", "Obot Akara", "Okobo", "Onna", "Oron", "Oruk Anam", "Udung Uko", "Ukanafun", "Uruan", "Urue-Offong/Oruko", "Uyo"],
-    "Anambra": ["Aguata", "Anambra East", "Anambra West", "Anaocha", "Awka North", "Awka South", "Ayamelum", "Dunukofia", "Ekwusigo", "Idemili North", "Idemili South", "Ihiala", "Njikoka", "Nnewi North", "Nnewi South", "Ogbaru", "Onitsha North", "Onitsha South", "Orumba North", "Orumba South", "Oyi"],
-    "Bauchi": ["Alkaleri", "Bauchi", "Bogoro", "Damban", "Darazo", "Dass", "Gamawa", "Ganjuwa", "Giade", "Itas/Gadau", "Jama'are", "Katagum", "Kirfi", "Misau", "Ningi", "Shira", "Tafawa-Balewa", "Toro", "Warji", "Zaki"],
-    "Bayelsa": ["Brass", "Ekeremor", "Kolokuma/Opokuma", "Nembe", "Ogbia", "Sagbama", "Southern Ijaw", "Yenagoa"],
-    "Benue": ["Ado", "Agatu", "Apa", "Buruku", "Gboko", "Guma", "Gwer East", "Gwer West", "Katsina-Ala", "Konshisha", "Kwande", "Logo", "Makurdi", "Obi", "Ogbadibo", "Ohimini", "Oju", "Okpokwu", "Otukpo", "Tarka", "Ukum", "Ushongo", "Vandeikya"],
-    "Borno": ["Abadam", "Askira/Uba", "Bama", "Bayo", "Biu", "Chibok", "Damboa", "Dikwa", "Gubio", "Guzamala", "Gwoza", "Hawul", "Jere", "Kaga", "Kala/Balge", "Konduga", "Kukawa", "Kwaya Kusar", "Mafa", "Magumeri", "Maiduguri", "Marte", "Mobbar", "Monguno", "Ngala", "Nganzai", "Shani"],
-    "Cross River": ["Abi", "Akamkpa", "Akpabuyo", "Bakassi", "Bekwarra", "Biase", "Boki", "Calabar Municipal", "Calabar South", "Etung", "Ikom", "Obanliku", "Obubra", "Obudu", "Odukpani", "Ogoja", "Yakuur", "Yala"],
-    "Delta": ["Aniocha North", "Aniocha South", "Bomadi", "Burutu", "Ethiope East", "Ethiope West", "Ika North East", "Ika South", "Isoko North", "Isoko South", "Ndokwa East", "Ndokwa West", "Okpe", "Oshimili North", "Oshimili South", "Patani", "Sapele", "Udu", "Ughelli North", "Ughelli South", "Ukwuani", "Uvwie", "Warri North", "Warri South", "Warri South West"],
-    "Ebonyi": ["Abakaliki", "Afikpo North", "Afikpo South", "Ebonyi", "Ezza North", "Ezza South", "Ikwo", "Ishielu", "Ivo", "Izzi", "Ohaozara", "Ohaukwu", "Onicha"],
-    "Edo": ["Akoko-Edo", "Egor", "Esan Central", "Esan North-East", "Esan South-East", "Esan West", "Etsako Central", "Etsako East", "Etsako West", "Igueben", "Ikpoba Okha", "Orhionmwon", "Oredo", "Ovia North-East", "Ovia South-West", "Owan East", "Owan West", "Uhunmwonde"],
-    "Ekiti": ["Ado Ekiti", "Efon", "Ekiti East", "Ekiti South-West", "Ekiti West", "Emure", "Gbonyin", "Ido Osi", "Ijero", "Ikere", "Ikole", "Ilejemeje", "Irepodun/Ifelodun", "Ise/Orun", "Moba", "Oye"],
-    "Enugu": ["Aninri", "Awgu", "Enugu East", "Enugu North", "Enugu South", "Ezeagu", "Igbo Etiti", "Igbo Eze North", "Igbo Eze South", "Isi Uzo", "Nkanu East", "Nkanu West", "Nsukka", "Oji River", "Udenu", "Udi", "Uzo-Uwani"],
-    "FCT": ["Abaji", "Bwari", "Gwagwalada", "Kuje", "Kwali", "Municipal Area Council"],
-    "Gombe": ["Akko", "Balanga", "Billiri", "Dukku", "Funakaye", "Gombe", "Kaltungo", "Kwami", "Nafada", "Shongom", "Yamaltu/Deba"],
-    "Imo": ["Ahiazu Mbaise", "Ehime Mbano", "Ezinihitte", "Ideato North", "Ideato South", "Ihitte/Uboma", "Ikeduru", "Isiala Mbano", "Isu", "Mbaitoli", "Ngor Okpala", "Njaba", "Nkwerre", "Nwangele", "Obowo", "Oguta", "Ohaji/Egbema", "Okigwe", "Orlu", "Orsu", "Oru East", "Oru West", "Owerri Municipal", "Owerri North", "Owerri West", "Unuimo"],
-    "Jigawa": ["Auyo", "Babura", "Biriniwa", "Birnin Kudu", "Buji", "Dutse", "Gagarawa", "Garki", "Gumel", "Guri", "Gwaram", "Gwiwa", "Hadejia", "Jahun", "Kafin Hausa", "Kaugama", "Kazaure", "Kiri Kasama", "Kiyawa", "Maigatari", "Malam Madori", "Miga", "Ringim", "Roni", "Sule Tankarkar", "Taura", "Yankwashi"],
-    "Kaduna": ["Birnin Gwari", "Chikun", "Giwa", "Igabi", "Ikara", "Jaba", "Jema'a", "Kachia", "Kaduna North", "Kaduna South", "Kagarko", "Kajuru", "Kaura", "Kauru", "Kubau", "Kudan", "Lere", "Makarfi", "Sabon Gari", "Sanga", "Soba", "Zangon Kataf", "Zaria"],
-    "Kano": ["Ajingi", "Albasu", "Bagwai", "Bebeji", "Bichi", "Bunkure", "Dala", "Dambatta", "Dawakin Kudu", "Dawakin Tofa", "Doguwa", "Fagge", "Gabasawa", "Garko", "Garun Mallam", "Gaya", "Gezawa", "Gwale", "Gwarzo", "Kabo", "Kano Municipal", "Karaye", "Kibiya", "Kiru", "Kumbotso", "Kunchi", "Kura", "Madobi", "Makoda", "Minjibir", "Nasarawa", "Rano", "Rimin Gado", "Rogo", "Kumbotso", "Shanono", "Sumaila", "Takai", "Tarauni", "Tofa", "Tsanyawa", "Tudun Wada", "Ungogo", "Warawa", "Wudil"],
-    "Katsina": ["Bakori", "Batagarawa", "Batsari", "Baure", "Bindawa", "Charanchi", "Dandume", "Danja", "Dan Musa", "Daura", "Dutsi", "Dutsin Ma", "Faskari", "Funtua", "Ingawa", "Jibia", "Kafur", "Kaita", "Kankara", "Kankia", "Katsina", "Kurfi", "Kusada", "Mai'Adua", "Malumfashi", "Mani", "Mashi", "Musawa", "Rimi", "Sabuwa", "Safana", "Sandamu", "Zango"],
-    "Kebbi": ["Aleiro", "Arewa Dandi", "Argungu", "Augie", "Bagudo", "Birnin Kebbi", "Bunza", "Dandi", "Fakai", "Gwandu", "Jega", "Kalgo", "Koko/Besse", "Maiyama", "Ngaski", "Sakaba", "Shanga", "Suru", "Wasagu/Danko", "Yauri", "Zuru"],
-    "Kogi": ["Adavi", "Ajaokuta", "Ankpa", "Bassa", "Dekina", "Ibaji", "Idah", "Igalamela Odolu", "Ijumu", "Kabba/Bunu", "Kogi", "Lokoja", "Mopa Muro", "Ofu", "Ogori/Magongo", "Okehi", "Okene", "Olamaboro", "Omala", "Yagba East", "Yagba West"],
-    "Kwara": ["Asa", "Baruten", "Edu", "Ekiti", "Ifelodun", "Ilorin East", "Ilorin South", "Ilorin West", "Irepodun", "Isin", "Kaiama", "Moro", "Offa", "Oke Ero", "Oyun", "Pategi"],
-    "Lagos": ["Agege", "Ajeromi-Ifelodun", "Alimosho", "Amuwo-Odofin", "Apapa", "Badagry", "Epe", "Eti Osa", "Ibeju-Lekki", "Ifako-Ijaiye", "Ikeja", "Ikorodu", "Kosofe", "Lagos Island", "Lagos Mainland", "Mushin", "Ojo", "Oshodi-Isolo", "Shomolu", "Surulere"],
-    "Nasarawa": ["Akwanga", "Awe", "Doma", "Karu", "Keana", "Keffi", "Kokona", "Lafia", "Nasarawa", "Nasarawa Egon", "Obi", "Toto", "Wamba"],
-    "Niger": ["Agaie", "Agwara", "Bida", "Borgu", "Bosso", "Chanchaga", "Edati", "Gbako", "Gurara", "Katcha", "Kontagora", "Lapai", "Lavun", "Magama", "Mariga", "Mashegu", "Mokwa", "Moya", "Paikoro", "Rafi", "Rijau", "Shiroro", "Suleja", "Tafa", "Wushishi"],
-    "Ogun": ["Abeokuta North", "Abeokuta South", "Ado-Odo/Ota", "Ewekoro", "Ifo", "Ijebu East", "Ijebu North", "Ijebu North East", "Ijebu Ode", "Ikenne", "Imeko Afon", "Ipokia", "Obafemi Owode", "Odeda", "Odogbolu", "Ogun Waterside", "Remo North", "Shagamu", "Yewa North", "Yewa South"],
-    "Ondo": ["Akoko North-East", "Akoko North-West", "Akoko South-West", "Akoko South-East", "Akure North", "Akure South", "Ese Odo", "Idanre", "Ifedore", "Ilaje", "Ile Oluji/Okeigbo", "Irele", "Odigbo", "Okitipupa", "Ondo East", "Ondo West", "Ose", "Owo"],
-    "Osun": ["Atakunmosa East", "Atakunmosa West", "Aiyedaade", "Aiyedire", "Boluwaduro", "Boripe", "Ede North", "Ede South", "Ife Central", "Ife East", "Ife North", "Ife South", "Egbedore", "Ejigbo", "Ifedayo", "Ifelodun", "Ila", "Ilesa East", "Ilesa West", "Irepodun", "Irewole", "Isokan", "Iwo", "Obokun", "Odo Otin", "Ola Oluwa", "Olorunda", "Oriade", "Orolu", "Osogbo"],
-    "Oyo": ["Afijio", "Akinyele", "Atiba", "Atisbo", "Egbeda", "Ibadan North", "Ibadan North-East", "Ibadan North-West", "Ibadan South-East", "Ibadan South-West", "Ibarapa Central", "Ibarapa East", "Ibarapa North", "Ido", "Irepo", "Iseyin", "Itesiwaju", "Iwajowa", "Kajola", "Lagelu", "Ogbomosho North", "Ogbomosho South", "Ogo Oluwa", "Olorunsogo", "Oluyole", "Ona Ara", "Orelope", "Ori Ire", "Oyo", "Oyo East", "Saki East", "Saki West", "Surulere"],
-    "Plateau": ["Bokkos", "Barkin Ladi", "Bassa", "Jos East", "Jos North", "Jos South", "Kanam", "Kanke", "Langtang North", "Langtang South", "Mangu", "Mikang", "Pankshin", "Qua'an Pan", "Riyom", "Shendam", "Wase"],
-    "Rivers": ["Abua/Odual", "Ahoada East", "Ahoada West", "Akuku-Toru", "Andoni", "Asari-Toru", "Bonny", "Degema", "Eleme", "Emuoha", "Etche", " Gokana", "Ikwerre", "Khana", "Obio/Akpor", "Ogba/Egbema/Ndoni", "Ogu/Bolo", "Okrika", "Omuma", "Opobo/Nkoro", "Oyigbo", "Port Harcourt", "Tai"],
-    "Sokoto": ["Binji", "Bodinga", "Dange Shuni", "Gada", "Goronyo", "Gudu", "Gwadabawa", "Illela", "Isa", "Kebbe", "Kware", "Rabah", "Sabon Birni", "Shagari", "Silame", "Sokoto North", "Sokoto South", "Tambuwal", "Tangaza", "Tureta", "Wamako", "Wurno", "Yabo"],
-    "Taraba": ["Ardo Kola", "Bali", "Donga", "Gashaka", "Gassol", "Ibi", "Jalingo", "Karim Lamido", "Kumi", "Lau", "Sardauna", "Takum", "Ussa", "Wukari", "Yorro", "Zing"],
-    "Yobe": ["Bade", "Bursari", "Damaturu", "Fika", "Fune", "Geidam", "Gujba", "Gulani", "Jakusko", "Karasuwa", "Machina", "Nangere", "Nguru", "Potiskum", "Tarmuwa", "Yunusari", "Yusufari"],
-    "Zamfara": ["Anka", "Bakura", "Birnin Magaji/Kiyaw", "Bukkuyum", "Bungudu", "Gummi", "Gusau", "Kaura Namoda", "Maradun", "Maru", "Shinkafi", "Talata Mafara", "Chafe", "Zurmi"]
-};
 
 export default function CompleteLoanForm() {
   const router = useRouter();
+  
   const [currentStep, setCurrentStep] = useState(0); 
-  const { role, isSupervisor, isHeadOfCredit, _hasHydrated } = useUserData();
+  const { 
+    role, 
+    isSupervisor, 
+    isHeadOfCredit,
+    _hasHydrated 
+  } = useUserData();
 
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
+    // --- STAGE 1: PERSONAL INFO ---
     clientSector: '', bvn: '', title: '', firstName: '', middleName: '', lastName: '',
     nin: '', gender: '', dob: '', mothersMaidenName: '', clientTypeKYC: '',
     phone: '', alternatePhone: '', emailAddress: '', accountOfficer: '',
     nationality: 'Nigerian', stateOfOrigin: '', lga: '', homeAddress: '',
+
+    // --- STAGE 2: RESIDENTIAL INFORMATION ---
     permanentState: '', residentialLGA: '', fullAddress: '',
     latitude: '0E-8', longitude: '0E-8', buildingDescription: '',
     nearestLandmark: '', residentialStatus: '', dateMovedIn: '',
     useAsDefault: false,
-    approvedBusinessLocation: '', employerBranchName: '',
+
+    // --- STAGE 3: EMPLOYMENT INFO ---
+    approvedBusinessLocation: '', employerBranchName: 'NSCDC',
     employerState: '', employerLGA: '', employerAddress: '',
     employerLat: '0E-8', employerLong: '0E-8',
-    staffId: '', jobRole: '', employmentType: '',
-    dateOfEmployment: '', salaryRange: '101k-1m', salaryPaymentDay: '',
-    tinNumber: '', monthlyIncome: '', annualIncome: '',
+    staffId: '', jobRole: 'OPERATIONS', employmentType: '',
+    dateOfEmployment: '', salaryRange: '', salaryPaymentDay: '',
+    tokenNumber: '', monthlyIncome: '', annualIncome: '',
+
+    // --- STAGE 4: NEXT OF KIN ---
     nok1Relationship: 'Child', nok1FirstName: '', nok1MiddleName: '', nok1LastName: '',
     nok1Dob: '', nok1State: '', nok1Lga: '', nok1Address: '', nok1Lat: '', nok1Long: '',
     nok1Phone: '', nok1Email: '',
     nok2Relationship: 'Child', nok2FirstName: '', nok2MiddleName: '', nok2LastName: '',
     nok2Dob: '', nok2State: '', nok2Lga: '', nok2Address: '', nok2Lat: '', nok2Long: '',
     nok2Phone: '', nok2Email: '',
+
+    // --- STAGE 5: BANK INFORMATION ---
     bankName: '', accountNumber: '', accountName: '', loanAmount: '', loanType: 'Personal',
-    idImageUrl: null, utilityBillUrl: null, passportImageUrl: null, 
-    workIdUrl: null, statementUrl: null, signatureUrl: null, ninImageUrl: null,
+
+    // --- STAGE 6: DOCUMENT UPLOAD ---
+    idImageUrl: null as any, 
+    utilityBillUrl: null as any, 
+    passportImageUrl: null as any, 
+    workIdUrl: null as any, 
+    signatureUrl: null as any, 
+    ninImageUrl: null as any,
     selectedDocType: 'National ID',
+
+    // --- STAGE 7: SOCIAL MEDIA ---
     socialPlatform: 'Facebook', socialHandle: '', socialLinks: [] as {platform: string, handle: string}[],
+
+    // --- STAGE 8: REFERRAL & POLITICAL EXPOSURE ---
     referralId: '', isPoliticallyExposed: false, exposureOptions: 'None', affiliationDescription: '',
+
+    // --- STAGE 9: DECLARATION ---
     hasAcceptedTerms: false
   });
-
-  // 1. AUTO-LOAD DRAFT ON MOUNT
-  useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        const saved = await AsyncStorage.getItem(PERSIST_KEY);
-        if (saved) {
-          const { data, step } = JSON.parse(saved);
-          setFormData(prev => ({ ...prev, ...data }));
-          setCurrentStep(step);
-        }
-      } catch (e) { console.error("Draft Recovery Error", e); }
-    };
-    loadDraft();
-  }, []);
-
-  // 2. AUTO-SAVE ON CHANGE
-  useEffect(() => {
-    const saveDraft = async () => {
-      try {
-        const draft = JSON.stringify({ data: formData, step: currentStep });
-        await AsyncStorage.setItem(PERSIST_KEY, draft);
-      } catch (e) { /* silent fail */ }
-    };
-    saveDraft();
-  }, [formData, currentStep]);
 
   useEffect(() => {
     if (!_hasHydrated) return;
     const userRole = role?.toLowerCase() || '';
     const isManagement = isSupervisor || isHeadOfCredit || ['manager', 'admin', 'cco', 'md', 'finance'].includes(userRole);
-    if (isManagement) router.replace('/'); 
-  }, [_hasHydrated, role, isHeadOfCredit, isSupervisor]);
+    if (isManagement) {
+      router.replace('/'); 
+    }
+  }, [_hasHydrated, role]);
 
   const updateData = (key: keyof typeof formData, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
 
@@ -161,7 +139,6 @@ export default function CompleteLoanForm() {
       Alert.alert("Error", "Enter 11-digit BVN"); 
       return; 
     }
-    
     setIsVerifying(true);
     try {
       const res = await api.post('/manager/verify-bvn', { bvn: formData.bvn });
@@ -182,33 +159,37 @@ export default function CompleteLoanForm() {
         Alert.alert("Verification Failed", res.data.message || "Invalid BVN details.");
       }
     } catch (e: any) { 
-      Alert.alert("Connection Error", "The app couldn't reach the server. Please try again."); 
-    } finally { setIsVerifying(false); }
+      Alert.alert("Network Error", "The server connection was reset. Please try again."); 
+    } finally { 
+      setIsVerifying(false); 
+    }
   };
 
   const handleSubmit = async () => {
     if (!formData.hasAcceptedTerms) {
-        Alert.alert("Declaration Required", "Please accept the terms and conditions.");
+        Alert.alert("Declaration Required", "Please accept the terms and conditions to proceed.");
         return;
     }
     setIsSubmitting(true);
-    try {
-        // Implementation of actual API call would go here
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await AsyncStorage.removeItem(PERSIST_KEY); // Clear draft on success
+    setTimeout(() => {
+        setIsSubmitting(false);
         Alert.alert("Success", "Loan Application Submitted Successfully!");
         router.replace('/');
-    } catch (e) {
-        Alert.alert("Error", "Failed to submit loan. Your data is still saved as a draft.");
-    } finally { setIsSubmitting(false); }
+    }, 2000);
   };
 
-  // Helper to safely change steps
-  const goToStep = (step: number) => {
-    if (step >= 0 && step < STAGES.length) {
-      setCurrentStep(step);
-    }
-  };
+  const RenderUploadField = ({ label, apiKey, icon = "cloud-upload" }: { label: string, apiKey: keyof typeof formData, icon?: any }) => (
+    <View style={{ marginBottom: 15 }}>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity style={styles.uploadRow} onPress={() => pickDocument(apiKey)}>
+        <Ionicons name={icon} size={22} color={BRAND.primary} />
+        <Text style={styles.uploadText} numberOfLines={1}>
+          {formData[apiKey] && typeof formData[apiKey] === 'object' ? (formData[apiKey] as any).name : `Upload ${label}`}
+        </Text>
+        {formData[apiKey] && <Ionicons name="checkmark-circle" size={20} color={BRAND.accent} />}
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -220,7 +201,7 @@ export default function CompleteLoanForm() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 20 }}>
         
         {/* STAGE 1: PERSONAL INFO */}
         {currentStep === 0 && (
@@ -273,11 +254,11 @@ export default function CompleteLoanForm() {
               <Text style={styles.label}>Last Name</Text><TextInput style={styles.input} value={formData.lastName} onChangeText={v => updateData('lastName', v)} />
             </View>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => {
-              if(!formData.clientSector || !formData.title || !formData.gender) {
-                Alert.alert("Required", "Please select Client Sector, Title, and Gender.");
+              if(!formData.title || !formData.gender || !formData.clientSector) {
+                Alert.alert("Required", "Please select Sector, Title and Gender.");
                 return;
               }
-              goToStep(1);
+              setCurrentStep(1);
             }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
           </View>
         )}
@@ -296,7 +277,7 @@ export default function CompleteLoanForm() {
                       selectedValue={formData.permanentState} 
                       onValueChange={v => {
                         updateData('permanentState', v);
-                        updateData('residentialLGA', ''); 
+                        updateData('residentialLGA', '');
                       }}
                     >
                       <Picker.Item label="Select State" value="" />
@@ -339,13 +320,13 @@ export default function CompleteLoanForm() {
               </View>
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => goToStep(0)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(0)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
               <TouchableOpacity style={styles.primaryBtn} onPress={() => {
                 if(!formData.permanentState || !formData.residentialLGA || !formData.residentialStatus) {
-                   Alert.alert("Required", "Please select State, LGA, and Residential Status.");
+                   Alert.alert("Required", "Please complete all address fields.");
                    return;
                 }
-                goToStep(2);
+                setCurrentStep(2);
               }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
             </View>
           </View>
@@ -390,6 +371,7 @@ export default function CompleteLoanForm() {
                   <Picker.Item label="Select Type" value="" />
                   <Picker.Item label="Full Time" value="Full Time" />
                   <Picker.Item label="Contract" value="Contract" />
+                  <Picker.Item label="Self-Employed" value="Self-Employed" />
                 </Picker>
               </View>
               <View style={styles.grid}>
@@ -398,22 +380,147 @@ export default function CompleteLoanForm() {
                   <View style={styles.pickerContainer}>
                     <Picker style={styles.picker} selectedValue={formData.salaryRange} onValueChange={v => updateData('salaryRange', v)}>
                       <Picker.Item label="Select Range" value="" />
-                      <Picker.Item label="101k-1m" value="101k-1m" />
+                      <Picker.Item label="0 - 50k" value="0-50k" />
+                      <Picker.Item label="51k - 100k" value="51k-100k" />
+                      <Picker.Item label="101k - 1m" value="101k-1m" />
                     </Picker>
                   </View>
                 </View>
-                <View style={{ width: '48%' }}><Text style={styles.label}>Monthly Income</Text><TextInput style={styles.input} value={formData.monthlyIncome} keyboardType="numeric" onChangeText={v => updateData('monthlyIncome', v)} /></View>
+                <View style={{ width: '48%' }}><Text style={styles.label}>Monthly Income</Text><TextInput style={styles.input} value={formData.monthlyIncome} keyboardType="numeric" placeholder="0.00" onChangeText={v => updateData('monthlyIncome', v)} /></View>
               </View>
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => goToStep(1)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(1)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
               <TouchableOpacity style={styles.primaryBtn} onPress={() => {
-                if(!formData.employerState || !formData.employmentType) {
-                   Alert.alert("Required", "Please select Employer State and Employment Type.");
-                   return;
+                if(!formData.employmentType || !formData.employerState) {
+                  Alert.alert("Required", "Please complete employment details.");
+                  return;
                 }
-                goToStep(3);
+                setCurrentStep(3);
               }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STAGE 4: NEXT OF KIN */}
+        {currentStep === 3 && (
+          <View>
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Next of Kin 1</Text>
+              <Text style={styles.label}>Relationship</Text>
+              <View style={styles.pickerContainer}>
+                <Picker style={styles.picker} selectedValue={formData.nok1Relationship} onValueChange={v => updateData('nok1Relationship', v)}>
+                  <Picker.Item label="Select Relationship" value="" />
+                  <Picker.Item label="Child" value="Child" />
+                  <Picker.Item label="Spouse" value="Spouse" />
+                  <Picker.Item label="Parent" value="Parent" />
+                  <Picker.Item label="Sibling" value="Sibling" />
+                </Picker>
+              </View>
+              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="First Name" value={formData.nok1FirstName} onChangeText={v => updateData('nok1FirstName', v)} />
+              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Phone" value={formData.nok1Phone} keyboardType="phone-pad" onChangeText={v => updateData('nok1Phone', v)} />
+            </View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(2)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(4)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STAGE 5: BANK INFO */}
+        {currentStep === 4 && (
+          <View>
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Disbursement Bank</Text>
+              <Text style={styles.label}>Bank Name</Text>
+              <TextInput style={styles.input} placeholder="e.g. Access Bank" value={formData.bankName} onChangeText={v => updateData('bankName', v)} />
+              <Text style={styles.label}>Account Number</Text>
+              <TextInput style={styles.input} placeholder="10-digit NUBAN" value={formData.accountNumber} keyboardType="numeric" maxLength={10} onChangeText={v => updateData('accountNumber', v)} />
+              <Text style={styles.label}>Loan Amount Requested</Text>
+              <TextInput style={styles.input} placeholder="₦ 0.00" value={formData.loanAmount} keyboardType="numeric" onChangeText={v => updateData('loanAmount', v)} />
+            </View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(3)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => {
+                if(!formData.bankName || !formData.accountNumber || !formData.loanAmount) {
+                  Alert.alert("Required", "Please complete all bank details.");
+                  return;
+                }
+                setCurrentStep(5);
+              }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STAGE 6: DOCUMENT UPLOAD */}
+        {currentStep === 5 && (
+          <View>
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Required Documents</Text>
+              <Text style={styles.infoText}>Please provide clear scans/photos of the following documents.</Text>
+              <Text style={styles.label}>Identification Type</Text>
+              <View style={styles.pickerContainer}>
+                <Picker style={styles.picker} selectedValue={formData.selectedDocType} onValueChange={v => updateData('selectedDocType', v)}>
+                  <Picker.Item label="National ID" value="National ID" />
+                  <Picker.Item label="Voters Card" value="Voters Card" />
+                  <Picker.Item label="Drivers License" value="Drivers License" />
+                  <Picker.Item label="Passport" value="Passport" />
+                </Picker>
+              </View>
+              <RenderUploadField label="Customer Identifier (ID Card)" apiKey="idImageUrl" icon="card-outline" />
+              <RenderUploadField label="Proof of Address (Utility Bill)" apiKey="utilityBillUrl" icon="home-outline" />
+              <RenderUploadField label="Proof of Employment" apiKey="workIdUrl" icon="briefcase-outline" />
+              <RenderUploadField label="Signature Scan" apiKey="signatureUrl" icon="pencil-outline" />
+              <RenderUploadField label="Passport Photograph" apiKey="passportImageUrl" icon="person-outline" />
+            </View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(4)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(6)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STAGE 7: SOCIAL MEDIA */}
+        {currentStep === 6 && (
+          <View>
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Social Presence</Text>
+              <Text style={styles.label}>Platform</Text>
+              <View style={styles.pickerContainer}>
+                <Picker style={styles.picker} selectedValue={formData.socialPlatform} onValueChange={v => updateData('socialPlatform', v)}>
+                  <Picker.Item label="Facebook" value="Facebook" /><Picker.Item label="Instagram" value="Instagram" /><Picker.Item label="Twitter" value="Twitter" />
+                </Picker>
+              </View>
+              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Handle" value={formData.socialHandle} onChangeText={v => updateData('socialHandle', v)} />
+            </View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(5)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(7)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STAGE 8: REFERRAL & POLITICAL EXPOSURE */}
+        {currentStep === 7 && (
+          <View>
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Referral</Text>
+              <TextInput style={styles.input} placeholder="Referral ID" value={formData.referralId} onChangeText={v => updateData('referralId', v)} />
+              <Text style={[styles.sectionTitle, {marginTop: 20}]}>Political Exposure</Text>
+              <View style={styles.radioRow}>
+                  <TouchableOpacity style={styles.radioItem} onPress={() => updateData('isPoliticallyExposed', true)}>
+                      <Ionicons name={formData.isPoliticallyExposed ? "radio-button-on" : "radio-button-off"} size={20} color={BRAND.primary} />
+                      <Text style={styles.radioLabel}>Yes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.radioItem} onPress={() => updateData('isPoliticallyExposed', false)}>
+                      <Ionicons name={!formData.isPoliticallyExposed ? "radio-button-on" : "radio-button-off"} size={20} color={BRAND.primary} />
+                      <Text style={styles.radioLabel}>No</Text>
+                  </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(6)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(8)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
             </View>
           </View>
         )}
@@ -422,18 +529,17 @@ export default function CompleteLoanForm() {
         {currentStep === 8 && (
           <View>
             <View style={styles.sectionCard}>
-               <Text style={styles.sectionTitle}>Final Declaration</Text>
-               <Text style={styles.infoText}>I certify that all information provided is true and correct.</Text>
-               <TouchableOpacity style={styles.checkRow} onPress={() => updateData('hasAcceptedTerms', !formData.hasAcceptedTerms)}>
-                 <Ionicons name={formData.hasAcceptedTerms ? "checkbox" : "square-outline"} size={24} color={BRAND.primary} />
-                 <Text style={{marginLeft: 10, flex: 1}}>I agree to the terms and conditions.</Text>
-               </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Final Declaration</Text>
+              <View style={styles.checkboxRow}>
+                <Checkbox style={styles.checkbox} value={formData.hasAcceptedTerms} onValueChange={v => updateData('hasAcceptedTerms', v)} color={formData.hasAcceptedTerms ? BRAND.primary : undefined} />
+                <Text style={styles.checkboxLabel}>I accept the Terms & Conditions</Text>
+              </View>
             </View>
             <View style={styles.btnRow}>
-               <TouchableOpacity style={styles.secBtn} onPress={() => goToStep(7)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-               <TouchableOpacity style={styles.primaryBtn} onPress={handleSubmit} disabled={isSubmitting}>
-                 {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryBtnText}>Submit Loan Application</Text>}
-               </TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(7)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleSubmit}>
+                {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryBtnText}>Submit</Text>}
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -446,25 +552,58 @@ export default function CompleteLoanForm() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BRAND.bg },
   progressHeader: { padding: 20, backgroundColor: BRAND.card, borderBottomWidth: 1, borderBottomColor: BRAND.border },
-  stepTitle: { fontSize: 18, fontWeight: 'bold', color: BRAND.primary },
+  stepTitle: { fontSize: 18, fontWeight: '700', color: BRAND.primary },
   stepCount: { fontSize: 12, color: BRAND.draft, marginTop: 4 },
-  progressBarBg: { height: 6, backgroundColor: BRAND.inputBg, borderRadius: 3, marginTop: 10, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: BRAND.accent },
-  sectionCard: { backgroundColor: BRAND.card, borderRadius: 12, padding: 16, marginBottom: 20, elevation: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 15, color: '#334155' },
-  label: { fontSize: 13, color: '#64748B', marginBottom: 5, marginTop: 10 },
-  input: { backgroundColor: BRAND.inputBg, borderRadius: 8, padding: 12, fontSize: 15, color: '#1E293B', borderWidth: 1, borderColor: BRAND.border },
-  pickerContainer: { backgroundColor: BRAND.inputBg, borderRadius: 8, borderWidth: 1, borderColor: BRAND.border, marginTop: 5 },
-  picker: { height: 50 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  grid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
-  verifyBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 15, height: 50, borderRadius: 8, justifyContent: 'center' },
+  progressBarBg: { height: 6, backgroundColor: BRAND.border, borderRadius: 3, marginTop: 12 },
+  progressBarFill: { height: 6, backgroundColor: BRAND.primary, borderRadius: 3 },
+  sectionCard: { backgroundColor: BRAND.card, padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: BRAND.border },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', marginBottom: 10 },
+  infoText: { fontSize: 13, color: '#64748B', marginBottom: 15 },
+  label: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 12, marginBottom: 6 },
+  input: { backgroundColor: BRAND.inputBg, borderWidth: 1, borderColor: BRAND.border, padding: 12, borderRadius: 8, fontSize: 14, color: '#1E293B' },
+  
+  pickerContainer: { 
+    backgroundColor: BRAND.inputBg, 
+    borderWidth: 1, 
+    borderColor: BRAND.border, 
+    borderRadius: 8, 
+    marginTop: 4,
+    justifyContent: 'center',
+    height: Platform.OS === 'ios' ? 120 : 50, 
+    overflow: 'hidden'
+  },
+  picker: {
+    width: '100%',
+    color: '#1E293B',
+    ...Platform.select({
+      android: { marginLeft: -8 }
+    })
+  },
+
+  row: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  grid: { flexDirection: 'row', justifyContent: 'space-between' },
+  uploadRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 14, 
+    backgroundColor: BRAND.card, 
+    borderRadius: 8, 
+    borderStyle: 'dashed', 
+    borderWidth: 1.5, 
+    borderColor: BRAND.primary 
+  },
+  uploadText: { flex: 1, marginLeft: 10, color: '#475569', fontSize: 13 },
+  radioRow: { flexDirection: 'row', gap: 20, marginTop: 15 },
+  radioItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  radioLabel: { fontSize: 14, color: '#1E293B' },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 15 },
+  checkbox: { width: 20, height: 20, borderRadius: 4 },
+  checkboxLabel: { fontSize: 14, color: '#475569' },
+  verifyBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, height: 48, borderRadius: 8, justifyContent: 'center' },
   btnText: { color: '#FFF', fontWeight: 'bold' },
-  primaryBtn: { backgroundColor: BRAND.primary, padding: 16, borderRadius: 12, alignItems: 'center', elevation: 2 },
+  btnRow: { flexDirection: 'row', gap: 12, marginBottom: 40 },
+  primaryBtn: { backgroundColor: BRAND.primary, padding: 18, borderRadius: 12, flex: 1, alignItems: 'center', justifyContent: 'center' },
   primaryBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
-  secBtn: { padding: 16, borderRadius: 12, flex: 1, alignItems: 'center' },
-  secBtnText: { color: BRAND.draft, fontWeight: '600' },
-  btnRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
-  infoText: { fontSize: 14, color: '#64748B', lineHeight: 20 }
+  secBtn: { backgroundColor: '#E2E8F0', padding: 18, borderRadius: 12, flex: 1, alignItems: 'center', justifyContent: 'center' },
+  secBtnText: { color: '#475569', fontWeight: 'bold', fontSize: 16 }
 });
