@@ -97,11 +97,16 @@ router.post('/', async (req, res) => {
                 "signatureUrl",
                 "parentLoanId",
                 "clientSector",
-                "residentialStatus"
+                "stateOfOrigin",
+                "lga",
+                "fullAddress",
+                "residentialStatus",
+                "employerState",
+                "employmentType"
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
                 $11, $12, $13, $14, $15, CURRENT_DATE, 
-                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
             )
             RETURNING id;
         `;
@@ -131,7 +136,12 @@ router.post('/', async (req, res) => {
             signatureUrl || null,
             parentLoanId || null,
             clientSector || 'Federal',
-            residentialStatus || 'Tenant'
+            stateOfOrigin || null,
+            lga || null,
+            fullAddress || null,
+            residentialStatus || 'Tenant',
+            employerState || null,
+            employmentType || null
         ];
 
         const result = await db.query(loanQuery, values);
