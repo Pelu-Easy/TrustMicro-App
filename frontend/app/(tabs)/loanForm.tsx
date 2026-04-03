@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import Checkbox from 'expo-checkbox';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -11,7 +12,9 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text, TextInput, TouchableOpacity,
+  Text,
+  TextInput,
+  TouchableOpacity,
   View
 } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -60,6 +63,7 @@ export default function CompleteLoanForm() {
 
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const [formData, setFormData] = useState({
     // --- STAGE 1: PERSONAL INFO ---
@@ -123,14 +127,45 @@ export default function CompleteLoanForm() {
 
   const updateData = (key: keyof typeof formData, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
 
+  const compressImage = async (uri: string) => {
+    try {
+      // Check if file is an image (based on extension)
+      const extension = uri.split('.').pop()?.toLowerCase();
+      const isImage = ['jpg', 'jpeg', 'png', 'heic'].includes(extension || '');
+
+      if (!isImage) return uri;
+
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1000 } }], // Resize to a max width of 1000px
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } // 70% compression
+      );
+      return result.uri;
+    } catch (error) {
+      console.log("Compression error:", error);
+      return uri;
+    }
+  };
+
   const pickDocument = async (key: keyof typeof formData) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "*/*" });
       if (!result.canceled) {
-        updateData(key, result.assets[0]);
+        setIsCompressing(true);
+        const originalFile = result.assets[0];
+        
+        // Compress if it's an image
+        const compressedUri = await compressImage(originalFile.uri);
+        
+        updateData(key, {
+          ...originalFile,
+          uri: compressedUri,
+        });
+        setIsCompressing(false);
       }
     } catch (err) {
-      Alert.alert("Error", "Failed to pick document");
+      setIsCompressing(false);
+      Alert.alert("Error", "Failed to pick or process document");
     }
   };
 
@@ -181,8 +216,16 @@ export default function CompleteLoanForm() {
   const RenderUploadField = ({ label, apiKey, icon = "cloud-upload" }: { label: string, apiKey: keyof typeof formData, icon?: any }) => (
     <View style={{ marginBottom: 15 }}>
       <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity style={styles.uploadRow} onPress={() => pickDocument(apiKey)}>
-        <Ionicons name={icon} size={22} color={BRAND.primary} />
+      <TouchableOpacity 
+        style={styles.uploadRow} 
+        onPress={() => pickDocument(apiKey)}
+        disabled={isCompressing}
+      >
+        {isCompressing ? (
+          <ActivityIndicator size="small" color={BRAND.primary} />
+        ) : (
+          <Ionicons name={icon} size={22} color={BRAND.primary} />
+        )}
         <Text style={styles.uploadText} numberOfLines={1}>
           {formData[apiKey] && typeof formData[apiKey] === 'object' ? (formData[apiKey] as any).name : `Upload ${label}`}
         </Text>
@@ -569,14 +612,21 @@ const styles = StyleSheet.create({
     borderRadius: 8, 
     marginTop: 4,
     justifyContent: 'center',
-    height: Platform.OS === 'ios' ? 120 : 50, 
+    height: 50, 
     overflow: 'hidden'
   },
   picker: {
     width: '100%',
     color: '#1E293B',
     ...Platform.select({
-      android: { marginLeft: -8 }
+      android: { 
+        marginLeft: -8,
+        height: 50,
+      },
+      ios: {
+        height: 50,
+        marginTop: -5, 
+      }
     })
   },
 
