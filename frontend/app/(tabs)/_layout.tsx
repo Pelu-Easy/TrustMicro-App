@@ -44,7 +44,7 @@ export default function TabLayout() {
         options={{
           title: 'New Loan',
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={24} color={color} />,
-          // Explicitly using undefined vs null for href to satisfy strict types
+          // If isManagement is true, we hide the tab by setting href to null
           href: isManagement ? null : undefined, 
         }}
       />

@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,6 +49,7 @@ const STAGES = [
   "Declaration"
 ];
 
+// Ensure this is a DEFAULT export for expo-router
 export default function CompleteLoanForm() {
   const router = useRouter();
   
@@ -129,32 +129,28 @@ export default function CompleteLoanForm() {
 
   const compressImage = async (uri: string) => {
     try {
-      // Check if file is an image (based on extension)
       const extension = uri.split('.').pop()?.toLowerCase();
-      const isImage = ['jpg', 'jpeg', 'png', 'heic'].includes(extension || '');
+      const isImage = ['jpg', 'jpeg', 'png'].includes(extension || '');
 
       if (!isImage) return uri;
 
       const result = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 1000 } }], // Resize to a max width of 1000px
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } // 70% compression
+        [{ resize: { width: 800 } }], // Smaller width for better performance
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
       );
       return result.uri;
     } catch (error) {
-      console.log("Compression error:", error);
       return uri;
     }
   };
 
   const pickDocument = async (key: keyof typeof formData) => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: "*/*" });
+      const result = await DocumentPicker.getDocumentAsync({ type: "image/*" }); 
       if (!result.canceled) {
         setIsCompressing(true);
         const originalFile = result.assets[0];
-        
-        // Compress if it's an image
         const compressedUri = await compressImage(originalFile.uri);
         
         updateData(key, {
@@ -165,7 +161,7 @@ export default function CompleteLoanForm() {
       }
     } catch (err) {
       setIsCompressing(false);
-      Alert.alert("Error", "Failed to pick or process document");
+      Alert.alert("Error", "Failed to process document");
     }
   };
 
@@ -194,7 +190,7 @@ export default function CompleteLoanForm() {
         Alert.alert("Verification Failed", res.data.message || "Invalid BVN details.");
       }
     } catch (e: any) { 
-      Alert.alert("Network Error", "The server connection was reset. Please try again."); 
+      Alert.alert("Network Error", "Connection failed. Please try again."); 
     } finally { 
       setIsVerifying(false); 
     }
@@ -202,13 +198,13 @@ export default function CompleteLoanForm() {
 
   const handleSubmit = async () => {
     if (!formData.hasAcceptedTerms) {
-        Alert.alert("Declaration Required", "Please accept the terms and conditions to proceed.");
+        Alert.alert("Declaration Required", "Please accept the terms to proceed.");
         return;
     }
     setIsSubmitting(true);
     setTimeout(() => {
         setIsSubmitting(false);
-        Alert.alert("Success", "Loan Application Submitted Successfully!");
+        Alert.alert("Success", "Loan Application Submitted!");
         router.replace('/');
     }, 2000);
   };
@@ -221,11 +217,7 @@ export default function CompleteLoanForm() {
         onPress={() => pickDocument(apiKey)}
         disabled={isCompressing}
       >
-        {isCompressing ? (
-          <ActivityIndicator size="small" color={BRAND.primary} />
-        ) : (
-          <Ionicons name={icon} size={22} color={BRAND.primary} />
-        )}
+        {isCompressing ? <ActivityIndicator size="small" color={BRAND.primary} /> : <Ionicons name={icon} size={22} color={BRAND.primary} />}
         <Text style={styles.uploadText} numberOfLines={1}>
           {formData[apiKey] && typeof formData[apiKey] === 'object' ? (formData[apiKey] as any).name : `Upload ${label}`}
         </Text>
@@ -246,7 +238,7 @@ export default function CompleteLoanForm() {
 
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         
-        {/* STAGE 1: PERSONAL INFO */}
+        {/* STAGE 1 */}
         {currentStep === 0 && (
           <View>
             <View style={styles.sectionCard}>
@@ -298,7 +290,7 @@ export default function CompleteLoanForm() {
             </View>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => {
               if(!formData.title || !formData.gender || !formData.clientSector) {
-                Alert.alert("Required", "Please select Sector, Title and Gender.");
+                Alert.alert("Required", "Complete identity fields first.");
                 return;
               }
               setCurrentStep(1);
@@ -306,27 +298,22 @@ export default function CompleteLoanForm() {
           </View>
         )}
 
-        {/* STAGE 2: RESIDENTIAL INFORMATION */}
+        {/* STAGE 2 */}
         {currentStep === 1 && (
           <View>
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>Address Details</Text>
               <View style={styles.grid}>
                 <View style={{ width: '48%' }}>
-                  <Text style={styles.label}>Permanent State</Text>
+                  <Text style={styles.label}>State</Text>
                   <View style={styles.pickerContainer}>
                     <Picker 
                       style={styles.picker} 
                       selectedValue={formData.permanentState} 
-                      onValueChange={v => {
-                        updateData('permanentState', v);
-                        updateData('residentialLGA', '');
-                      }}
+                      onValueChange={v => { updateData('permanentState', v); updateData('residentialLGA', ''); }}
                     >
                       <Picker.Item label="Select State" value="" />
-                      {Object.keys(NIGERIAN_STATES).sort().map(state => (
-                        <Picker.Item key={state} label={state} value={state} />
-                      ))}
+                      {Object.keys(NIGERIAN_STATES).sort().map(s => <Picker.Item key={s} label={s} value={s} />)}
                     </Picker>
                   </View>
                 </View>
@@ -340,246 +327,139 @@ export default function CompleteLoanForm() {
                       enabled={formData.permanentState !== ''}
                     >
                       <Picker.Item label="Select LGA" value="" />
-                      {formData.permanentState ? NIGERIAN_STATES[formData.permanentState].map(lga => (
-                        <Picker.Item key={lga} label={lga} value={lga} />
-                      )) : null}
+                      {formData.permanentState ? NIGERIAN_STATES[formData.permanentState].map(l => <Picker.Item key={l} label={l} value={l} />) : null}
                     </Picker>
                   </View>
                 </View>
               </View>
-              <Text style={styles.label}>Full Residential Address</Text><TextInput style={styles.input} value={formData.fullAddress} onChangeText={v => updateData('fullAddress', v)} multiline />
-              <View style={styles.grid}>
-                <View style={{ width: '48%' }}>
-                  <Text style={styles.label}>Status</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker style={styles.picker} selectedValue={formData.residentialStatus} onValueChange={v => updateData('residentialStatus', v)}>
-                      <Picker.Item label="Select Status" value="" />
-                      <Picker.Item label="LandLord" value="LandLord" />
-                      <Picker.Item label="Tenant" value="Tenant" />
-                    </Picker>
-                  </View>
-                </View>
-                <View style={{ width: '48%' }}><Text style={styles.label}>Date Moved In</Text><TextInput style={styles.input} value={formData.dateMovedIn} placeholder="YYYY-MM-DD" onChangeText={v => updateData('dateMovedIn', v)} /></View>
-              </View>
+              <Text style={styles.label}>Address</Text><TextInput style={styles.input} value={formData.fullAddress} onChangeText={v => updateData('fullAddress', v)} multiline />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(0)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => {
-                if(!formData.permanentState || !formData.residentialLGA || !formData.residentialStatus) {
-                   Alert.alert("Required", "Please complete all address fields.");
-                   return;
-                }
-                setCurrentStep(2);
-              }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(0)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(2)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 3: EMPLOYMENT INFO */}
+        {/* STAGE 3: EMPLOYMENT */}
         {currentStep === 2 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Company Details</Text>
-              <Text style={styles.label}>Business Location</Text><TextInput style={styles.input} value={formData.approvedBusinessLocation} onChangeText={v => updateData('approvedBusinessLocation', v)} />
-              <View style={styles.grid}>
-                <View style={{ width: '48%' }}>
-                  <Text style={styles.label}>State</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker style={styles.picker} selectedValue={formData.employerState} onValueChange={v => updateData('employerState', v)}>
-                        <Picker.Item label="Select State" value="" />
-                        {Object.keys(NIGERIAN_STATES).sort().map(state => (
-                          <Picker.Item key={state} label={state} value={state} />
-                        ))}
-                    </Picker>
-                  </View>
-                </View>
-                <View style={{ width: '48%' }}>
-                  <Text style={styles.label}>LGA</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker style={styles.picker} selectedValue={formData.employerLGA} onValueChange={v => updateData('employerLGA', v)}>
-                        <Picker.Item label="Select LGA" value="" />
-                        {NIGERIAN_STATES[formData.employerState]?.map(lga => (
-                          <Picker.Item key={lga} label={lga} value={lga} />
-                        ))}
-                    </Picker>
-                  </View>
-                </View>
-              </View>
-            </View>
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Work Details</Text>
-              <Text style={styles.label}>Type</Text>
+              <Text style={styles.sectionTitle}>Employment</Text>
               <View style={styles.pickerContainer}>
                 <Picker style={styles.picker} selectedValue={formData.employmentType} onValueChange={v => updateData('employmentType', v)}>
-                  <Picker.Item label="Select Type" value="" />
-                  <Picker.Item label="Full Time" value="Full Time" />
-                  <Picker.Item label="Contract" value="Contract" />
-                  <Picker.Item label="Self-Employed" value="Self-Employed" />
+                  <Picker.Item label="Select Employment Type" value="" />
+                  <Picker.Item label="Full Time" value="Full Time" /><Picker.Item label="Contract" value="Contract" />
                 </Picker>
               </View>
-              <View style={styles.grid}>
-                <View style={{ width: '48%' }}>
-                  <Text style={styles.label}>Salary Range</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker style={styles.picker} selectedValue={formData.salaryRange} onValueChange={v => updateData('salaryRange', v)}>
-                      <Picker.Item label="Select Range" value="" />
-                      <Picker.Item label="0 - 50k" value="0-50k" />
-                      <Picker.Item label="51k - 100k" value="51k-100k" />
-                      <Picker.Item label="101k - 1m" value="101k-1m" />
-                    </Picker>
-                  </View>
-                </View>
-                <View style={{ width: '48%' }}><Text style={styles.label}>Monthly Income</Text><TextInput style={styles.input} value={formData.monthlyIncome} keyboardType="numeric" placeholder="0.00" onChangeText={v => updateData('monthlyIncome', v)} /></View>
-              </View>
+              <Text style={styles.label}>Income</Text><TextInput style={styles.input} value={formData.monthlyIncome} keyboardType="numeric" onChangeText={v => updateData('monthlyIncome', v)} />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(1)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => {
-                if(!formData.employmentType || !formData.employerState) {
-                  Alert.alert("Required", "Please complete employment details.");
-                  return;
-                }
-                setCurrentStep(3);
-              }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(1)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(3)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 4: NEXT OF KIN */}
+        {/* STAGE 4: NOK */}
         {currentStep === 3 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Next of Kin 1</Text>
-              <Text style={styles.label}>Relationship</Text>
-              <View style={styles.pickerContainer}>
-                <Picker style={styles.picker} selectedValue={formData.nok1Relationship} onValueChange={v => updateData('nok1Relationship', v)}>
-                  <Picker.Item label="Select Relationship" value="" />
-                  <Picker.Item label="Child" value="Child" />
-                  <Picker.Item label="Spouse" value="Spouse" />
-                  <Picker.Item label="Parent" value="Parent" />
-                  <Picker.Item label="Sibling" value="Sibling" />
-                </Picker>
-              </View>
-              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="First Name" value={formData.nok1FirstName} onChangeText={v => updateData('nok1FirstName', v)} />
+              <Text style={styles.sectionTitle}>Next of Kin</Text>
+              <TextInput style={styles.input} placeholder="Full Name" value={formData.nok1FirstName} onChangeText={v => updateData('nok1FirstName', v)} />
               <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Phone" value={formData.nok1Phone} keyboardType="phone-pad" onChangeText={v => updateData('nok1Phone', v)} />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(2)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(4)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(2)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(4)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 5: BANK INFO */}
+        {/* STAGE 5: BANK */}
         {currentStep === 4 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Disbursement Bank</Text>
-              <Text style={styles.label}>Bank Name</Text>
-              <TextInput style={styles.input} placeholder="e.g. Access Bank" value={formData.bankName} onChangeText={v => updateData('bankName', v)} />
-              <Text style={styles.label}>Account Number</Text>
-              <TextInput style={styles.input} placeholder="10-digit NUBAN" value={formData.accountNumber} keyboardType="numeric" maxLength={10} onChangeText={v => updateData('accountNumber', v)} />
-              <Text style={styles.label}>Loan Amount Requested</Text>
-              <TextInput style={styles.input} placeholder="₦ 0.00" value={formData.loanAmount} keyboardType="numeric" onChangeText={v => updateData('loanAmount', v)} />
+              <Text style={styles.sectionTitle}>Bank Information</Text>
+              <TextInput style={styles.input} placeholder="Bank Name" value={formData.bankName} onChangeText={v => updateData('bankName', v)} />
+              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Account Number" value={formData.accountNumber} keyboardType="numeric" maxLength={10} onChangeText={v => updateData('accountNumber', v)} />
+              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Loan Amount" value={formData.loanAmount} keyboardType="numeric" onChangeText={v => updateData('loanAmount', v)} />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(3)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => {
-                if(!formData.bankName || !formData.accountNumber || !formData.loanAmount) {
-                  Alert.alert("Required", "Please complete all bank details.");
-                  return;
-                }
-                setCurrentStep(5);
-              }}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(3)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(5)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 6: DOCUMENT UPLOAD */}
+        {/* STAGE 6: UPLOADS */}
         {currentStep === 5 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Required Documents</Text>
-              <Text style={styles.infoText}>Please provide clear scans/photos of the following documents.</Text>
-              <Text style={styles.label}>Identification Type</Text>
-              <View style={styles.pickerContainer}>
-                <Picker style={styles.picker} selectedValue={formData.selectedDocType} onValueChange={v => updateData('selectedDocType', v)}>
-                  <Picker.Item label="National ID" value="National ID" />
-                  <Picker.Item label="Voters Card" value="Voters Card" />
-                  <Picker.Item label="Drivers License" value="Drivers License" />
-                  <Picker.Item label="Passport" value="Passport" />
-                </Picker>
-              </View>
-              <RenderUploadField label="Customer Identifier (ID Card)" apiKey="idImageUrl" icon="card-outline" />
-              <RenderUploadField label="Proof of Address (Utility Bill)" apiKey="utilityBillUrl" icon="home-outline" />
-              <RenderUploadField label="Proof of Employment" apiKey="workIdUrl" icon="briefcase-outline" />
-              <RenderUploadField label="Signature Scan" apiKey="signatureUrl" icon="pencil-outline" />
-              <RenderUploadField label="Passport Photograph" apiKey="passportImageUrl" icon="person-outline" />
+              <Text style={styles.sectionTitle}>Documents</Text>
+              <RenderUploadField label="ID Card" apiKey="idImageUrl" />
+              <RenderUploadField label="Utility Bill" apiKey="utilityBillUrl" />
+              <RenderUploadField label="Work ID" apiKey="workIdUrl" />
+              <RenderUploadField label="Signature" apiKey="signatureUrl" />
+              <RenderUploadField label="Passport" apiKey="passportImageUrl" />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(4)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(6)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(4)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(6)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 7: SOCIAL MEDIA */}
+        {/* STAGE 7: SOCIAL */}
         {currentStep === 6 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Social Presence</Text>
-              <Text style={styles.label}>Platform</Text>
-              <View style={styles.pickerContainer}>
-                <Picker style={styles.picker} selectedValue={formData.socialPlatform} onValueChange={v => updateData('socialPlatform', v)}>
-                  <Picker.Item label="Facebook" value="Facebook" /><Picker.Item label="Instagram" value="Instagram" /><Picker.Item label="Twitter" value="Twitter" />
-                </Picker>
-              </View>
-              <TextInput style={[styles.input, {marginTop: 10}]} placeholder="Handle" value={formData.socialHandle} onChangeText={v => updateData('socialHandle', v)} />
+              <Text style={styles.sectionTitle}>Social Media</Text>
+              <TextInput style={styles.input} placeholder="Handle" value={formData.socialHandle} onChangeText={v => updateData('socialHandle', v)} />
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(5)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(7)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(5)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(7)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 8: REFERRAL & POLITICAL EXPOSURE */}
+        {/* STAGE 8: REFERRAL */}
         {currentStep === 7 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Referral</Text>
-              <TextInput style={styles.input} placeholder="Referral ID" value={formData.referralId} onChangeText={v => updateData('referralId', v)} />
-              <Text style={[styles.sectionTitle, {marginTop: 20}]}>Political Exposure</Text>
+              <Text style={styles.sectionTitle}>Exposure</Text>
+              <Text style={styles.label}>Politically Exposed?</Text>
               <View style={styles.radioRow}>
                   <TouchableOpacity style={styles.radioItem} onPress={() => updateData('isPoliticallyExposed', true)}>
                       <Ionicons name={formData.isPoliticallyExposed ? "radio-button-on" : "radio-button-off"} size={20} color={BRAND.primary} />
-                      <Text style={styles.radioLabel}>Yes</Text>
+                      <Text>Yes</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.radioItem} onPress={() => updateData('isPoliticallyExposed', false)}>
                       <Ionicons name={!formData.isPoliticallyExposed ? "radio-button-on" : "radio-button-off"} size={20} color={BRAND.primary} />
-                      <Text style={styles.radioLabel}>No</Text>
+                      <Text>No</Text>
                   </TouchableOpacity>
               </View>
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(6)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(8)}><Text style={styles.primaryBtnText}>Save & Continue</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(6)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setCurrentStep(8)}><Text style={styles.primaryBtnText}>Next</Text></TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* STAGE 9: DECLARATION */}
+        {/* STAGE 9: FINAL */}
         {currentStep === 8 && (
           <View>
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Final Declaration</Text>
+              <Text style={styles.sectionTitle}>Declaration</Text>
               <View style={styles.checkboxRow}>
                 <Checkbox style={styles.checkbox} value={formData.hasAcceptedTerms} onValueChange={v => updateData('hasAcceptedTerms', v)} color={formData.hasAcceptedTerms ? BRAND.primary : undefined} />
-                <Text style={styles.checkboxLabel}>I accept the Terms & Conditions</Text>
+                <Text>I accept terms</Text>
               </View>
             </View>
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(7)}><Text style={styles.secBtnText}>Previous</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(7)}><Text style={styles.secBtnText}>Back</Text></TouchableOpacity>
               <TouchableOpacity style={styles.primaryBtn} onPress={handleSubmit}>
                 {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryBtnText}>Submit</Text>}
               </TouchableOpacity>
@@ -601,54 +481,18 @@ const styles = StyleSheet.create({
   progressBarFill: { height: 6, backgroundColor: BRAND.primary, borderRadius: 3 },
   sectionCard: { backgroundColor: BRAND.card, padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: BRAND.border },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', marginBottom: 10 },
-  infoText: { fontSize: 13, color: '#64748B', marginBottom: 15 },
   label: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 12, marginBottom: 6 },
   input: { backgroundColor: BRAND.inputBg, borderWidth: 1, borderColor: BRAND.border, padding: 12, borderRadius: 8, fontSize: 14, color: '#1E293B' },
-  
-  pickerContainer: { 
-    backgroundColor: BRAND.inputBg, 
-    borderWidth: 1, 
-    borderColor: BRAND.border, 
-    borderRadius: 8, 
-    marginTop: 4,
-    justifyContent: 'center',
-    height: 50, 
-    overflow: 'hidden'
-  },
-  picker: {
-    width: '100%',
-    color: '#1E293B',
-    ...Platform.select({
-      android: { 
-        marginLeft: -8,
-        height: 50,
-      },
-      ios: {
-        height: 50,
-        marginTop: -5, 
-      }
-    })
-  },
-
+  pickerContainer: { backgroundColor: BRAND.inputBg, borderWidth: 1, borderColor: BRAND.border, borderRadius: 8, height: 50, justifyContent: 'center' },
+  picker: { width: '100%', height: 50 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   grid: { flexDirection: 'row', justifyContent: 'space-between' },
-  uploadRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 14, 
-    backgroundColor: BRAND.card, 
-    borderRadius: 8, 
-    borderStyle: 'dashed', 
-    borderWidth: 1.5, 
-    borderColor: BRAND.primary 
-  },
+  uploadRow: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: BRAND.card, borderRadius: 8, borderStyle: 'dashed', borderWidth: 1.5, borderColor: BRAND.primary },
   uploadText: { flex: 1, marginLeft: 10, color: '#475569', fontSize: 13 },
-  radioRow: { flexDirection: 'row', gap: 20, marginTop: 15 },
+  radioRow: { flexDirection: 'row', gap: 20, marginTop: 10 },
   radioItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  radioLabel: { fontSize: 14, color: '#1E293B' },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 15 },
-  checkbox: { width: 20, height: 20, borderRadius: 4 },
-  checkboxLabel: { fontSize: 14, color: '#475569' },
+  checkbox: { width: 20, height: 20 },
   verifyBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, height: 48, borderRadius: 8, justifyContent: 'center' },
   btnText: { color: '#FFF', fontWeight: 'bold' },
   btnRow: { flexDirection: 'row', gap: 12, marginBottom: 40 },
