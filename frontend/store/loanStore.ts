@@ -82,20 +82,14 @@ export const useLoanStore = create<LoanState>()(
         if (!email || !token) return;
 
         try {
-          // Optimization: Use a clean query and lower-case email
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           const serverLoans = response.data;
           
-          // Get existing drafts from local state
           const localDrafts = get().loans.filter(l => l.status === 'Draft');
-          
-          // Create a Map for faster merging performance
           const loanMap = new Map();
           
-          // 1. Add local drafts first
           localDrafts.forEach(loan => loanMap.set(loan.id, loan));
           
-          // 2. Add server loans (Server data overrides local non-drafts)
           serverLoans.forEach((sLoan: Loan) => {
             const existing = loanMap.get(sLoan.id);
             if (!existing || existing.status !== 'Draft') {
@@ -108,7 +102,6 @@ export const useLoanStore = create<LoanState>()(
           
         } catch (error: any) {
           if (error.response && (error.response.status === 403 || error.response.status === 401)) {
-            // Note: api.ts already handles the alert, we just need to wipe local state
             get().clearAllData();
             useUserData.getState().logout(); 
           }
@@ -180,21 +173,23 @@ export const useLoanStore = create<LoanState>()(
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // --- OPTIMIZATION: Do not persist huge images to disk to prevent slow loading ---
+      // --- CRITICAL PERSISTENCE OPTIMIZATION ---
       partialize: (state) => ({
-        loans: state.loans.map(loan => ({
-          ...loan,
-          // We remove the Base64 data before saving to disk
-          // This keeps the storage small and the app fast
-          idCard: loan.status === 'Draft' ? loan.idCard : null,
-          signature: loan.status === 'Draft' ? loan.signature : null,
-          passportPhoto: loan.status === 'Draft' ? loan.passportPhoto : null,
-          bankStatement: loan.status === 'Draft' ? loan.bankStatement : null,
-          ninHardCopy: loan.status === 'Draft' ? loan.ninHardCopy : null,
-          bvnHardCopy: loan.status === 'Draft' ? loan.bvnHardCopy : null,
-          employmentLetter: loan.status === 'Draft' ? loan.employmentLetter : null,
-          workId: loan.status === 'Draft' ? loan.workId : null,
-        })),
+        loans: state.loans.map(loan => {
+          // If it's a Draft, we only store the URI (path) and meta-data
+          // We NEVER store actual large binary/base64 data here.
+          return {
+            ...loan,
+            idCard: typeof loan.idCard === 'string' && loan.idCard.startsWith('http') ? loan.idCard : null,
+            signature: typeof loan.signature === 'string' && loan.signature.startsWith('http') ? loan.signature : null,
+            passportPhoto: typeof loan.passportPhoto === 'string' && loan.passportPhoto.startsWith('http') ? loan.passportPhoto : null,
+            bankStatement: typeof loan.bankStatement === 'string' && loan.bankStatement.startsWith('http') ? loan.bankStatement : null,
+            ninHardCopy: typeof loan.ninHardCopy === 'string' && loan.ninHardCopy.startsWith('http') ? loan.ninHardCopy : null,
+            bvnHardCopy: typeof loan.bvnHardCopy === 'string' && loan.bvnHardCopy.startsWith('http') ? loan.bvnHardCopy : null,
+            employmentLetter: typeof loan.employmentLetter === 'string' && loan.employmentLetter.startsWith('http') ? loan.employmentLetter : null,
+            workId: typeof loan.workId === 'string' && loan.workId.startsWith('http') ? loan.workId : null,
+          };
+        }),
         staffProfile: state.staffProfile,
       }),
       onRehydrateStorage: () => (state) => {
