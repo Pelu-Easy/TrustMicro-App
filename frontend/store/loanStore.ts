@@ -12,6 +12,9 @@ export interface Loan {
   loanType: string; 
   title: string;
   customerName: string;
+  firstName?: string;   // Add this
+  lastName?: string;    // Add this
+  middleName?: string;  // Add this while we are at it
   bvn: string;
   nin: string;
   phone: string;
