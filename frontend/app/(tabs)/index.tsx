@@ -111,7 +111,6 @@ export default function Dashboard() {
     if (!silent) setIsLoading(true);
     
     try {
-      // FIXED: Removed /api/v1 because axios baseURL already includes it
       await Promise.all([
         fetchLoans(email, token),
         api.get('/notifications/unread-count').then(res => setUnreadCount(res.data.count || 0)).catch(() => {})
@@ -147,8 +146,10 @@ export default function Dashboard() {
 
   const processedLoans = useMemo(() => {
     if (!loans) return [];
-    return loans
+    // Ensure we sort so that newest applications appear at the top
+    return [...loans]
       .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
+      .sort((a, b) => new Date(b.submittedDate || 0).getTime() - new Date(a.submittedDate || 0).getTime())
       .slice(0, 15);
   }, [loans, isWorkflowUser, isMyTask]);
 
@@ -253,7 +254,6 @@ export default function Dashboard() {
         )}
 
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
-        {/* FIXED: Wait, another 'div' was here in my check! Changed below */}
         <View style={styles.statsRow}>
             <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
             <StatCard title="Disbursed" value={loans.filter(l => l.status?.toUpperCase() === 'DISBURSED').length.toString()} icon="cash-outline" color="#10B981" />
@@ -272,7 +272,9 @@ export default function Dashboard() {
             return (
               <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {
                 const s = loan.status?.toUpperCase();
-                if (s === 'DRAFT' && canOnboardLoan) {
+                
+                // CRITICAL FIX: Ensure submitted loans go to Details, NOT back to the form
+                if (s === 'DRAFT') {
                   router.push({ pathname: '/loanForm', params: { draftId: loan.id } });
                 } else if (s === 'REJECTED') {
                   Alert.alert("Loan Rejected", `REASON: ${loan.rejection_reason || 'Check docs.'}`, [
@@ -280,6 +282,7 @@ export default function Dashboard() {
                     { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/loanForm', params: { draftId: loan.id } }) }
                   ]);
                 } else {
+                  // Pass the loan object as parameters to loanDetails
                   router.push({ pathname: '/loanDetails', params: { ...loan } });
                 }
               }}>

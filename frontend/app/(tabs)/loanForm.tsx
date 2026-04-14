@@ -4,9 +4,10 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // State Management
+import api from '../../services/api'; // Ensure this import path is correct
 import { useLoanStore } from '../../store/loanStore';
 
-// Internal Components (We will move these to separate files next)
+// Internal Components
 import {
   BankInfo,
   Declaration,
@@ -32,11 +33,9 @@ export default function CompleteLoanForm() {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Connect to the Global Store instead of Local State
-  const { updateLoan, loans } = useLoanStore();
+  // Connect to the Global Store
+  const { updateLoan, loans, deleteLoan } = useLoanStore();
   
-  // For the purpose of this form, we use a 'currentDraft' ID or a temporary object
-  // This keeps the memory usage of this specific component extremely low.
   const currentDraft = loans.find(l => l.status === 'Draft') || {} as any;
 
   const handleNext = () => {
@@ -52,18 +51,36 @@ export default function CompleteLoanForm() {
       Alert.alert("Required", "Please accept the terms to proceed.");
       return;
     }
+    
     setIsSubmitting(true);
     
     try {
-      // Simulate submission logic
-      setTimeout(() => {
+      // 1. Prepare final object with correct status
+      const submissionData = {
+        ...currentDraft,
+        status: 'Pending', // Change from Draft to Pending for server
+        submittedDate: new Date().toISOString()
+      };
+
+      // 2. Call the actual API
+      const response = await api.post('/loans', submissionData);
+
+      if (response.status === 200 || response.status === 201) {
+        // 3. Remove local draft only after successful server save
+        deleteLoan(currentDraft.id);
+        
         setIsSubmitting(false);
-        Alert.alert("Success", "Loan Application Submitted!");
-        router.replace('/');
-      }, 2000);
-    } catch (error) {
+        Alert.alert("Success", "Loan Application Submitted!", [
+          { text: "OK", onPress: () => router.replace('/') }
+        ]);
+      }
+    } catch (error: any) {
       setIsSubmitting(false);
-      Alert.alert("Submission Error", "Something went wrong.");
+      console.error("Submission Error:", error.response?.data || error.message);
+      Alert.alert(
+        "Submission Failed", 
+        "We saved your progress locally. Please check your connection and try submitting again."
+      );
     }
   };
 
@@ -83,9 +100,8 @@ export default function CompleteLoanForm() {
         <ScrollView 
           contentContainerStyle={{ padding: 20 }}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews={true} // Optimization: Unloads off-screen content from memory
+          removeClippedSubviews={true}
         >
-          {/* Isolated Stage Rendering */}
           {currentStep === 0 && <PersonalInfo />}
           {currentStep === 1 && <ResidentialInfo />}
           {currentStep === 2 && <EmploymentInfo />}
@@ -140,7 +156,6 @@ const styles = StyleSheet.create({
   secBtnText: { color: '#475569', fontWeight: 'bold' },
   infoCard: { padding: 20, backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: BRAND.border }
 });
-
 // import * as DocumentPicker from 'expo-document-picker';
 // import * as ImageManipulator from 'expo-image-manipulator';
 // import { useRouter } from 'expo-router';

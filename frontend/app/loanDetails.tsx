@@ -46,7 +46,6 @@ export default function LoanDetails() {
   const normalizedRole = (role || '').toLowerCase().trim();
   const userAuthority = ROLE_AUTHORITY_MAP[normalizedRole];
 
-  // FETCH CORE LOAN DATA AND RISK
   const fetchLoanData = useCallback(async () => {
     setError(null);
     if (!refreshing) setLoading(true);
@@ -55,7 +54,6 @@ export default function LoanDetails() {
       const data = response.data;
       setLoan(data);
 
-      // Fetch History and Risk based on BVN from the loan record
       if (data.bvn) {
         const histRes = await api.get(`/loans/history/${data.bvn}`);
         if (histRes.data.status === 'success') {
@@ -76,7 +74,6 @@ export default function LoanDetails() {
 
   useEffect(() => { if (id) fetchLoanData(); }, [id, fetchLoanData]);
 
-  // Normalize status comparison to handle case differences between DB and Logic
   const currentLoanStatus = loan?.status?.toUpperCase();
   const isAuthorizedForCurrentStatus = userAuthority?.authorizedStatus?.toUpperCase() === currentLoanStatus;
   
@@ -116,7 +113,7 @@ export default function LoanDetails() {
       });
 
       Alert.alert("Success", `Loan has been ${decision === 'Rejected' ? 'rejected' : 'forwarded'}.`, [
-        { text: "OK", onPress: () => router.replace('/(tabs)/managerDashboard') }
+        { text: "OK", onPress: () => router.replace('/(tabs)') }
       ]);
       setRejectModalVisible(false);
     } catch (error: any) {
@@ -129,7 +126,7 @@ export default function LoanDetails() {
   const handleTopUpRequest = () => {
     Alert.alert("Confirm Top-Up", `Initiate Top-Up for ${loan?.customerName}?`, [
         { text: "Cancel", style: "cancel" },
-        { text: "Yes", onPress: () => router.push({ pathname: '/(tabs)/loanForm' as any, params: { bvn: loan?.bvn, id: id } }) }
+        { text: "Yes", onPress: () => router.push({ pathname: '/loanForm' as any, params: { bvn: loan?.bvn, id: id } }) }
       ]
     );
   };
@@ -217,7 +214,7 @@ export default function LoanDetails() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View>
                     <Text style={styles.label}>LOAN AMOUNT</Text>
-                    <Text style={styles.amountText}>₦{Number(loan?.amount || 0).toLocaleString()}</Text>
+                    <Text style={styles.amountText}>₦{Number(loan?.loanAmount || loan?.amount || 0).toLocaleString()}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                     <Text style={styles.label}>LOAN TYPE</Text>
