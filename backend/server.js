@@ -513,7 +513,7 @@ app.get('/api/v1/manager/supervisors', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
 });
 
-// --- 9. LOAN SUBMISSION ---
+// --- 9. LOAN SUBMISSION (SYNCED VERSION) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
@@ -521,30 +521,41 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const limit = LOAN_LIMITS[loan.loanType] || 250000;
 
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
-    console.log("--- Incoming Loan Payload ---");
-    console.log(JSON.stringify(req.body, null, 2));
+    
+    console.log("--- Incoming Aligned Loan Payload ---");
+    
     try {
-        try {
-            await db.query(`
-                INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender)
-                VALUES ($1, $2, $3, $4, 'VERIFIED', $5)
-                ON CONFLICT (bvn) DO UPDATE SET full_name = EXCLUDED.full_name, phone = EXCLUDED.phone`, 
-                [loan.bvn, loan.customerName, loan.phone, loan.dob, loan.gender]
-            );
-        } catch (e) {
-            await db.query(`
-                INSERT INTO customers (bvn, full_name, phone, kyc_status, gender)
-                VALUES ($1, $2, $3, 'VERIFIED', $4)
-                ON CONFLICT (bvn) DO NOTHING`, 
-                [loan.bvn, loan.customerName, loan.phone, loan.gender]
-            ).catch(() => {});
-        }
+        // Upsert customer info first
+        await db.query(`
+            INSERT INTO customers (bvn, full_name, phone, kyc_status, gender)
+            VALUES ($1, $2, $3, 'VERIFIED', $4)
+            ON CONFLICT (bvn) DO UPDATE SET 
+                full_name = EXCLUDED.full_name, 
+                phone = EXCLUDED.phone,
+                gender = EXCLUDED.gender`, 
+            [loan.bvn, loan.customerName, loan.phone, loan.gender]
+        ).catch(e => console.log("Customer upsert skipped:", e.message));
 
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
         const supervisorNameFromStaff = staffRes.rows[0]?.supervisor_name;
         
-        // --- UPDATED QUERY WITH LGA FIELD ---
-        const query = `INSERT INTO loans ("id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", "gender", "supervisor_name", "stateOfOrigin", "lga") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`;
+        // FULL SYNCED INSERT QUERY
+        const query = `
+            INSERT INTO loans (
+                "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
+                "createdByEmail", "submittedDate", "bankName", "accountNumber", "employerName", 
+                "ninImageUrl", "idImageUrl", "passportImageUrl", "utilityBillUrl", "workIdUrl", 
+                "statementUrl", "signatureUrl", "monthlyIncome", "loanType", "repaymentCycle", 
+                "gender", "supervisor_name", "stateOfOrigin", "lga", "permanentState", 
+                "residentialLga", "fullAddress", "nearestLandmark", "residentialStatus", 
+                "dateMovedIn", "employerState", "employerLga", "employerAddress", 
+                "employmentType", "salaryRange", "annualIncome", "nextOfKinName", 
+                "nextOfKinRelationship", "nextOfKinPhone", "nextOfKinAddress", "nok1State", "nok1Lga"
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 
+                $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, 
+                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45
+            )`;
         
         const values = [
             `LOAN-${Date.now()}`, 
@@ -573,13 +584,32 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
             loan.gender, 
             (loan.supervisorName || supervisorNameFromStaff), 
             loan.stateOfOrigin,
-            loan.lga // Generic LGA field mapped from frontend
+            loan.lga,
+            loan.permanentState,
+            loan.residentialLga,
+            loan.fullAddress,
+            loan.nearestLandmark,
+            loan.residentialStatus,
+            loan.dateMovedIn,
+            loan.employerState,
+            loan.employerLga,
+            loan.employerAddress,
+            loan.employmentType,
+            loan.salaryRange,
+            loan.annualIncome,
+            loan.nextOfKinName,
+            loan.nextOfKinRelationship,
+            loan.nextOfKinPhone,
+            loan.nextOfKinAddress,
+            loan.nok1State,
+            loan.nok1Lga
         ];
 
         await db.query(query, values);
 
-        if (loan.supervisorName || supervisorNameFromStaff) {
-            const targetSup = loan.supervisorName || supervisorNameFromStaff;
+        // Notify supervisor
+        const targetSup = loan.supervisorName || supervisorNameFromStaff;
+        if (targetSup) {
             const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [targetSup]);
             if (supRes.rows[0]) {
                 const staff = supRes.rows[0];
@@ -587,8 +617,9 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
                 if (staff.push_token) sendPushNotification(staff.push_token, "New Loan Application!", `Review needed for ${loan.customerName}`);
             }
         }
-        res.status(201).json({ message: "Loan Submitted" });
+        res.status(201).json({ message: "Loan Submitted Successfully" });
     } catch (err) { 
+        console.error("Submission Error:", err.message);
         res.status(500).json({ error: err.message }); 
     }
 });
