@@ -55,10 +55,12 @@ export default function CompleteLoanForm() {
     setIsSubmitting(true);
     
     try {
-      // 1. Prepare final object with correct status
+      // 1. Prepare final object with correct status and map DB column names
+      // We explicitly map 'stateOfOrigin' to 'state_of_origin' to fix the 500 error
       const submissionData = {
         ...currentDraft,
-        status: 'Pending', // Change from Draft to Pending for server
+        state_of_origin: currentDraft.stateOfOrigin, // Map to DB column name
+        status: 'Pending', 
         submittedDate: new Date().toISOString()
       };
 
@@ -77,9 +79,15 @@ export default function CompleteLoanForm() {
     } catch (error: any) {
       setIsSubmitting(false);
       console.error("Submission Error:", error.response?.data || error.message);
+      
+      // Extract specific DB error for better debugging in the Alert
+      const dbError = error.response?.data?.error || "";
+      
       Alert.alert(
         "Submission Failed", 
-        "We saved your progress locally. Please check your connection and try submitting again."
+        dbError.includes("column") 
+          ? `Server Configuration Error: ${dbError}`
+          : "We saved your progress locally. Please check your connection and try submitting again."
       );
     }
   };
@@ -156,6 +164,9 @@ const styles = StyleSheet.create({
   secBtnText: { color: '#475569', fontWeight: 'bold' },
   infoCard: { padding: 20, backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: BRAND.border }
 });
+
+
+
 // import * as DocumentPicker from 'expo-document-picker';
 // import * as ImageManipulator from 'expo-image-manipulator';
 // import { useRouter } from 'expo-router';
