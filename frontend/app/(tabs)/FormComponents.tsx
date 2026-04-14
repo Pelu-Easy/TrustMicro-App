@@ -149,8 +149,8 @@ export const PersonalInfo = () => {
       <Text style={styles.label}>State of Origin</Text>
       <View style={styles.pickerContainer}>
         <Picker 
-          selectedValue={draft?.state_of_origin || ""} 
-          onValueChange={v => updateLoan(draft?.id || "", { ...draft, state_of_origin: v } as any)}
+          selectedValue={draft?.stateOfOrigin || ""} 
+          onValueChange={v => updateLoan(draft?.id || "", { ...draft, stateOfOrigin: v } as any)}
         >
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
@@ -179,19 +179,19 @@ export const ResidentialInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.residential_lga || ""} onValueChange={v => updateLoan(data.id, { ...data, residential_lga: v })}>
+        <Picker selectedValue={data.residentialLga || ""} onValueChange={v => updateLoan(data.id, { ...data, residentialLga: v })}>
           <Picker.Item label={data.permanentState ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
       </View>
 
-      <FormInput label="Full Address" value={data.full_address} onChangeText={(v:any) => updateLoan(data.id, { ...data, full_address: v })} multiline />
+      <FormInput label="Full Address" value={data.fullAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, fullAddress: v })} multiline />
       <FormInput label="Nearest Landmark" value={data.nearestLandmark} onChangeText={(v:any) => updateLoan(data.id, { ...data, nearestLandmark: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Residential Status</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.residential_status || ""} onValueChange={v => updateLoan(data.id, { ...data, residential_status: v })}>
+          <Picker selectedValue={data.residentialStatus || ""} onValueChange={v => updateLoan(data.id, { ...data, residentialStatus: v })}>
             <Picker.Item label="Select Status" value="" />
             <Picker.Item label="Rented" value="Rented" />
             <Picker.Item label="Owned" value="Owned" />
@@ -208,7 +208,7 @@ export const ResidentialInfo = () => {
 export const EmploymentInfo = () => {
   const { loans, updateLoan } = useLoanStore();
   const data = loans.find(l => l.status === 'Draft') || {} as any;
-  const lgas = data.employer_state ? (NIGERIAN_STATES as any)[data.employer_state] : [];
+  const lgas = data.employerState ? (NIGERIAN_STATES as any)[data.employerState] : [];
 
   return (
     <View style={styles.sectionCard}>
@@ -218,7 +218,7 @@ export const EmploymentInfo = () => {
       
       <Text style={styles.label}>Permanent Residential State (Work)</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.employer_state || ""} onValueChange={v => updateLoan(data.id, { ...data, employer_state: v })}>
+        <Picker selectedValue={data.employerState || ""} onValueChange={v => updateLoan(data.id, { ...data, employerState: v })}>
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
         </Picker>
@@ -226,20 +226,20 @@ export const EmploymentInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.employer_lga || ""} onValueChange={v => updateLoan(data.id, { ...data, employer_lga: v })}>
-          <Picker.Item label={data.employer_state ? "Select LGA" : "Select State First"} value="" />
+        <Picker selectedValue={data.employerLga || ""} onValueChange={v => updateLoan(data.id, { ...data, employerLga: v })}>
+          <Picker.Item label={data.employerState ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
       </View>
 
-      <FormInput label="Address" value={data.employer_address} onChangeText={(v:any) => updateLoan(data.id, { ...data, employer_address: v })} />
+      <FormInput label="Address" value={data.employerAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, employerAddress: v })} />
       <FormInput label="Staff ID" value={data.staffId} onChangeText={(v:any) => updateLoan(data.id, { ...data, staffId: v })} />
       <FormInput label="Job Role" value={data.jobRole} onChangeText={(v:any) => updateLoan(data.id, { ...data, jobRole: v })} />
 
       <View style={styles.field}>
         <Text style={styles.label}>Employment Type</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.employment_type || ""} onValueChange={v => updateLoan(data.id, { ...data, employment_type: v })}>
+          <Picker selectedValue={data.employmentType || ""} onValueChange={v => updateLoan(data.id, { ...data, employmentType: v })}>
             <Picker.Item label="Select Type" value="" />
             <Picker.Item label="Full-Time" value="Full-Time" />
             <Picker.Item label="Part-Time" value="Part-Time" />
@@ -252,7 +252,7 @@ export const EmploymentInfo = () => {
       <View style={styles.field}>
         <Text style={styles.label}>Salary Range</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.salary_range || ""} onValueChange={v => updateLoan(data.id, { ...data, salary_range: v })}>
+          <Picker selectedValue={data.salaryRange || ""} onValueChange={v => updateLoan(data.id, { ...data, salaryRange: v })}>
             <Picker.Item label="Select Range" value="" />
             <Picker.Item label="0 - 100k" value="0-100k" />
             <Picker.Item label="101k - 1m" value="101k-1m" />
@@ -261,7 +261,7 @@ export const EmploymentInfo = () => {
         </View>
       </View>
 
-      <FormInput label="Annual Income" value={data.annual_income} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, annual_income: v })} />
+      <FormInput label="Annual Income" value={data.annualIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, annualIncome: v })} />
     </View>
   );
 };
@@ -270,17 +270,17 @@ export const EmploymentInfo = () => {
 export const NextOfKinInfo = () => {
   const { loans, updateLoan } = useLoanStore();
   const data = loans.find(l => l.status === 'Draft') || {} as any;
-  const lgas = data.nok1_state ? (NIGERIAN_STATES as any)[data.nok1_state] : [];
+  const lgas = data.nok1State ? (NIGERIAN_STATES as any)[data.nok1State] : [];
 
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Next of Kin / Emergency Contact</Text>
-      <FormInput label="Full Name" value={data.next_of_kin_name} onChangeText={(v:any) => updateLoan(data.id, { ...data, next_of_kin_name: v })} />
+      <FormInput label="Full Name" value={data.nextOfKinName} onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinName: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Relationship</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.next_of_kin_relationship || ""} onValueChange={v => updateLoan(data.id, { ...data, next_of_kin_relationship: v })}>
+          <Picker selectedValue={data.nextOfKinRelationship || ""} onValueChange={v => updateLoan(data.id, { ...data, nextOfKinRelationship: v })}>
             <Picker.Item label="Select Relationship" value="" />
             <Picker.Item label="Sibling" value="Sibling" />
             <Picker.Item label="Parent" value="Parent" />
@@ -293,12 +293,12 @@ export const NextOfKinInfo = () => {
       </View>
 
       <DateInputField label="Date of Birth" value={data.nok1Dob} onChange={(v:any) => updateLoan(data.id, { ...data, nok1Dob: v })} />
-      <FormInput label="Phone Number" value={data.next_of_kin_phone} keyboardType="phone-pad" onChangeText={(v:any) => updateLoan(data.id, { ...data, next_of_kin_phone: v })} />
-      <FormInput label="Address" value={data.next_of_kin_address} onChangeText={(v:any) => updateLoan(data.id, { ...data, next_of_kin_address: v })} />
+      <FormInput label="Phone Number" value={data.nextOfKinPhone} keyboardType="phone-pad" onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinPhone: v })} />
+      <FormInput label="Address" value={data.nextOfKinAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinAddress: v })} />
 
       <Text style={styles.label}>State</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.nok1_state || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1_state: v })}>
+        <Picker selectedValue={data.nok1State || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1State: v })}>
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
         </Picker>
@@ -306,8 +306,8 @@ export const NextOfKinInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.nok1_lga || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1_lga: v })}>
-          <Picker.Item label={data.nok1_state ? "Select LGA" : "Select State First"} value="" />
+        <Picker selectedValue={data.nok1Lga || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1Lga: v })}>
+          <Picker.Item label={data.nok1State ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
       </View>
@@ -322,13 +322,13 @@ export const BankInfo = () => {
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Disbursement Bank</Text>
-      <FormInput label="Bank Name" value={data.bank_name} onChangeText={(v:any) => updateLoan(data.id, { ...data, bank_name: v })} />
-      <FormInput label="Account Number" value={data.account_number} keyboardType="numeric" maxLength={10} onChangeText={(v:any) => updateLoan(data.id, { ...data, account_number: v })} />
+      <FormInput label="Bank Name" value={data.bankName} onChangeText={(v:any) => updateLoan(data.id, { ...data, bankName: v })} />
+      <FormInput label="Account Number" value={data.accountNumber} keyboardType="numeric" maxLength={10} onChangeText={(v:any) => updateLoan(data.id, { ...data, accountNumber: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Account Type</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.account_type || ""} onValueChange={v => updateLoan(data.id, { ...data, account_type: v })}>
+          <Picker selectedValue={data.accountType || ""} onValueChange={v => updateLoan(data.id, { ...data, accountType: v })}>
             <Picker.Item label="Select Type" value="" />
             <Picker.Item label="Savings" value="Savings" />
             <Picker.Item label="Current" value="Current" />
@@ -336,7 +336,7 @@ export const BankInfo = () => {
         </View>
       </View>
 
-      <FormInput label="Loan Amount (₦)" value={data.amount} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, amount: v })} />
+      <FormInput label="Loan Amount (₦)" value={data.loanAmount} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, loanAmount: v })} />
     </View>
   );
 };
@@ -368,10 +368,10 @@ export const DocumentUploads = () => {
   };
 
   const fields = [
-    { label: "ID Card", key: "id_image_url" },
-    { label: "Utility Bill", key: "utility_bill_url" },
-    { label: "Signature", key: "signature_url" },
-    { label: "Passport", key: "passport_image_url" }
+    { label: "ID Card", key: "idImageUrl" },
+    { label: "Utility Bill", key: "utilityBillUrl" },
+    { label: "Signature", key: "signatureUrl" },
+    { label: "Passport", key: "passportImageUrl" }
   ];
 
   return (

@@ -49,39 +49,57 @@ export interface Loan {
   signature?: string;
   rejection_reason?: string;
 
-  // --- NEW SNAKE_CASE FIELDS FOR DATABASE COMPATIBILITY ---
-  state_of_origin?: string;
-  residential_lga?: string;
-  full_address?: string;
-  residential_status?: string;
+  // --- CAMELCASE FIELDS FOR CONSISTENCY ---
+  stateOfOrigin?: string;
+  residentialLga?: string;
+  fullAddress?: string;
+  residentialStatus?: string;
   nearestLandmark?: string;
   dateMovedIn?: string;
   approvedBusinessLocation?: string;
   employerBranchName?: string;
+  employerState?: string;
+  employerLga?: string;
+  employerAddress?: string;
+  staffId?: string;
+  jobRole?: string;
+  employmentType?: string;
+  dateOfEmployment?: string;
+  salaryRange?: string;
+  annualIncome?: string;
+  nextOfKinName?: string;
+  nextOfKinRelationship?: string;
+  nok1Dob?: string;
+  nextOfKinPhone?: string;
+  nextOfKinAddress?: string;
+  nok1State?: string;
+  nok1Lga?: string;
+  bank_name?: string; // Kept for legacy if needed, but components now use bankName
+  account_number?: string;
+  accountType?: string;
+  idImageUrl?: string;
+  utilityBillUrl?: string;
+  signatureUrl?: string;
+  passportImageUrl?: string;
+  hasAcceptedTerms?: boolean;
+
+  // Snake case aliases for safety during transition
+  state_of_origin?: string;
+  residential_lga?: string;
+  full_address?: string;
+  residential_status?: string;
   employer_state?: string;
   employer_lga?: string;
   employer_address?: string;
-  staffId?: string;
-  jobRole?: string;
   employment_type?: string;
-  dateOfEmployment?: string;
   salary_range?: string;
   annual_income?: string;
   next_of_kin_name?: string;
   next_of_kin_relationship?: string;
-  nok1Dob?: string;
   next_of_kin_phone?: string;
   next_of_kin_address?: string;
   nok1_state?: string;
   nok1_lga?: string;
-  bank_name?: string;
-  account_number?: string;
-  account_type?: string;
-  id_image_url?: string;
-  utility_bill_url?: string;
-  signature_url?: string;
-  passport_image_url?: string;
-  hasAcceptedTerms?: boolean;
 }
 
 interface LoanState {
@@ -213,16 +231,25 @@ export const useLoanStore = create<LoanState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         loans: state.loans.map(loan => {
+          // FIX: Allow local file URIs (starting with 'file' or 'content') to persist
+          const isValidUri = (uri: any) => 
+            typeof uri === 'string' && (uri.startsWith('http') || uri.startsWith('file') || uri.startsWith('content'));
+
           return {
             ...loan,
-            idCard: typeof loan.idCard === 'string' && loan.idCard.startsWith('http') ? loan.idCard : null,
-            signature: typeof loan.signature === 'string' && loan.signature.startsWith('http') ? loan.signature : null,
-            passportPhoto: typeof loan.passportPhoto === 'string' && loan.passportPhoto.startsWith('http') ? loan.passportPhoto : null,
-            bankStatement: typeof loan.bankStatement === 'string' && loan.bankStatement.startsWith('http') ? loan.bankStatement : null,
-            ninHardCopy: typeof loan.ninHardCopy === 'string' && loan.ninHardCopy.startsWith('http') ? loan.ninHardCopy : null,
-            bvnHardCopy: typeof loan.bvnHardCopy === 'string' && loan.bvnHardCopy.startsWith('http') ? loan.bvnHardCopy : null,
-            employmentLetter: typeof loan.employmentLetter === 'string' && loan.employmentLetter.startsWith('http') ? loan.employmentLetter : null,
-            workId: typeof loan.workId === 'string' && loan.workId.startsWith('http') ? loan.workId : null,
+            idCard: isValidUri(loan.idCard) ? loan.idCard : null,
+            signature: isValidUri(loan.signature) ? loan.signature : null,
+            passportPhoto: isValidUri(loan.passportPhoto) ? loan.passportPhoto : null,
+            bankStatement: isValidUri(loan.bankStatement) ? loan.bankStatement : null,
+            ninHardCopy: isValidUri(loan.ninHardCopy) ? loan.ninHardCopy : null,
+            bvnHardCopy: isValidUri(loan.bvnHardCopy) ? loan.bvnHardCopy : null,
+            employmentLetter: isValidUri(loan.employmentLetter) ? loan.employmentLetter : null,
+            workId: isValidUri(loan.workId) ? loan.workId : null,
+            // Also persist the new Image URL fields
+            idImageUrl: isValidUri(loan.idImageUrl) ? loan.idImageUrl : null,
+            utilityBillUrl: isValidUri(loan.utilityBillUrl) ? loan.utilityBillUrl : null,
+            signatureUrl: isValidUri(loan.signatureUrl) ? loan.signatureUrl : null,
+            passportImageUrl: isValidUri(loan.passportImageUrl) ? loan.passportImageUrl : null,
           };
         }),
         staffProfile: state.staffProfile,

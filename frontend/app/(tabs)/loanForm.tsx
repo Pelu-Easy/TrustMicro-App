@@ -48,76 +48,6 @@ export default function CompleteLoanForm() {
     }
   };
 
-//   const handleSubmit = async () => {
-//   if (!currentDraft.hasAcceptedTerms) {
-//     Alert.alert("Required", "Please accept the terms to proceed.");
-//     return;
-//   }
-  
-//   setIsSubmitting(true);
-  
-//   try {
-//     // AVOID SPREADING (...currentDraft). 
-//     // Manually map ONLY the columns that exist in your DB.
-//     const submissionData = {
-//       customerName: currentDraft.customerName,
-//       bvn: currentDraft.bvn,
-//       nin: currentDraft.nin,
-//       gender: currentDraft.gender,
-//       amount: currentDraft.amount || currentDraft.loanAmount,
-//       loanType: currentDraft.loanType,
-//       income: currentDraft.income,
-      
-//       // FIXING THE CRASHING COLUMNS (Snake Case Only)
-//       state_of_origin: currentDraft.stateOfOrigin || currentDraft.state_of_origin,
-//       lga: currentDraft.lga,
-//       full_address: currentDraft.fullAddress,
-//       residential_status: currentDraft.residentialStatus,
-      
-//       // EMPLOYMENT
-//       employer_state: currentDraft.employerState,
-//       employment_type: currentDraft.employmentType,
-//       client_sector: currentDraft.clientSector,
-      
-//       // NEXT OF KIN
-//       next_of_kin_name: currentDraft.nextOfKinName,
-//       next_of_kin_phone: currentDraft.nextOfKinPhone,
-      
-//       // BANKING
-//       bank_name: currentDraft.bankName,
-//       account_number: currentDraft.accountNumber,
-      
-//       // METADATA
-//       status: 'Pending',
-//       submittedDate: new Date().toISOString(),
-      
-//       // DOCUMENTS (Use your exact DB column names here)
-//       passportImageUrl: currentDraft.passportImageUrl,
-//       signatureUrl: currentDraft.signatureUrl,
-//       idImageUrl: currentDraft.idImageUrl,
-//       // Add any other specific document fields here...
-//     };
-
-//     console.log("SENDING CLEAN PAYLOAD:", JSON.stringify(submissionData));
-
-//     const response = await api.post('/loans', submissionData);
-
-//     if (response.status === 200 || response.status === 201) {
-//       deleteLoan(currentDraft.id);
-//       setIsSubmitting(false);
-//       Alert.alert("Success", "Loan Application Submitted!", [
-//         { text: "OK", onPress: () => router.replace('/') }
-//       ]);
-//     }
-//   } catch (error: any) {
-//     setIsSubmitting(false);
-//     // This will now show exactly which column failed if it happens again
-//     const remoteError = error.response?.data?.error || error.message;
-//     console.error("API FAILURE:", remoteError);
-//     Alert.alert("Submission Failed", remoteError);
-//   }
-// };
-
   const handleSubmit = async () => {
     if (!currentDraft.hasAcceptedTerms) {
       Alert.alert("Required", "Please accept the terms to proceed.");
@@ -127,23 +57,38 @@ export default function CompleteLoanForm() {
     setIsSubmitting(true);
     
     try {
-      // 1. Destructure to REMOVE camelCase keys that cause the 500 Database Error
-      const { 
-        stateOfOrigin, 
-        nextOfKinName, 
-        nextOfKinPhone, 
-        ...restOfData 
-      } = currentDraft;
-
-      // 2. Map them to the snake_case names your Database expects
+      // FIX: Aligning submissionData keys EXACTLY with server.js expected variables
       const submissionData = {
-        ...restOfData,
-        state_of_origin: stateOfOrigin,
-        next_of_kin_name: nextOfKinName,
-        next_of_kin_phone: nextOfKinPhone,
+        customerName: currentDraft.customerName,
+        bvn: currentDraft.bvn,
+        nin: currentDraft.nin,
+        phone: currentDraft.phone,
+        loanAmount: currentDraft.loanAmount || currentDraft.amount,
+        bankName: currentDraft.bankName,
+        accountNumber: currentDraft.accountNumber,
+        employerName: currentDraft.employerName,
+        monthlyIncome: currentDraft.monthlyIncome || currentDraft.income,
+        loanType: currentDraft.loanType,
+        repaymentCycle: currentDraft.repaymentCycle,
+        gender: currentDraft.gender,
+        supervisorName: currentDraft.supervisorName,
+        stateOfOrigin: currentDraft.stateOfOrigin, // Matches server.js loan.stateOfOrigin
+        
+        // URLs
+        ninImageUrl: currentDraft.ninImageUrl,
+        idImageUrl: currentDraft.idImageUrl,
+        passportImageUrl: currentDraft.passportImageUrl,
+        utilityBillUrl: currentDraft.utilityBillUrl,
+        workIdUrl: currentDraft.workIdUrl,
+        statementUrl: currentDraft.statementUrl,
+        signatureUrl: currentDraft.signatureUrl,
+        
+        // Metadata
         status: 'Pending', 
-        submittedDate: new Date().toISOString()
+        submittedDate: new Date().toISOString().split('T')[0]
       };
+
+      console.log("SENDING ALIGNED PAYLOAD:", JSON.stringify(submissionData));
 
       // 3. Post to API
       const response = await api.post('/loans', submissionData);
