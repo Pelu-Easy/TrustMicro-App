@@ -72,7 +72,34 @@ export default function CompleteLoanForm() {
         repaymentCycle: currentDraft.repaymentCycle,
         gender: currentDraft.gender,
         supervisorName: currentDraft.supervisorName,
-        stateOfOrigin: currentDraft.stateOfOrigin, // Matches server.js loan.stateOfOrigin
+        stateOfOrigin: currentDraft.stateOfOrigin,
+        
+        // --- ADDED GENERIC LGA FOR DATABASE COMPATIBILITY ---
+        lga: currentDraft.residentialLga, 
+        
+        // Detailed Address Data
+        permanentState: currentDraft.permanentState,
+        residentialLga: currentDraft.residentialLga,
+        fullAddress: currentDraft.fullAddress,
+        nearestLandmark: currentDraft.nearestLandmark,
+        residentialStatus: currentDraft.residentialStatus,
+        dateMovedIn: currentDraft.dateMovedIn,
+
+        // Employment Data
+        employerState: currentDraft.employerState,
+        employerLga: currentDraft.employerLga,
+        employerAddress: currentDraft.employerAddress,
+        employmentType: currentDraft.employmentType,
+        salaryRange: currentDraft.salaryRange,
+        annualIncome: currentDraft.annualIncome,
+
+        // Next of Kin Data
+        nextOfKinName: currentDraft.nextOfKinName,
+        nextOfKinRelationship: currentDraft.nextOfKinRelationship,
+        nextOfKinPhone: currentDraft.nextOfKinPhone,
+        nextOfKinAddress: currentDraft.nextOfKinAddress,
+        nok1State: currentDraft.nok1State,
+        nok1Lga: currentDraft.nok1Lga,
         
         // URLs
         ninImageUrl: currentDraft.ninImageUrl,
