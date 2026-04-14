@@ -104,7 +104,9 @@ export const useLoanStore = create<LoanState>()(
           set({ loans: mergedLoans });
           
         } catch (error: any) {
+          // If server rejects access, clear local state immediately to prevent rendering issues
           if (error.response && (error.response.status === 403 || error.response.status === 401)) {
+            console.warn("Access issue (403/401). Clearing session...");
             get().clearAllData();
             useUserData.getState().logout(); 
           }
@@ -143,6 +145,7 @@ export const useLoanStore = create<LoanState>()(
             console.log("Loan successfully synced.");
           } catch (error: any) {
             if (error.response && error.response.status === 403) {
+              console.warn("Cloud Sync Forbidden. Clearing session...");
               get().clearAllData();
               useUserData.getState().logout();
             }

@@ -32,11 +32,15 @@ export default function RootLayout() {
     const isNavigationMounted = !!navigationState?.key;
     if (!_hasHydrated || !isNavigationMounted) return;
 
+    // Logic: If token is suddenly cleared (e.g. 403 error), reset readiness to prevent UI flicker/crash
+    if (!token && isReady && !segments.includes('login')) {
+      setIsReady(false);
+    }
+
     const performNavigation = async () => {
       const isLoggedIn = !!token && token.length > 10;
       const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
       
-      // Comprehensive check for ANY management role including Head of Control
       const userRole = (role || '').toLowerCase();
       const actsAsManagement = 
         isSupervisor || 
@@ -51,15 +55,12 @@ export default function RootLayout() {
 
       try {
         if (!isLoggedIn) {
-          // If the interceptor clears the token, this block triggers immediately
           if (!inAuthGroup) {
-            navigationAttempted.current = false; // Reset for next login
+            navigationAttempted.current = false;
             router.replace('/login');
           }
         } else {
-          // --- REDIRECT LOGIC WITH LOOP PREVENTION ---
           if (actsAsManagement) {
-            // If already on manager dashboard, do nothing to prevent loops
             if (pathname.includes('managerDashboard')) {
                console.log("✅ Already on Management Dashboard");
             } else {
@@ -67,7 +68,6 @@ export default function RootLayout() {
                router.replace('/(tabs)/managerDashboard'); 
             }
           } else {
-            // If already on sales tabs, do nothing
             if (segments[0] === '(tabs)' && !pathname.includes('managerDashboard')) {
                console.log("✅ Already on Sales Officer Tabs");
             } else {
@@ -85,7 +85,7 @@ export default function RootLayout() {
       }
     };
 
-    const timeout = setTimeout(performNavigation, 250); // Stability delay
+    const timeout = setTimeout(performNavigation, 250); 
     return () => clearTimeout(timeout);
   }, [_hasHydrated, navigationState?.key, token, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, isHeadOfControl]);
 
@@ -99,9 +99,17 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack 
+      screenOptions={{ 
+        headerShown: false,
+        animation: 'fade', 
+        // Changed detachInactiveScreens to freezeOnBlur to satisfy TypeScript
+        // while still preventing the "Drawing Order" crash on Android.
+        freezeOnBlur: true, 
+      }}
+    >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="login" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="loanDetails" options={{ headerShown: false }} />
     </Stack>
   );
