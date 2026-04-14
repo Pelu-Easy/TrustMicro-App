@@ -12,9 +12,9 @@ export interface Loan {
   loanType: string; 
   title: string;
   customerName: string;
-  firstName?: string;   // Add this
-  lastName?: string;    // Add this
-  middleName?: string;  // Add this while we are at it
+  firstName?: string;   
+  lastName?: string;    
+  middleName?: string;  
   bvn: string;
   nin: string;
   phone: string;
@@ -48,6 +48,40 @@ export interface Loan {
   workId?: string;
   signature?: string;
   rejection_reason?: string;
+
+  // --- NEW SNAKE_CASE FIELDS FOR DATABASE COMPATIBILITY ---
+  state_of_origin?: string;
+  residential_lga?: string;
+  full_address?: string;
+  residential_status?: string;
+  nearestLandmark?: string;
+  dateMovedIn?: string;
+  approvedBusinessLocation?: string;
+  employerBranchName?: string;
+  employer_state?: string;
+  employer_lga?: string;
+  employer_address?: string;
+  staffId?: string;
+  jobRole?: string;
+  employment_type?: string;
+  dateOfEmployment?: string;
+  salary_range?: string;
+  annual_income?: string;
+  next_of_kin_name?: string;
+  next_of_kin_relationship?: string;
+  nok1Dob?: string;
+  next_of_kin_phone?: string;
+  next_of_kin_address?: string;
+  nok1_state?: string;
+  nok1_lga?: string;
+  bank_name?: string;
+  account_number?: string;
+  account_type?: string;
+  id_image_url?: string;
+  utility_bill_url?: string;
+  signature_url?: string;
+  passport_image_url?: string;
+  hasAcceptedTerms?: boolean;
 }
 
 interface LoanState {
@@ -63,7 +97,6 @@ interface LoanState {
   deleteLoan: (id: string) => void;
   setTarget: (amount: number) => void; 
   clearAllData: () => void;
-  // --- NEW HYDRATION FIELDS ---
   _hasHydrated: boolean; 
   setHasHydrated: (state: boolean) => void;
 }
@@ -104,7 +137,6 @@ export const useLoanStore = create<LoanState>()(
           set({ loans: mergedLoans });
           
         } catch (error: any) {
-          // If server rejects access, clear local state immediately to prevent rendering issues
           if (error.response && (error.response.status === 403 || error.response.status === 401)) {
             console.warn("Access issue (403/401). Clearing session...");
             get().clearAllData();
@@ -179,11 +211,8 @@ export const useLoanStore = create<LoanState>()(
     {
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // --- CRITICAL PERSISTENCE OPTIMIZATION ---
       partialize: (state) => ({
         loans: state.loans.map(loan => {
-          // If it's a Draft, we only store the URI (path) and meta-data
-          // We NEVER store actual large binary/base64 data here.
           return {
             ...loan,
             idCard: typeof loan.idCard === 'string' && loan.idCard.startsWith('http') ? loan.idCard : null,

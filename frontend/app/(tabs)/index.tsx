@@ -273,7 +273,6 @@ export default function Dashboard() {
               <TouchableOpacity key={`${loan.id}-${index}`} style={styles.loanItem} onPress={() => {
                 const s = loan.status?.toUpperCase();
                 
-                // CRITICAL FIX: Ensure submitted loans go to Details, NOT back to the form
                 if (s === 'DRAFT') {
                   router.push({ pathname: '/loanForm', params: { draftId: loan.id } });
                 } else if (s === 'REJECTED') {
@@ -282,8 +281,8 @@ export default function Dashboard() {
                     { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/loanForm', params: { draftId: loan.id } }) }
                   ]);
                 } else {
-                  // Pass the loan object as parameters to loanDetails
-                  router.push({ pathname: '/loanDetails', params: { ...loan } });
+                  // Pass ONLY the id to avoid boolean/object navigation errors
+                  router.push({ pathname: '/loanDetails', params: { id: loan.id } });
                 }
               }}>
                 <View style={styles.loanInfo}>
