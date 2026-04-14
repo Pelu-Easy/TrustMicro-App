@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // State Management
-import api from '../../services/api'; // Ensure this import path is correct
+import api from '../../services/api';
 import { useLoanStore } from '../../store/loanStore';
 
 // Internal Components
@@ -26,6 +26,7 @@ const BRAND = {
   text: "#1E293B",
   muted: "#64748B"
 };
+
 const STAGES = ["Personal Info", "Residential Info", "Employment Info", "Next of Kin", "Bank Info", "Uploads", "Social", "Exposure", "Declaration"];
 
 export default function CompleteLoanForm() {
@@ -34,10 +35,11 @@ export default function CompleteLoanForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Connect to the Global Store
-  const { updateLoan, loans, deleteLoan } = useLoanStore();
+  const { loans, deleteLoan } = useLoanStore();
   
   const currentDraft = loans.find(l => l.status === 'Draft') || {} as any;
 
+  // RESTORED: Navigation logic between steps
   const handleNext = () => {
     if (currentStep === 8) {
       handleSubmit();
@@ -55,22 +57,29 @@ export default function CompleteLoanForm() {
     setIsSubmitting(true);
     
     try {
-      // 1. Prepare final object with correct status and map DB column names
-      // We explicitly map 'stateOfOrigin' to 'state_of_origin' to fix the 500 error
+      // 1. Destructure to REMOVE camelCase keys that cause the 500 Database Error
+      const { 
+        stateOfOrigin, 
+        nextOfKinName, 
+        nextOfKinPhone, 
+        ...restOfData 
+      } = currentDraft;
+
+      // 2. Map them to the snake_case names your Database expects
       const submissionData = {
-        ...currentDraft,
-        state_of_origin: currentDraft.stateOfOrigin, // Map to DB column name
+        ...restOfData,
+        state_of_origin: stateOfOrigin,
+        next_of_kin_name: nextOfKinName,
+        next_of_kin_phone: nextOfKinPhone,
         status: 'Pending', 
         submittedDate: new Date().toISOString()
       };
 
-      // 2. Call the actual API
+      // 3. Post to API
       const response = await api.post('/loans', submissionData);
 
       if (response.status === 200 || response.status === 201) {
-        // 3. Remove local draft only after successful server save
         deleteLoan(currentDraft.id);
-        
         setIsSubmitting(false);
         Alert.alert("Success", "Loan Application Submitted!", [
           { text: "OK", onPress: () => router.replace('/') }
@@ -80,15 +89,8 @@ export default function CompleteLoanForm() {
       setIsSubmitting(false);
       console.error("Submission Error:", error.response?.data || error.message);
       
-      // Extract specific DB error for better debugging in the Alert
-      const dbError = error.response?.data?.error || "";
-      
-      Alert.alert(
-        "Submission Failed", 
-        dbError.includes("column") 
-          ? `Server Configuration Error: ${dbError}`
-          : "We saved your progress locally. Please check your connection and try submitting again."
-      );
+      const dbErrorMessage = error.response?.data?.error || "Connection error. Please try again.";
+      Alert.alert("Submission Failed", dbErrorMessage);
     }
   };
 
@@ -108,7 +110,6 @@ export default function CompleteLoanForm() {
         <ScrollView 
           contentContainerStyle={{ padding: 20 }}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews={true}
         >
           {currentStep === 0 && <PersonalInfo />}
           {currentStep === 1 && <ResidentialInfo />}
