@@ -143,6 +143,14 @@ export const PersonalInfo = () => {
         </View>
       </View>
 
+      <FormInput 
+        label="NIN (National Identity Number)" 
+        value={draft?.nin || ""} 
+        keyboardType="numeric" 
+        maxLength={11}
+        onChangeText={(v: any) => updateLoan(draft?.id || "", { ...draft, nin: v } as any)} 
+      />
+
       <FormInput label="First Name" value={draft?.firstName || ""} editable={false} />
       <FormInput label="Last Name" value={draft?.lastName || ""} editable={false} />
       
@@ -261,7 +269,8 @@ export const EmploymentInfo = () => {
         </View>
       </View>
 
-      <FormInput label="Annual Income" value={data.annualIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, annualIncome: v })} />
+      <FormInput label="Monthly Income (₦)" value={data.monthIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, monthIncome: v })} />
+      <FormInput label="Annual Income (₦)" value={data.annualIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, annualIncome: v })} />
     </View>
   );
 };
@@ -369,6 +378,8 @@ export const DocumentUploads = () => {
 
   const fields = [
     { label: "ID Card", key: "idImageUrl" },
+    { label: "NIN Slip", key: "ninImageURL" },
+    { label: "Bank Statement", key: "statementURL" },
     { label: "Utility Bill", key: "utilityBillUrl" },
     { label: "Signature", key: "signatureUrl" },
     { label: "Passport", key: "passportImageUrl" }

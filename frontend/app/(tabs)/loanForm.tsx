@@ -39,7 +39,6 @@ export default function CompleteLoanForm() {
   
   const currentDraft = loans.find(l => l.status === 'Draft') || {} as any;
 
-  // RESTORED: Navigation logic between steps
   const handleNext = () => {
     if (currentStep === 8) {
       handleSubmit();
@@ -57,7 +56,7 @@ export default function CompleteLoanForm() {
     setIsSubmitting(true);
     
     try {
-      // FIX: Aligning submissionData keys EXACTLY with server.js expected variables
+      // FULLY SYNCHRONIZED PAYLOAD
       const submissionData = {
         customerName: currentDraft.customerName,
         bvn: currentDraft.bvn,
@@ -75,7 +74,7 @@ export default function CompleteLoanForm() {
         stateOfOrigin: currentDraft.stateOfOrigin,
         
         // --- ADDED GENERIC LGA FOR DATABASE COMPATIBILITY ---
-        lga: currentDraft.residentialLga, 
+        lga: currentDraft.residentialLga || currentDraft.lga, 
         
         // Detailed Address Data
         permanentState: currentDraft.permanentState,
@@ -117,7 +116,6 @@ export default function CompleteLoanForm() {
 
       console.log("SENDING ALIGNED PAYLOAD:", JSON.stringify(submissionData));
 
-      // 3. Post to API
       const response = await api.post('/loans', submissionData);
 
       if (response.status === 200 || response.status === 201) {
@@ -207,7 +205,6 @@ const styles = StyleSheet.create({
   secBtnText: { color: '#475569', fontWeight: 'bold' },
   infoCard: { padding: 20, backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: BRAND.border }
 });
-
 
 
 // import * as DocumentPicker from 'expo-document-picker';
