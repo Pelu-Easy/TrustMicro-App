@@ -162,24 +162,38 @@ export const useLoanStore = create<LoanState>()(
           set({ loans: mergedLoans });
           
         } catch (error: any) {
-          if (error.response && (error.response.status === 403 || error.response.status === 401)) {
-            console.warn("Access issue (403/401). Clearing session...");
-            get().clearAllData();
-            useUserData.getState().logout(); 
+          if (error.response) {
+            if (error.response.status === 401) {
+              console.warn("Unauthorized (401). Clearing session...");
+              get().clearAllData();
+              useUserData.getState().logout();
+            } else if (error.response.status === 403) {
+              console.warn("Forbidden (403). Check user role permissions on backend.");
+            }
           }
           console.error("Fetch failed:", error.message);
         }
       },
 
       addLoan: async (loan, currentUserEmail) => {
-        const userData = useUserData.getState();
-        const sanitizedEmail = currentUserEmail.toLowerCase().trim();
-        const token = userData.token;
+        const userData = useUserData.getState() as any; // Cast as any to bypass strict type check for missing name fields
+        
+        const activeEmail = (currentUserEmail || userData.email || "").toLowerCase().trim();
+        const validCustomerName = (loan.customerName && loan.customerName !== "undefined")
+          ? loan.customerName 
+          : `${loan.firstName || ''} ${loan.lastName || ''}`.trim();
+
+        // FIX: Added safe checks for user names to avoid "Property does not exist" errors
+        const activeStaffName = userData.funame || 
+                                userData.fullName || 
+                                (userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : '') || 
+                                'Field Officer';
 
         const ownedLoan: Loan = { 
           ...loan, 
-          createdByEmail: sanitizedEmail,
-          staffName: userData.funame || 'Field Officer',
+          createdByEmail: activeEmail,
+          customerName: validCustomerName || "New Customer",
+          staffName: activeStaffName,
           branchName: userData.branch || 'Main Branch'
         };
         
@@ -195,16 +209,21 @@ export const useLoanStore = create<LoanState>()(
         });
 
         if (ownedLoan.status !== 'Draft') {
+          const token = userData.token;
           if (!token) return;
 
           try {
             await api.post('/loans', ownedLoan);
-            console.log("Loan successfully synced.");
+            console.log("Loan successfully synced with email:", activeEmail);
           } catch (error: any) {
-            if (error.response && error.response.status === 403) {
-              console.warn("Cloud Sync Forbidden. Clearing session...");
-              get().clearAllData();
-              useUserData.getState().logout();
+            if (error.response) {
+              if (error.response.status === 401) {
+                console.warn("Unauthorized sync (401). Clearing session...");
+                get().clearAllData();
+                useUserData.getState().logout();
+              } else if (error.response.status === 403) {
+                console.warn("Cloud Sync Forbidden (403). Role verification failed.");
+              }
             }
             console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
           }
@@ -255,7 +274,6 @@ export const useLoanStore = create<LoanState>()(
             utilityBillUrl: isValidUri(loan.utilityBillUrl) ? loan.utilityBillUrl : null,
             signatureUrl: isValidUri(loan.signatureUrl) ? loan.signatureUrl : null,
             passportImageUrl: isValidUri(loan.passportImageUrl) ? loan.passportImageUrl : null,
-            // Persist the new Upload fields
             ninImageURL: isValidUri(loan.ninImageURL) ? loan.ninImageURL : null,
             statementURL: isValidUri(loan.statementURL) ? loan.statementURL : null,
           };

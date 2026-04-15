@@ -32,7 +32,7 @@ export default function RootLayout() {
     const isNavigationMounted = !!navigationState?.key;
     if (!_hasHydrated || !isNavigationMounted) return;
 
-    // Logic: If token is suddenly cleared (e.g. 403 error), reset readiness to prevent UI flicker/crash
+    // Reset readiness if token disappears to force the loading screen during redirect
     if (!token && isReady && !segments.includes('login')) {
       setIsReady(false);
     }
@@ -60,18 +60,13 @@ export default function RootLayout() {
             router.replace('/login');
           }
         } else {
+          // Navigation logic for logged in users
           if (actsAsManagement) {
-            if (pathname.includes('managerDashboard')) {
-               console.log("✅ Already on Management Dashboard");
-            } else {
-               console.log("🚀 Navigating to Manager Dashboard");
+            if (!pathname.includes('managerDashboard')) {
                router.replace('/(tabs)/managerDashboard'); 
             }
           } else {
-            if (segments[0] === '(tabs)' && !pathname.includes('managerDashboard')) {
-               console.log("✅ Already on Sales Officer Tabs");
-            } else {
-               console.log("🚀 Navigating to Sales Officer Tabs");
+            if (segments[0] !== '(tabs)' || pathname.includes('managerDashboard')) {
                router.replace('/(tabs)');
             }
           }
@@ -80,8 +75,11 @@ export default function RootLayout() {
       } catch (e) {
         console.error("Navigation Redirect Failed", e);
       } finally {
-        setIsReady(true);
-        await SplashScreen.hideAsync().catch(() => {});
+        // Wait a tiny bit for the router to settle before showing the UI
+        setTimeout(async () => {
+          setIsReady(true);
+          await SplashScreen.hideAsync().catch(() => {});
+        }, 100);
       }
     };
 
@@ -89,7 +87,16 @@ export default function RootLayout() {
     return () => clearTimeout(timeout);
   }, [_hasHydrated, navigationState?.key, token, role, isSupervisor, isCreditOfficer, isHeadOfCredit, isCCO, isMD, isHeadOfControl]);
 
-  if (!isReady || !navigationState?.key) {
+  // CRITICAL FIX: The "Stale" guard
+  // We hide the Stack if:
+  // 1. App isn't hydrated
+  // 2. Navigation root isn't mounted
+  // 3. User is logged out but the router is still pointing to a protected page (like /profile)
+  const isLoggedIn = !!token && token.length > 10;
+  const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
+  const isTransitioningLogout = !isLoggedIn && !inAuthGroup;
+
+  if (!isReady || !navigationState?.key || isTransitioningLogout) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#003366" />
@@ -103,8 +110,6 @@ export default function RootLayout() {
       screenOptions={{ 
         headerShown: false,
         animation: 'fade', 
-        // Changed detachInactiveScreens to freezeOnBlur to satisfy TypeScript
-        // while still preventing the "Drawing Order" crash on Android.
         freezeOnBlur: true, 
       }}
     >

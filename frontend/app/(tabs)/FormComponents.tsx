@@ -87,13 +87,17 @@ export const PersonalInfo = () => {
       const res = await api.post('/manager/verify-bvn', { bvn: localBvn });
       if (res.data.status === "success") {
         const c = res.data.data;
-        const combinedName = `${c.firstName || ''} ${c.lastName || ''}`.trim();
+        
+        // Ensure names are strings and not "undefined"
+        const fName = c.firstName || '';
+        const lName = c.lastName || '';
+        const combinedName = `${fName} ${lName}`.trim();
 
         const updatedData = {
           bvn: localBvn,
-          firstName: c.firstName || '', 
-          lastName: c.lastName || '', 
-          customerName: combinedName, 
+          firstName: fName, 
+          lastName: lName, 
+          customerName: combinedName || "Verified Customer", 
           dob: c.dob || '' 
         };
 
@@ -105,6 +109,7 @@ export const PersonalInfo = () => {
             status: 'Draft',
             ...updatedData
           };
+          // Explicitly pass the user email to avoid "system@" default
           addLoan(newLoan, userData.email);
         }
         Alert.alert("Success", "Identity Verified");
