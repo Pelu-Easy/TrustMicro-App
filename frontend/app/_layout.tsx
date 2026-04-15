@@ -21,6 +21,7 @@ export default function RootLayout() {
   
   const [isReady, setIsReady] = useState(false);
 
+  // Initialize Notifications
   useEffect(() => {
     if (!notificationInitialized) {
       notificationInitialized = true;
@@ -28,6 +29,7 @@ export default function RootLayout() {
     }
   }, []);
 
+  // NAVIGATION LOGIC
   useEffect(() => {
     const isNavigationMounted = !!navigationState?.key;
     if (!_hasHydrated || !isNavigationMounted) return;
@@ -43,33 +45,38 @@ export default function RootLayout() {
 
       try {
         if (!isLoggedIn) {
+          // If not logged in and not on an auth screen, force login
           if (!inAuthGroup) {
             router.replace('/login');
           }
         } else {
+          // Logic for Management Roles
           if (actsAsManagement) {
             if (!pathname.includes('managerDashboard')) {
                router.replace('/(tabs)/managerDashboard'); 
             }
-          } else {
+          } 
+          // Logic for Field Staff (Sales)
+          else {
             if (segments[0] !== '(tabs)' || pathname.includes('managerDashboard')) {
                router.replace('/(tabs)');
             }
           }
         }
       } catch (e) {
-        console.error("Navigation Redirect Failed", e);
+        console.warn("Navigation Redirect Deferred:", e);
       } finally {
         setIsReady(true);
         await SplashScreen.hideAsync().catch(() => {});
       }
     };
 
-    const timeout = setTimeout(performNavigation, 500); // Increased delay for stability
+    // A small delay ensures the navigation tree is fully built before we replace routes
+    const timeout = setTimeout(performNavigation, 300); 
     return () => clearTimeout(timeout);
-  }, [_hasHydrated, navigationState?.key, token, role]);
+  }, [_hasHydrated, navigationState?.key, token, role, segments]);
 
-  // STABILITY GUARD: Prevent "stale" error by checking if navigation state is actually ready
+  // STABILITY GUARD: Force state re-evaluation on logout
   const isLoggingOut = !token && !segments.includes('login');
   
   if (!isReady || !navigationState?.key || isLoggingOut) {
@@ -82,15 +89,35 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, animation: 'fade', freezeOnBlur: true }}>
+    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+      {/* The order of these screens matters. 
+        When 'token' is null, the (tabs) group should ideally not be accessible.
+      */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen 
+        name="login" 
+        options={{ 
+          presentation: 'fullScreenModal', 
+          animation: 'slide_from_bottom',
+          gestureEnabled: false // Prevent swiping back to the app while logged out
+        }} 
+      />
       <Stack.Screen name="loanDetails" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#003366', fontWeight: '600' }
+  loadingContainer: { 
+    flex: 1, 
+    backgroundColor: '#FFFFFF', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  loadingText: { 
+    marginTop: 10, 
+    color: '#003366', 
+    fontWeight: '600',
+    fontSize: 14
+  }
 });

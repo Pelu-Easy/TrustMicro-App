@@ -39,7 +39,7 @@ export interface Loan {
   bvnHardCopy: string | null;
   employmentLetter: string | null;
   passportPhoto: string | null;
-  tenure: string;          
+  tenure: string;           
   interestRate: string;   
   monthlyRepayment?: string;
   totalRepayment?: string;
@@ -118,7 +118,7 @@ interface LoanState {
   setLoans: (newLoans: Loan[]) => void;
   fetchLoans: (email: string, token: string) => Promise<void>;
   addLoan: (loan: Loan, currentUserEmail: string) => Promise<void>;
-  updateLoan: (id: string, updatedLoan: Loan) => void;
+  updateLoan: (id: string, updatedLoan: Loan) => Promise<void>;
   deleteLoan: (id: string) => void;
   setTarget: (amount: number) => void; 
   clearAllData: () => void;
@@ -176,14 +176,13 @@ export const useLoanStore = create<LoanState>()(
       },
 
       addLoan: async (loan, currentUserEmail) => {
-        const userData = useUserData.getState() as any; // Cast as any to bypass strict type check for missing name fields
+        const userData = useUserData.getState() as any; 
         
         const activeEmail = (currentUserEmail || userData.email || "").toLowerCase().trim();
         const validCustomerName = (loan.customerName && loan.customerName !== "undefined")
           ? loan.customerName 
           : `${loan.firstName || ''} ${loan.lastName || ''}`.trim();
 
-        // FIX: Added safe checks for user names to avoid "Property does not exist" errors
         const activeStaffName = userData.funame || 
                                 userData.fullName || 
                                 (userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : '') || 
@@ -216,26 +215,34 @@ export const useLoanStore = create<LoanState>()(
             await api.post('/loans', ownedLoan);
             console.log("Loan successfully synced with email:", activeEmail);
           } catch (error: any) {
-            if (error.response) {
-              if (error.response.status === 401) {
-                console.warn("Unauthorized sync (401). Clearing session...");
-                get().clearAllData();
-                useUserData.getState().logout();
-              } else if (error.response.status === 403) {
-                console.warn("Cloud Sync Forbidden (403). Role verification failed.");
-              }
-            }
             console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
           }
         }
       },
 
-      updateLoan: (id, updatedLoan) =>
+      updateLoan: async (id, updatedLoan) => {
+        // 1. Update local state immediately
         set((state) => ({
           loans: state.loans.map((loan) =>
             loan.id === id ? updatedLoan : loan
           ),
-        })),
+        }));
+
+        // 2. If status is NOT Draft, sync to the backend database
+        if (updatedLoan.status !== 'Draft') {
+          const userData = useUserData.getState();
+          try {
+            console.log(`Syncing loan ${id} to database with status: ${updatedLoan.status}`);
+            const response = await api.post('/loans', updatedLoan);
+            if (response.status === 200 || response.status === 201) {
+              console.log("Loan successfully saved to MongoDB/Backend.");
+            }
+          } catch (error: any) {
+            console.error("Critical Sync Failure during updateLoan:", error.response?.data || error.message);
+            // Optional: You could show a specialized Alert here if the server is down
+          }
+        }
+      },
 
       deleteLoan: (id) =>
         set((state) => ({
