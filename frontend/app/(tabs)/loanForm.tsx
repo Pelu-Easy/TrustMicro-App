@@ -1,211 +1,171 @@
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from "react-native-safe-area-context";
-
-// State Management
-import api from '../../services/api';
-import { useLoanStore } from '../../store/loanStore';
-
-// Internal Components
+import React, { useEffect, useState } from 'react';
 import {
-  BankInfo,
-  Declaration,
-  DocumentUploads,
-  EmploymentInfo,
-  NextOfKinInfo,
-  PersonalInfo,
-  ResidentialInfo
-} from './FormComponents';
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { useLoanStore } from '../../store/loanStore';
+import useUserData from '../../store/userSignUp';
 
-const BRAND = { 
-  primary: "#0056D2", 
-  bg: "#F8FAFC", 
-  border: "#E2E8F0", 
-  card: "#FFFFFF", 
-  text: "#1E293B",
-  muted: "#64748B"
-};
+// Import our new modular components
+import { Declaration } from '../../components/loan-form/DeclarationSection'; // Ensure you created this from Stage 9
+import { BRAND } from '../../components/loan-form/FormShared';
+import { PersonalInfo, ResidentialInfo } from '../../components/loan-form/IdentitySection';
+import { NextOfKinInfo } from '../../components/loan-form/NextOfKinSection'; // Ensure you created this from Stage 4
+import { DocumentUploads } from '../../components/loan-form/UploadSection';
+import { BankInfo, EmploymentInfo } from '../../components/loan-form/WorkFinancialSection';
 
-const STAGES = ["Personal Info", "Residential Info", "Employment Info", "Next of Kin", "Bank Info", "Uploads", "Social", "Exposure", "Declaration"];
-
-export default function CompleteLoanForm() {
+export default function LoanForm() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
+  const { loans, updateLoan, addLoan } = useLoanStore();
+  const { email } = useUserData();
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Connect to the Global Store
-  const { loans, deleteLoan } = useLoanStore();
-  
-  const currentDraft = loans.find(l => l.status === 'Draft') || {} as any;
 
-  const handleNext = () => {
-    if (currentStep === 8) {
-      handleSubmit();
-    } else {
-      setCurrentStep(prev => prev + 1);
+  // Find the current working draft
+  const draft = loans.find(l => l.status === 'Draft');
+
+  // If no draft exists, create one immediately on mount
+  useEffect(() => {
+    if (!draft) {
+      const newId = Date.now().toString();
+      addLoan({
+        id: newId,
+        status: 'Draft',
+        customerName: "New Applicant",
+        createdByEmail: email,
+      } as any, email);
     }
-  };
+  }, [draft]);
 
   const handleSubmit = async () => {
-    if (!currentDraft.hasAcceptedTerms) {
-      Alert.alert("Required", "Please accept the terms to proceed.");
+    if (!draft) return;
+
+    // Basic Validation
+    if (!draft.bvn || !draft.nin || !draft.bankName || !draft.loanAmount) {
+      Alert.alert("Missing Information", "Please ensure BVN, NIN, Bank details, and Loan Amount are filled.");
       return;
     }
-    
-    setIsSubmitting(true);
-    
-    try {
-      // FULLY SYNCHRONIZED PAYLOAD
-      const submissionData = {
-        customerName: currentDraft.customerName,
-        bvn: currentDraft.bvn,
-        nin: currentDraft.nin,
-        phone: currentDraft.phone,
-        loanAmount: currentDraft.loanAmount || currentDraft.amount,
-        bankName: currentDraft.bankName,
-        accountNumber: currentDraft.accountNumber,
-        employerName: currentDraft.employerName,
-        monthlyIncome: currentDraft.monthlyIncome || currentDraft.income,
-        loanType: currentDraft.loanType,
-        repaymentCycle: currentDraft.repaymentCycle,
-        gender: currentDraft.gender,
-        supervisorName: currentDraft.supervisorName,
-        stateOfOrigin: currentDraft.stateOfOrigin,
-        
-        // --- ADDED GENERIC LGA FOR DATABASE COMPATIBILITY ---
-        lga: currentDraft.residentialLga || currentDraft.lga, 
-        
-        // Detailed Address Data
-        permanentState: currentDraft.permanentState,
-        residentialLga: currentDraft.residentialLga,
-        fullAddress: currentDraft.fullAddress,
-        nearestLandmark: currentDraft.nearestLandmark,
-        residentialStatus: currentDraft.residentialStatus,
-        dateMovedIn: currentDraft.dateMovedIn,
 
-        // Employment Data
-        employerState: currentDraft.employerState,
-        employerLga: currentDraft.employerLga,
-        employerAddress: currentDraft.employerAddress,
-        employmentType: currentDraft.employmentType,
-        salaryRange: currentDraft.salaryRange,
-        annualIncome: currentDraft.annualIncome,
-
-        // Next of Kin Data
-        nextOfKinName: currentDraft.nextOfKinName,
-        nextOfKinRelationship: currentDraft.nextOfKinRelationship,
-        nextOfKinPhone: currentDraft.nextOfKinPhone,
-        nextOfKinAddress: currentDraft.nextOfKinAddress,
-        nok1State: currentDraft.nok1State,
-        nok1Lga: currentDraft.nok1Lga,
-        
-        // URLs
-        ninImageUrl: currentDraft.ninImageUrl,
-        idImageUrl: currentDraft.idImageUrl,
-        passportImageUrl: currentDraft.passportImageUrl,
-        utilityBillUrl: currentDraft.utilityBillUrl,
-        workIdUrl: currentDraft.workIdUrl,
-        statementUrl: currentDraft.statementUrl,
-        signatureUrl: currentDraft.signatureUrl,
-        
-        // Metadata
-        status: 'Pending', 
-        submittedDate: new Date().toISOString().split('T')[0]
-      };
-
-      console.log("SENDING ALIGNED PAYLOAD:", JSON.stringify(submissionData));
-
-      const response = await api.post('/loans', submissionData);
-
-      if (response.status === 200 || response.status === 201) {
-        deleteLoan(currentDraft.id);
-        setIsSubmitting(false);
-        Alert.alert("Success", "Loan Application Submitted!", [
-          { text: "OK", onPress: () => router.replace('/') }
-        ]);
-      }
-    } catch (error: any) {
-      setIsSubmitting(false);
-      console.error("Submission Error:", error.response?.data || error.message);
-      
-      const dbErrorMessage = error.response?.data?.error || "Connection error. Please try again.";
-      Alert.alert("Submission Failed", dbErrorMessage);
+    if (!draft.hasAcceptedTerms) {
+      Alert.alert("Declaration", "The applicant must accept the declaration terms.");
+      return;
     }
+
+    Alert.alert(
+      "Confirm Submission",
+      "Are you sure you want to submit this loan to Credit Department for review?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Submit", 
+          onPress: async () => {
+            setIsSubmitting(true);
+            try {
+              // Change status to Pending to trigger the backend sync logic in your store
+              await updateLoan(draft.id, { ...draft, status: 'Pending' });
+              Alert.alert("Success", "Loan submitted successfully to Credit Unit.");
+              router.replace('/(tabs)'); // Go back to dashboard
+            } catch (error) {
+              Alert.alert("Error", "Could not submit loan. It remains in your Drafts.");
+            } finally {
+              setIsSubmitting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>New Loan Onboarding</Text>
+        <Text style={styles.headerSubtitle}>Sales Staff Entry</Text>
+      </View>
+
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.progressHeader}>
-          <Text style={styles.stepTitle}>{STAGES[currentStep]}</Text>
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: `${((currentStep + 1) / 9) * 100}%` }]} />
-          </View>
-        </View>
+        <PersonalInfo />
+        <ResidentialInfo />
+        <EmploymentInfo />
+        <NextOfKinInfo />
+        <BankInfo />
+        <DocumentUploads />
+        <Declaration />
 
-        <ScrollView 
-          contentContainerStyle={{ padding: 20 }}
-          keyboardShouldPersistTaps="handled"
+        <TouchableOpacity 
+          style={[styles.submitBtn, isSubmitting && styles.disabledBtn]} 
+          onPress={handleSubmit}
+          disabled={isSubmitting}
         >
-          {currentStep === 0 && <PersonalInfo />}
-          {currentStep === 1 && <ResidentialInfo />}
-          {currentStep === 2 && <EmploymentInfo />}
-          {currentStep === 3 && <NextOfKinInfo />}
-          {currentStep === 4 && <BankInfo />}
-          {currentStep === 5 && <DocumentUploads />}
-          
-          {(currentStep === 6 || currentStep === 7) && (
-            <View style={styles.infoCard}>
-              <Text style={{ color: BRAND.text }}>Additional Information for {STAGES[currentStep]}</Text>
-              <Text style={{ color: BRAND.muted, marginTop: 10 }}>Processing section...</Text>
-            </View>
+          {isSubmitting ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <Text style={styles.submitBtnText}>Submit Application</Text>
           )}
-
-          {currentStep === 8 && <Declaration />}
-
-          <View style={styles.btnRow}>
-            {currentStep > 0 && (
-              <TouchableOpacity style={styles.secBtn} onPress={() => setCurrentStep(prev => prev - 1)}>
-                <Text style={styles.secBtnText}>Back</Text>
-              </TouchableOpacity>
-            )}
-            
-            <TouchableOpacity 
-              style={styles.primaryBtn} 
-              onPress={handleNext}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.primaryBtnText}>{currentStep === 8 ? "Submit" : "Next"}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </TouchableOpacity>
+        
+        <View style={{ height: 40 }} /> 
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BRAND.bg },
-  progressHeader: { padding: 20, backgroundColor: BRAND.card, borderBottomWidth: 1, borderBottomColor: BRAND.border },
-  stepTitle: { fontSize: 18, fontWeight: '700', color: BRAND.primary },
-  progressBarBg: { height: 6, backgroundColor: BRAND.border, borderRadius: 3, marginTop: 12 },
-  progressBarFill: { height: 6, backgroundColor: BRAND.primary, borderRadius: 3 },
-  btnRow: { flexDirection: 'row', gap: 12, marginTop: 20, marginBottom: 40 },
-  primaryBtn: { backgroundColor: BRAND.primary, padding: 18, borderRadius: 12, flex: 1, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { color: '#FFF', fontWeight: 'bold' },
-  secBtn: { backgroundColor: '#E2E8F0', padding: 18, borderRadius: 12, flex: 1, alignItems: 'center', justifyContent: 'center' },
-  secBtnText: { color: '#475569', fontWeight: 'bold' },
-  infoCard: { padding: 20, backgroundColor: '#FFF', borderRadius: 10, borderWidth: 1, borderColor: BRAND.border }
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: BRAND.border,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: BRAND.text,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: BRAND.primary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  submitBtn: {
+    backgroundColor: BRAND.primary,
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 10,
+    elevation: 4,
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  disabledBtn: {
+    backgroundColor: BRAND.muted,
+  },
+  submitBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
-
 
 // import * as DocumentPicker from 'expo-document-picker';
 // import * as ImageManipulator from 'expo-image-manipulator';
