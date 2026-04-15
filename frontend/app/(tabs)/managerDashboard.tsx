@@ -3,7 +3,6 @@ import SegmentedControl from '@react-native-segmented-control/segmented-control'
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-// UPDATED: Import SafeAreaView from 'react-native-safe-area-context' to fix deprecation warning
 import { SafeAreaView } from 'react-native-safe-area-context';
 import api from '../../services/api';
 import useUserData from '../../store/userSignUp';

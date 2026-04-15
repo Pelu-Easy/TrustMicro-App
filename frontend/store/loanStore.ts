@@ -39,7 +39,7 @@ export interface Loan {
   bvnHardCopy: string | null;
   employmentLetter: string | null;
   passportPhoto: string | null;
-  tenure: string;           
+  tenure: string;          
   interestRate: string;   
   monthlyRepayment?: string;
   totalRepayment?: string;
@@ -48,6 +48,13 @@ export interface Loan {
   workId?: string;
   signature?: string;
   rejection_reason?: string;
+
+  // --- NEW FIELDS ADDED ---
+  monthIncome?: string;
+  ninImageURL?: string | null;
+  statementURL?: string | null;
+  assignedCreditStaffId?: string;
+  parentLoanId?: string | null;
 
   // --- CAMELCASE FIELDS FOR CONSISTENCY ---
   stateOfOrigin?: string;
@@ -74,7 +81,7 @@ export interface Loan {
   nextOfKinAddress?: string;
   nok1State?: string;
   nok1Lga?: string;
-  bank_name?: string; // Kept for legacy if needed, but components now use bankName
+  bank_name?: string; 
   account_number?: string;
   accountType?: string;
   idImageUrl?: string;
@@ -231,7 +238,6 @@ export const useLoanStore = create<LoanState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         loans: state.loans.map(loan => {
-          // FIX: Allow local file URIs (starting with 'file' or 'content') to persist
           const isValidUri = (uri: any) => 
             typeof uri === 'string' && (uri.startsWith('http') || uri.startsWith('file') || uri.startsWith('content'));
 
@@ -245,11 +251,13 @@ export const useLoanStore = create<LoanState>()(
             bvnHardCopy: isValidUri(loan.bvnHardCopy) ? loan.bvnHardCopy : null,
             employmentLetter: isValidUri(loan.employmentLetter) ? loan.employmentLetter : null,
             workId: isValidUri(loan.workId) ? loan.workId : null,
-            // Also persist the new Image URL fields
             idImageUrl: isValidUri(loan.idImageUrl) ? loan.idImageUrl : null,
             utilityBillUrl: isValidUri(loan.utilityBillUrl) ? loan.utilityBillUrl : null,
             signatureUrl: isValidUri(loan.signatureUrl) ? loan.signatureUrl : null,
             passportImageUrl: isValidUri(loan.passportImageUrl) ? loan.passportImageUrl : null,
+            // Persist the new Upload fields
+            ninImageURL: isValidUri(loan.ninImageURL) ? loan.ninImageURL : null,
+            statementURL: isValidUri(loan.statementURL) ? loan.statementURL : null,
           };
         }),
         staffProfile: state.staffProfile,

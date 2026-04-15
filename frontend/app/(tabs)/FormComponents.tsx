@@ -148,7 +148,7 @@ export const PersonalInfo = () => {
         value={draft?.nin || ""} 
         keyboardType="numeric" 
         maxLength={11}
-        onChangeText={(v: any) => updateLoan(draft?.id || "", { ...draft, nin: v } as any)} 
+        onChangeText={(v: string) => draft?.id && updateLoan(draft.id, { ...draft, nin: v })} 
       />
 
       <FormInput label="First Name" value={draft?.firstName || ""} editable={false} />
@@ -158,7 +158,7 @@ export const PersonalInfo = () => {
       <View style={styles.pickerContainer}>
         <Picker 
           selectedValue={draft?.stateOfOrigin || ""} 
-          onValueChange={v => updateLoan(draft?.id || "", { ...draft, stateOfOrigin: v } as any)}
+          onValueChange={v => draft?.id && updateLoan(draft.id, { ...draft, stateOfOrigin: v })}
         >
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
@@ -171,7 +171,8 @@ export const PersonalInfo = () => {
 // --- STAGE 2: RESIDENTIAL ---
 export const ResidentialInfo = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   const lgas = data.permanentState ? (NIGERIAN_STATES as any)[data.permanentState] : [];
 
   return (
@@ -179,7 +180,7 @@ export const ResidentialInfo = () => {
       <Text style={styles.sectionTitle}>Residential Address</Text>
       <Text style={styles.label}>State</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.permanentState || ""} onValueChange={v => updateLoan(data.id, { ...data, permanentState: v })}>
+        <Picker selectedValue={data.permanentState || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, permanentState: v })}>
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
         </Picker>
@@ -187,19 +188,19 @@ export const ResidentialInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.residentialLga || ""} onValueChange={v => updateLoan(data.id, { ...data, residentialLga: v })}>
+        <Picker selectedValue={data.residentialLga || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, residentialLga: v })}>
           <Picker.Item label={data.permanentState ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
       </View>
 
-      <FormInput label="Full Address" value={data.fullAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, fullAddress: v })} multiline />
-      <FormInput label="Nearest Landmark" value={data.nearestLandmark} onChangeText={(v:any) => updateLoan(data.id, { ...data, nearestLandmark: v })} />
+      <FormInput label="Full Address" value={data.fullAddress || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, fullAddress: v })} multiline />
+      <FormInput label="Nearest Landmark" value={data.nearestLandmark || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, nearestLandmark: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Residential Status</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.residentialStatus || ""} onValueChange={v => updateLoan(data.id, { ...data, residentialStatus: v })}>
+          <Picker selectedValue={data.residentialStatus || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, residentialStatus: v })}>
             <Picker.Item label="Select Status" value="" />
             <Picker.Item label="Rented" value="Rented" />
             <Picker.Item label="Owned" value="Owned" />
@@ -207,7 +208,7 @@ export const ResidentialInfo = () => {
           </Picker>
         </View>
       </View>
-      <DateInputField label="Date Moved In" value={data.dateMovedIn} onChange={(v:any) => updateLoan(data.id, { ...data, dateMovedIn: v })} />
+      <DateInputField label="Date Moved In" value={data.dateMovedIn} onChange={(v:any) => draft?.id && updateLoan(draft.id, { ...data, dateMovedIn: v })} />
     </View>
   );
 };
@@ -215,18 +216,19 @@ export const ResidentialInfo = () => {
 // --- STAGE 3: EMPLOYMENT ---
 export const EmploymentInfo = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   const lgas = data.employerState ? (NIGERIAN_STATES as any)[data.employerState] : [];
 
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Work Details</Text>
-      <FormInput label="Approved Business Location" value={data.approvedBusinessLocation} onChangeText={(v:any) => updateLoan(data.id, { ...data, approvedBusinessLocation: v })} />
-      <FormInput label="Employer Branch Name" value={data.employerBranchName} onChangeText={(v:any) => updateLoan(data.id, { ...data, employerBranchName: v })} />
+      <FormInput label="Approved Business Location" value={data.approvedBusinessLocation || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, approvedBusinessLocation: v })} />
+      <FormInput label="Employer Branch Name" value={data.employerBranchName || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, employerBranchName: v })} />
       
       <Text style={styles.label}>Permanent Residential State (Work)</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.employerState || ""} onValueChange={v => updateLoan(data.id, { ...data, employerState: v })}>
+        <Picker selectedValue={data.employerState || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, employerState: v })}>
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
         </Picker>
@@ -234,20 +236,20 @@ export const EmploymentInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.employerLga || ""} onValueChange={v => updateLoan(data.id, { ...data, employerLga: v })}>
+        <Picker selectedValue={data.employerLga || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, employerLga: v })}>
           <Picker.Item label={data.employerState ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
       </View>
 
-      <FormInput label="Address" value={data.employerAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, employerAddress: v })} />
-      <FormInput label="Staff ID" value={data.staffId} onChangeText={(v:any) => updateLoan(data.id, { ...data, staffId: v })} />
-      <FormInput label="Job Role" value={data.jobRole} onChangeText={(v:any) => updateLoan(data.id, { ...data, jobRole: v })} />
+      <FormInput label="Address" value={data.employerAddress || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, employerAddress: v })} />
+      <FormInput label="Staff ID" value={data.staffId || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, staffId: v })} />
+      <FormInput label="Job Role" value={data.jobRole || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, jobRole: v })} />
 
       <View style={styles.field}>
         <Text style={styles.label}>Employment Type</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.employmentType || ""} onValueChange={v => updateLoan(data.id, { ...data, employmentType: v })}>
+          <Picker selectedValue={data.employmentType || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, employmentType: v })}>
             <Picker.Item label="Select Type" value="" />
             <Picker.Item label="Full-Time" value="Full-Time" />
             <Picker.Item label="Part-Time" value="Part-Time" />
@@ -255,12 +257,12 @@ export const EmploymentInfo = () => {
         </View>
       </View>
 
-      <DateInputField label="Date of Employment" value={data.dateOfEmployment} onChange={(v:any) => updateLoan(data.id, { ...data, dateOfEmployment: v })} />
+      <DateInputField label="Date of Employment" value={data.dateOfEmployment} onChange={(v:any) => draft?.id && updateLoan(draft.id, { ...data, dateOfEmployment: v })} />
 
       <View style={styles.field}>
         <Text style={styles.label}>Salary Range</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.salaryRange || ""} onValueChange={v => updateLoan(data.id, { ...data, salaryRange: v })}>
+          <Picker selectedValue={data.salaryRange || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, salaryRange: v })}>
             <Picker.Item label="Select Range" value="" />
             <Picker.Item label="0 - 100k" value="0-100k" />
             <Picker.Item label="101k - 1m" value="101k-1m" />
@@ -269,8 +271,8 @@ export const EmploymentInfo = () => {
         </View>
       </View>
 
-      <FormInput label="Monthly Income (₦)" value={data.monthIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, monthIncome: v })} />
-      <FormInput label="Annual Income (₦)" value={data.annualIncome} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, annualIncome: v })} />
+      <FormInput label="Monthly Income (₦)" value={data.monthIncome || ""} keyboardType="numeric" onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, monthIncome: v })} />
+      <FormInput label="Annual Income (₦)" value={data.annualIncome || ""} keyboardType="numeric" onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, annualIncome: v })} />
     </View>
   );
 };
@@ -278,18 +280,19 @@ export const EmploymentInfo = () => {
 // --- STAGE 4: NEXT OF KIN ---
 export const NextOfKinInfo = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   const lgas = data.nok1State ? (NIGERIAN_STATES as any)[data.nok1State] : [];
 
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Next of Kin / Emergency Contact</Text>
-      <FormInput label="Full Name" value={data.nextOfKinName} onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinName: v })} />
+      <FormInput label="Full Name" value={data.nextOfKinName || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, nextOfKinName: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Relationship</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.nextOfKinRelationship || ""} onValueChange={v => updateLoan(data.id, { ...data, nextOfKinRelationship: v })}>
+          <Picker selectedValue={data.nextOfKinRelationship || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, nextOfKinRelationship: v })}>
             <Picker.Item label="Select Relationship" value="" />
             <Picker.Item label="Sibling" value="Sibling" />
             <Picker.Item label="Parent" value="Parent" />
@@ -301,13 +304,13 @@ export const NextOfKinInfo = () => {
         </View>
       </View>
 
-      <DateInputField label="Date of Birth" value={data.nok1Dob} onChange={(v:any) => updateLoan(data.id, { ...data, nok1Dob: v })} />
-      <FormInput label="Phone Number" value={data.nextOfKinPhone} keyboardType="phone-pad" onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinPhone: v })} />
-      <FormInput label="Address" value={data.nextOfKinAddress} onChangeText={(v:any) => updateLoan(data.id, { ...data, nextOfKinAddress: v })} />
+      <DateInputField label="Date of Birth" value={data.nok1Dob} onChange={(v:any) => draft?.id && updateLoan(draft.id, { ...data, nok1Dob: v })} />
+      <FormInput label="Phone Number" value={data.nextOfKinPhone || ""} keyboardType="phone-pad" onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, nextOfKinPhone: v })} />
+      <FormInput label="Address" value={data.nextOfKinAddress || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, nextOfKinAddress: v })} />
 
       <Text style={styles.label}>State</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.nok1State || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1State: v })}>
+        <Picker selectedValue={data.nok1State || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, nok1State: v })}>
           <Picker.Item label="Select State" value="" />
           {Object.keys(NIGERIAN_STATES).map(s => <Picker.Item key={s} label={s} value={s} />)}
         </Picker>
@@ -315,7 +318,7 @@ export const NextOfKinInfo = () => {
 
       <Text style={styles.label}>LGA</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={data.nok1Lga || ""} onValueChange={v => updateLoan(data.id, { ...data, nok1Lga: v })}>
+        <Picker selectedValue={data.nok1Lga || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, nok1Lga: v })}>
           <Picker.Item label={data.nok1State ? "Select LGA" : "Select State First"} value="" />
           {lgas.map((l: string) => <Picker.Item key={l} label={l} value={l} />)}
         </Picker>
@@ -327,17 +330,18 @@ export const NextOfKinInfo = () => {
 // --- STAGE 5: BANK ---
 export const BankInfo = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Disbursement Bank</Text>
-      <FormInput label="Bank Name" value={data.bankName} onChangeText={(v:any) => updateLoan(data.id, { ...data, bankName: v })} />
-      <FormInput label="Account Number" value={data.accountNumber} keyboardType="numeric" maxLength={10} onChangeText={(v:any) => updateLoan(data.id, { ...data, accountNumber: v })} />
+      <FormInput label="Bank Name" value={data.bankName || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, bankName: v })} />
+      <FormInput label="Account Number" value={data.accountNumber || ""} keyboardType="numeric" maxLength={10} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, accountNumber: v })} />
       
       <View style={styles.field}>
         <Text style={styles.label}>Account Type</Text>
         <View style={styles.pickerContainer}>
-          <Picker selectedValue={data.accountType || ""} onValueChange={v => updateLoan(data.id, { ...data, accountType: v })}>
+          <Picker selectedValue={data.accountType || ""} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, accountType: v })}>
             <Picker.Item label="Select Type" value="" />
             <Picker.Item label="Savings" value="Savings" />
             <Picker.Item label="Current" value="Current" />
@@ -345,7 +349,7 @@ export const BankInfo = () => {
         </View>
       </View>
 
-      <FormInput label="Loan Amount (₦)" value={data.loanAmount} keyboardType="numeric" onChangeText={(v:any) => updateLoan(data.id, { ...data, loanAmount: v })} />
+      <FormInput label="Loan Amount (₦)" value={data.loanAmount || ""} keyboardType="numeric" onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, loanAmount: v })} />
     </View>
   );
 };
@@ -353,10 +357,12 @@ export const BankInfo = () => {
 // --- STAGE 6: UPLOADS ---
 export const DocumentUploads = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   const [uploadingField, setUploadingField] = useState<string | null>(null);
 
   const onPick = async (key: string) => {
+    if (!draft?.id) return;
     setUploadingField(key);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "image/*", copyToCacheDirectory: true });
@@ -367,7 +373,7 @@ export const DocumentUploads = () => {
           [{ resize: { width: 800 } }], 
           { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
         );
-        updateLoan(data.id, { ...data, [key]: manip.uri });
+        updateLoan(draft.id, { ...data, [key]: manip.uri });
       }
     } catch (err) {
       Alert.alert("Upload Error", "Failed to process image.");
@@ -391,7 +397,7 @@ export const DocumentUploads = () => {
       {fields.map(f => (
         <TouchableOpacity key={f.key} style={styles.uploadRow} onPress={() => onPick(f.key)} disabled={uploadingField !== null}>
           <Ionicons name={data[f.key] ? "checkmark-circle" : "cloud-upload"} size={22} color={data[f.key] ? BRAND.accent : BRAND.primary} />
-          <Text style={styles.uploadText}>{data[f.key] ? "File Ready" : `Upload ${f.label}`}</Text>
+          <Text style={styles.uploadText}>{data[f.key] ? `${f.label} Ready` : `Upload ${f.label}`}</Text>
           {uploadingField === f.key && <ActivityIndicator size="small" color={BRAND.primary} />}
         </TouchableOpacity>
       ))}
@@ -402,12 +408,13 @@ export const DocumentUploads = () => {
 // --- STAGE 9: DECLARATION ---
 export const Declaration = () => {
   const { loans, updateLoan } = useLoanStore();
-  const data = loans.find(l => l.status === 'Draft') || {} as any;
+  const draft = loans.find(l => l.status === 'Draft');
+  const data = draft || {} as any;
   return (
     <View style={styles.sectionCard}>
       <Text style={styles.sectionTitle}>Declaration</Text>
       <View style={styles.checkboxRow}>
-        <Checkbox value={data.hasAcceptedTerms} onValueChange={v => updateLoan(data.id, { ...data, hasAcceptedTerms: v })} color={BRAND.primary} />
+        <Checkbox value={data.hasAcceptedTerms || false} onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, hasAcceptedTerms: v })} color={BRAND.primary} />
         <Text style={styles.checkboxLabel}>I confirm that all information provided is true and accurate.</Text>
       </View>
     </View>
