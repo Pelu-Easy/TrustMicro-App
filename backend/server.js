@@ -13,8 +13,16 @@ const path = require('path');
 const app = express();
 const expo = new Expo();
 const PORT = process.env.PORT || 5000;
-// CRITICAL: Ensure this is consistent!
+
+// --- CRITICAL SECURITY CHECK ---
+// Ensure the secret is loaded from .env. If missing, kill the process to prevent 403 errors.
 const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+    console.error("❌ [CRITICAL ERROR] JWT_SECRET is missing from .env!");
+    console.error("Check that your .env file exists and contains: JWT_SECRET=your_secret_here");
+    process.exit(1); 
+}
 
 // Helper to get local IP address dynamically
 const getLocalIp = () => {
@@ -679,6 +687,7 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
 const CURRENT_IP = getLocalIp();
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 API LIVE on http://${CURRENT_IP}:${PORT}`);
+    console.log(`🔒 Security: JWT_SECRET is active.`);
 });
 
 module.exports = { db };
