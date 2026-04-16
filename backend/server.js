@@ -136,11 +136,14 @@ const isManagement = (req, res, next) => {
         isSupFlag == 1 || 
         isSupFlag === true || 
         managementUnits.includes(role) ||
-        managementUnits.includes(unit);
+        managementUnits.includes(unit) ||
+        role.includes('manager') || // Flexible check
+        role.includes('supervisor');
 
     if (hasManagementAccess) {
         next();
     } else {
+        console.warn(`Management Access Denied for: ${req.user.email} (Role: ${role}, Unit: ${unit})`);
         res.status(403).json({ error: "Management privileges required" });
     }
 };
@@ -294,7 +297,6 @@ app.post('/api/v1/manager/verify-bvn', async (req, res) => {
                 verificationStatus: "VERIFIED"
             };
 
-            // Wrap in extra try/catch to prevent ECONNRESET from crashing the entire response
             try {
                 await db.query(
                     `INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender) 
@@ -394,7 +396,7 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
         const currentStatus = loanCheck.rows[0].status;
         const authorizedRoles = STATUS_AUTHORITY_MAP[currentStatus] || [];
 
-        if (status !== 'Rejected' && !authorizedRoles.includes(userRole) && !['admin', 'super admin'].includes(userRole)) {
+        if (status !== 'Rejected' && !authorizedRoles.includes(userRole) && !['admin', 'super admin', 'manager'].includes(userRole)) {
             return res.status(403).json({ error: `Not authorized for '${currentStatus}' stage.` });
         }
 
@@ -447,7 +449,7 @@ app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req
     const userBranch = req.user.branch;
 
     try {
-        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing', 'sales', 'marketing'];
+        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing', 'sales', 'marketing', 'manager'];
         const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
 
         let query = `
@@ -522,10 +524,7 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
     
-    console.log("--- Incoming Aligned Loan Payload ---");
-    
     try {
-        // Upsert customer info first
         await db.query(`
             INSERT INTO customers (bvn, full_name, phone, kyc_status, gender)
             VALUES ($1, $2, $3, 'VERIFIED', $4)
@@ -539,7 +538,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
         const supervisorNameFromStaff = staffRes.rows[0]?.supervisor_name;
         
-        // FULL SYNCED INSERT QUERY
         const query = `
             INSERT INTO loans (
                 "id", "customerName", "bvn", "nin", "phone", "loanAmount", "amount", "status", 
@@ -607,7 +605,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
 
         await db.query(query, values);
 
-        // Notify supervisor
         const targetSup = loan.supervisorName || supervisorNameFromStaff;
         if (targetSup) {
             const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [targetSup]);
@@ -624,11 +621,34 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
+// UPDATED: Logic to allow Managers to see loans for their branch (or all loans)
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
+    const role = (req.user.role || "").toLowerCase().trim();
+    const email = req.user.email.trim().toLowerCase();
+    const branch = req.user.branch;
+
     try {
-        const result = await db.query('SELECT * FROM loans WHERE "createdByEmail" = $1', [req.user.email.trim().toLowerCase()]);
+        let query = 'SELECT * FROM loans';
+        let params = [];
+
+        // If not management, only show their own loans
+        const managementRoles = ['manager', 'supervisor', 'admin', 'head of credit'];
+        if (!managementRoles.includes(role)) {
+            query += ' WHERE "createdByEmail" = $1';
+            params = [email];
+        } else if (role === 'manager' || role === 'supervisor') {
+            // Managers see everything in their branch
+            query += ` WHERE "createdByEmail" IN (SELECT email FROM staff_users WHERE branch = $1)`;
+            params = [branch];
+        }
+
+        query += ' ORDER BY "submittedDate" DESC';
+        const result = await db.query(query, params);
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Database error" }); }
+    } catch (err) { 
+        console.error("Fetch Loans Error:", err.message);
+        res.status(500).json({ error: "Database error" }); 
+    }
 });
 
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
