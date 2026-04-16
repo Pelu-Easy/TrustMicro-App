@@ -46,7 +46,11 @@ export default function LoginScreen() {
   };
 
   const handleSignIn = async () => {
-    if (isLockedOut) return;
+    // Prevent action if backend has confirmed lockout
+    if (isLockedOut) {
+      Alert.alert("Account Locked", "Please contact admin to reactivate your account.");
+      return;
+    }
 
     const trimmedEmail = email.trim();
     const trimmedPassword = password.trim();
@@ -80,11 +84,11 @@ export default function LoginScreen() {
       
       // Reset local strikes on success
       setFailedAttempts(0);
+      setIsLockedOut(false);
 
       // --- AUTHENTICATION & ROLE LOGIC ---
       const userRole = user.role?.toLowerCase() || '';
       
-      // Improved check to handle Boolean (Postgres), Numeric (MySQL fallback), and Role Strings
       const isUserSupervisor = 
           user.is_supervisor === true || 
           user.is_supervisor === 1 ||
@@ -94,12 +98,11 @@ export default function LoginScreen() {
       setToken(token);
 
       // --- INTEGRATED DATA SYNC ---
-      // Update the global user store with fresh data from DB
       updateUserData({
         isLoggedIn: true,
         role: user.role,
         funame: user.full_name, 
-        email: user.email, // Ensure this is correctly mapped from the response
+        email: user.email, 
         phone: user.phone_no,
         branch: user.branch,
         unit: user.unit,
@@ -109,18 +112,15 @@ export default function LoginScreen() {
         isLoanOfficer: user.is_loan_officer === true || user.is_loan_officer === 1 || userRole === 'credit officer'
       });
 
-      // Sync the loanStore specifically for loan application context
+      // Sync the loanStore
       useLoanStore.setState((state) => ({
         staffProfile: {
           ...state.staffProfile,
           funame: user.full_name,
-          email: user.email, // FIX: Ensure email is also updated here to prevent "system@" fallback
+          email: user.email,
         }
       }));
 
-      setIsLoading(false);
-
-      // Navigation based on supervisor logic
       if (isUserSupervisor) {
         router.replace('/');
       } else {
@@ -128,46 +128,45 @@ export default function LoginScreen() {
       }
 
     } catch (error: any) {
-      setIsLoading(false);
-      
       const status = error.response?.status;
       const errorCode = error.response?.data?.code;
 
-      // Handle specific backend error for missing account
+      // 1. Handle Account Not Found
       if (status === 404 || errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
-        return; 
-      }
-
-      // Handle backend deactivation (status 403)
-      if (status === 403) {
+      } 
+      // 2. Handle Explicit Backend Deactivation (The 403 issue)
+      else if (status === 403) {
         setIsLockedOut(true);
         setErrors({ general: error.response?.data?.error || "Account Deactivated. Contact Admin." });
-        return;
+      } 
+      // 3. Local Strike Tracking for Invalid Passwords
+      else {
+        const nextAttemptCount = failedAttempts + 1;
+        setFailedAttempts(nextAttemptCount);
+
+        if (nextAttemptCount >= 3) {
+          setIsLockedOut(true);
+          setErrors({ general: "Account Deactivated: Too many failed attempts." });
+
+          // Sync lockout with backend
+          api.post('/auth/deactivate', { 
+            email: trimmedEmail.toLowerCase()
+          }).catch(err => console.error("Deactivation sync failed", err));
+          
+          Alert.alert(
+            "Security Lockout", 
+            "Your account is now deactivated. Please contact system admin.",
+            [{ text: "Understood" }]
+          );
+        } else {
+          const remaining = 3 - nextAttemptCount;
+          setErrors({ general: `Invalid password. ${remaining} attempt(s) remaining.` });
+        }
       }
-
-      // Local attempt tracking
-      const nextAttemptCount = failedAttempts + 1;
-      setFailedAttempts(nextAttemptCount);
-
-      if (nextAttemptCount >= 3) {
-        setIsLockedOut(true);
-        setErrors({ general: "Account Deactivated: Too many failed attempts." });
-
-        // Sync lockout with backend to deactivate account
-        api.post('/auth/deactivate', { 
-          email: trimmedEmail.toLowerCase()
-        }).catch(err => console.error("Deactivation sync failed", err));
-        
-        Alert.alert(
-          "Security Lockout", 
-          "Your account is now deactivated due to multiple failed attempts. Please contact system admin.",
-          [{ text: "Understood" }]
-        );
-      } else {
-        const remaining = 3 - nextAttemptCount;
-        setErrors({ general: `Invalid password. ${remaining} attempt(s) remaining.` });
-      }
+    } finally {
+      // THE FIX: This runs NO MATTER WHAT. It stops the freeze.
+      setIsLoading(false);
     }
   };
 
@@ -209,7 +208,7 @@ export default function LoginScreen() {
             )}
 
             <Text style={styles.label}>Email Address <Text style={styles.asterisk}>*</Text></Text>
-            <View style={[styles.inputWrapper, errors.email && styles.inputError, isLockedOut && styles.disabledInput]}>
+            <View style={[styles.inputWrapper, errors.email && styles.inputError]}>
               <Ionicons name="mail-outline" size={20} color={errors.email ? "#EF4444" : "#666"} style={styles.icon} />
               <TextInput
                 style={styles.input}
@@ -219,13 +218,13 @@ export default function LoginScreen() {
                 onChangeText={updateEmailField}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                editable={!isLockedOut}
+                editable={!isLoading} 
               />
             </View>
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
             <Text style={styles.label}>Password <Text style={styles.asterisk}>*</Text></Text>
-            <View style={[styles.inputWrapper, errors.password && styles.inputError, isLockedOut && styles.disabledInput]}>
+            <View style={[styles.inputWrapper, errors.password && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={20} color={errors.password ? "#EF4444" : "#666"} style={styles.icon} />
               <TextInput
                 style={styles.input}
@@ -234,9 +233,9 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={updatePasswordField}
                 secureTextEntry={!showPassword}
-                editable={!isLockedOut}
+                editable={!isLoading}
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLockedOut}>
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
                 <Ionicons 
                   name={showPassword ? "eye-off-outline" : "eye-outline"} 
                   size={20} color="#666" 
@@ -246,17 +245,17 @@ export default function LoginScreen() {
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
             <TouchableOpacity 
-              onPress={() => !isLockedOut && router.push('/forgot_password' as any)} 
+              onPress={() => !isLoading && router.push('/forgot_password' as any)} 
               style={{ alignSelf: 'flex-end', marginBottom: 25 }}
-              disabled={isLockedOut}
+              disabled={isLoading}
             >
-              <Text style={[styles.forgotText, isLockedOut && { color: '#CBD5E1' }]}>Forgot Password?</Text>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.signInBtn, (isLoading || isLockedOut) && styles.disabledBtn]} 
+              style={[styles.signInBtn, isLoading && styles.disabledBtn]} 
               onPress={handleSignIn}
-              disabled={isLoading || isLockedOut}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
@@ -273,8 +272,8 @@ export default function LoginScreen() {
 
             <View style={styles.signupRow}>
               <Text style={styles.noAccountText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/sign_up')} disabled={isLockedOut}>
-                <Text style={[styles.signUpLinkText, isLockedOut && { color: '#CBD5E1' }]}>Sign Up here</Text>
+              <TouchableOpacity onPress={() => !isLoading && router.push('/sign_up')} disabled={isLoading}>
+                <Text style={styles.signUpLinkText}>Sign Up here</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -304,7 +303,6 @@ const styles = StyleSheet.create({
     height: 55, marginBottom: 5, backgroundColor: '#F8FAFC'
   },
   inputError: { borderColor: '#EF4444', backgroundColor: '#FFF5F5' },
-  disabledInput: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
   errorText: { color: '#EF4444', fontSize: 12, marginBottom: 15, fontWeight: '600' },
   generalErrorBox: { 
     flexDirection: 'row', 

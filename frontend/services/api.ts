@@ -32,69 +32,62 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     const status = error.response?.status;
     
-    // Check if it's an auth request based on URL
+    // Check if it's an auth request based on URL (login, signup, etc)
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
 
-    // Log errors for debugging (Enhanced to see why 403 is happening)
+    // Log errors for debugging
     if (status !== 401) {
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
       console.log('Status:', status);
       console.log('Server Message:', error.response?.data?.message || error.response?.data?.error);
-      console.log('Full Data:', error.response?.data);
       console.groupEnd();
     }
 
-    // --- HANDLE SESSION ISSUES (401/403) ---
-    if (status === 401 || status === 403) {
-      if (!isAuthRequest) {
-        const { logout, role } = useUserData.getState();
-        
-        // 401: TOKEN EXPIRED / INVALID -> MUST LOGOUT
-        if (status === 401) {
-          console.warn(`Session Expired (401). Clearing session...`);
-          if (originalRequest?.url !== '/users/me') {
-            Alert.alert("Session Expired", "Your security token is invalid or expired. Please login again.", [
-              { text: "OK", onPress: () => logout() }
-            ]);
-          } else {
-            logout();
-          }
-        } 
-        // 403: FORBIDDEN -> DO NOT LOGOUT (Role Issue)
-        else if (status === 403) {
-          console.warn(`Access Denied (403) for role: ${role}. Staying logged in.`);
-          // This alert confirms the backend rejected the "Manager" role
-          Alert.alert(
-            "Access Denied", 
-            `Your account (${role}) does not have permission to view this specific data. Please contact the Admin to update permissions for Managers.`
-          );
-        }
-      } else if (status === 403) {
-        // Forbidden during an active login/signup attempt
-        Alert.alert(
-          "Permission Denied",
-          "You do not have the required administrative role to access this feature.",
-          [{ text: "Back" }]
-        );
-      }
+    // --- CRITICAL: If this is a login/signup attempt, bypass interceptor logic ---
+    // This ensures the catch block in login.tsx gets the error immediately.
+    if (isAuthRequest) {
       return Promise.reject(error);
     }
 
-    // --- HANDLE OTHER ERRORS ---
+    // --- HANDLE SESSION ISSUES (401/403) for Authenticated Requests ---
+    if (status === 401) {
+      const { logout } = useUserData.getState();
+      console.warn(`Session Expired (401). Clearing session...`);
+      
+      if (originalRequest?.url !== '/users/me') {
+        Alert.alert("Session Expired", "Your security token is invalid or expired. Please login again.", [
+          { text: "OK", onPress: () => logout() }
+        ]);
+      } else {
+        logout();
+      }
+      return Promise.reject(error);
+    } 
+
+    if (status === 403) {
+      const { role } = useUserData.getState();
+      console.warn(`Access Denied (403) for role: ${role}.`);
+      Alert.alert(
+        "Access Denied", 
+        `Your account (${role}) does not have permission to view this specific data.`
+      );
+      return Promise.reject(error);
+    }
+
+    // --- HANDLE OTHER NETWORK ERRORS ---
     let errorMessage = "A network error occurred. Please check your internet connection.";
     
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      errorMessage = "The server is taking too long to respond. This may happen during high-traffic loan approvals. Please try again.";
+      errorMessage = "The server is taking too long to respond. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')} and your device is on the same WiFi.`;
+      errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')}`;
     } else if (error.response) {
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }
 
-    if (!isAuthRequest) {
-        Alert.alert("Request Failed", errorMessage);
-    }
+    // Only show global alerts for non-auth requests
+    Alert.alert("Request Failed", errorMessage);
 
     return Promise.reject(error);
   }
