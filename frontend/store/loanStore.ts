@@ -143,6 +143,8 @@ export const useLoanStore = create<LoanState>()(
         if (!email || !token) return;
 
         try {
+          // Optimization: If user is management, the backend should ideally return all relevant loans
+          // for their branch/role even if email is passed. 
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           const serverLoans = response.data;
           
@@ -168,7 +170,8 @@ export const useLoanStore = create<LoanState>()(
               get().clearAllData();
               useUserData.getState().logout();
             } else if (error.response.status === 403) {
-              console.warn("Forbidden (403). Check user role permissions on backend.");
+              // This confirms the Manager is reaching the server but is blocked by permission logic
+              console.warn(`Forbidden (403). Backend check required for: ${email}`);
             }
           }
           console.error("Fetch failed:", error.message);
@@ -221,14 +224,12 @@ export const useLoanStore = create<LoanState>()(
       },
 
       updateLoan: async (id, updatedLoan) => {
-        // 1. Update local state immediately
         set((state) => ({
           loans: state.loans.map((loan) =>
             loan.id === id ? updatedLoan : loan
           ),
         }));
 
-        // 2. If status is NOT Draft, sync to the backend database
         if (updatedLoan.status !== 'Draft') {
           const userData = useUserData.getState();
           try {
@@ -239,7 +240,6 @@ export const useLoanStore = create<LoanState>()(
             }
           } catch (error: any) {
             console.error("Critical Sync Failure during updateLoan:", error.response?.data || error.message);
-            // Optional: You could show a specialized Alert here if the server is down
           }
         }
       },

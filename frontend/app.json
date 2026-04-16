@@ -3,6 +3,7 @@
     "name": "TrustMicro-Bank",
     "slug": "trustmicro-bank",
     "version": "1.0.0",
+    "owner": "peluisrael",
     "orientation": "portrait",
     "backgroundColor": "#ffffff",
     "icon": "./assets/images/icon.png",
@@ -36,11 +37,12 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
         "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9"
       }
-    },
-    "owner": "peluisrael"
+    }
   }
 }

@@ -42,12 +42,18 @@ export async function registerForPushNotificationsAsync() {
 
     // 4. Get the actual token
     try {
+      // Added a timeout-safe check for the network request
       token = (await Notifications.getExpoPushTokenAsync({
         projectId: projectId,
       })).data;
       console.log("Generated Push Token:", token);
-    } catch (tokenError) {
-      console.error("Error fetching expo push token specifically:", tokenError);
+    } catch (tokenError: any) {
+      // SILENT FAIL: If it's a network error, we log it as a warning so the app doesn't crash
+      if (tokenError.message.includes('Network request failed')) {
+        console.warn("Push Token Fetching: Network unreachable. Notifications will try again next session.");
+      } else {
+        console.error("Error fetching expo push token specifically:", tokenError);
+      }
       return null;
     }
 

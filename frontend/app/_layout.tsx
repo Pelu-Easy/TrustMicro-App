@@ -30,6 +30,7 @@ export default function RootLayout() {
   }, []);
 
   // NAVIGATION LOGIC
+
   useEffect(() => {
     const isNavigationMounted = !!navigationState?.key;
     if (!_hasHydrated || !isNavigationMounted) return;
@@ -45,21 +46,24 @@ export default function RootLayout() {
 
       try {
         if (!isLoggedIn) {
-          // If not logged in and not on an auth screen, force login
           if (!inAuthGroup) {
             router.replace('/login');
           }
         } else {
-          // Logic for Management Roles
+          // --- FIXED LOGIC HERE ---
+          // If they are already in the tabs, STOP forcing a redirect. 
+          // This allows them to switch between Home, Insights, and Profile.
+          const alreadyInTabs = segments[0] === '(tabs)';
+
           if (actsAsManagement) {
-            if (!pathname.includes('managerDashboard')) {
-               router.replace('/(tabs)/managerDashboard'); 
+            // Only redirect to manager dashboard if they are coming from OUTSIDE the tabs (like Login)
+            if (!alreadyInTabs) {
+              router.replace('/(tabs)/managerDashboard'); 
             }
-          } 
-          // Logic for Field Staff (Sales)
-          else {
-            if (segments[0] !== '(tabs)' || pathname.includes('managerDashboard')) {
-               router.replace('/(tabs)');
+          } else {
+            // For Sales Staff
+            if (!alreadyInTabs) {
+              router.replace('/(tabs)');
             }
           }
         }
@@ -71,10 +75,9 @@ export default function RootLayout() {
       }
     };
 
-    // A small delay ensures the navigation tree is fully built before we replace routes
     const timeout = setTimeout(performNavigation, 300); 
     return () => clearTimeout(timeout);
-  }, [_hasHydrated, navigationState?.key, token, role, segments]);
+  }, [_hasHydrated, navigationState?.key, token, role]);
 
   // STABILITY GUARD: Force state re-evaluation on logout
   const isLoggingOut = !token && !segments.includes('login');

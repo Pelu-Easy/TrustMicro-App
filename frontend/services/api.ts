@@ -35,13 +35,13 @@ api.interceptors.response.use(
     // Check if it's an auth request based on URL
     const isAuthRequest = originalRequest?.url?.includes('/auth/');
 
-    // Log errors for debugging (except common auth ones)
-    if (status !== 401 && status !== 403) {
+    // Log errors for debugging (Enhanced to see why 403 is happening)
+    if (status !== 401) {
       console.group('🚨 TrustMicro API Error');
       console.log('URL:', originalRequest?.url);
       console.log('Status:', status);
-      console.log('Data:', error.response?.data);
-      console.log('Code:', error.code); 
+      console.log('Server Message:', error.response?.data?.message || error.response?.data?.error);
+      console.log('Full Data:', error.response?.data);
       console.groupEnd();
     }
 
@@ -64,9 +64,10 @@ api.interceptors.response.use(
         // 403: FORBIDDEN -> DO NOT LOGOUT (Role Issue)
         else if (status === 403) {
           console.warn(`Access Denied (403) for role: ${role}. Staying logged in.`);
+          // This alert confirms the backend rejected the "Manager" role
           Alert.alert(
             "Access Denied", 
-            "Your account does not have permission to view this data. Please contact your administrator."
+            `Your account (${role}) does not have permission to view this specific data. Please contact the Admin to update permissions for Managers.`
           );
         }
       } else if (status === 403) {
@@ -83,17 +84,14 @@ api.interceptors.response.use(
     // --- HANDLE OTHER ERRORS ---
     let errorMessage = "A network error occurred. Please check your internet connection.";
     
-    // --- Specific handling for timeouts and network refusals ---
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       errorMessage = "The server is taking too long to respond. This may happen during high-traffic loan approvals. Please try again.";
     } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
       errorMessage = `Cannot connect to server. Ensure your backend is running at ${API_URL.replace('/api/v1', '')} and your device is on the same WiFi.`;
     } else if (error.response) {
-      // Backend-specific error messages
       errorMessage = error.response.data?.error || error.response.data?.message || "A server error occurred.";
     }
 
-    // Don't show generic alert for Auth requests as Login/Signup handle their own UI
     if (!isAuthRequest) {
         Alert.alert("Request Failed", errorMessage);
     }
