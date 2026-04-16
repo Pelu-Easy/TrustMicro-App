@@ -13,7 +13,8 @@ const path = require('path');
 const app = express();
 const expo = new Expo();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
+// CRITICAL: Ensure this is consistent!
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Helper to get local IP address dynamically
 const getLocalIp = () => {
@@ -109,10 +110,21 @@ const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
     
-    if (!token) return res.status(401).json({ error: "Unauthorized access" });
+    if (!token) {
+        console.error(`❌ Auth Error: No token found in request to ${req.url}`);
+        return res.status(401).json({ error: "Unauthorized access" });
+    }
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: "Session expired" });
+        if (err) {
+            console.error(`❌ JWT Verify Error on ${req.url}: ${err.message}`);
+            // Differentiate between expired and tampered tokens
+            const isExpired = err.name === 'TokenExpiredError';
+            return res.status(403).json({ 
+                error: isExpired ? "Session expired" : "Invalid session",
+                expiredAt: err.expiredAt || null 
+            });
+        }
         req.user = user;
         next();
     });
@@ -137,7 +149,7 @@ const isManagement = (req, res, next) => {
         isSupFlag === true || 
         managementUnits.includes(role) ||
         managementUnits.includes(unit) ||
-        role.includes('manager') || // Flexible check
+        role.includes('manager') || 
         role.includes('supervisor');
 
     if (hasManagementAccess) {
@@ -180,15 +192,19 @@ const handleLogin = async (req, res) => {
         await client.query("UPDATE staff_users SET failed_attempts = 0, is_active = true WHERE id = $1", [user.id]);
         await client.query('COMMIT');
 
+        // Issued for 24 hours to reduce dev friction
         const token = jwt.sign({ 
             id: user.id, email: user.email, role: user.role, 
             unit: user.unit, full_name: user.full_name,
             is_supervisor: user.is_supervisor, branch: user.branch
-        }, JWT_SECRET, { expiresIn: '12h' });
+        }, JWT_SECRET, { expiresIn: '24h' });
+
+        console.log(`✅ User Logged In: ${user.email} - Token Issued`);
 
         res.json({ token, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role, unit: user.unit, branch: user.branch } });
     } catch (e) { 
         await client.query('ROLLBACK');
+        console.error("Login Error:", e);
         res.status(500).json({ error: "Server Error" }); 
     } finally { client.release(); }
 };
