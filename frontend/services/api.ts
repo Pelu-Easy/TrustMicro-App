@@ -4,7 +4,7 @@ import useUserData from '../store/userSignUp';
 
 // API Configuration - Set to local IP for development
 // IMPORTANT: Ensure this matches the "Network" IP shown in your terminal when starting the backend
-export const API_URL = 'http://192.168.88.72:5000/api/v1';
+export const API_URL = 'http://192.168.100.73:5000/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
