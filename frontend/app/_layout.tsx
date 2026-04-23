@@ -30,13 +30,14 @@ export default function RootLayout() {
   }, []);
 
   // NAVIGATION LOGIC
-
   useEffect(() => {
     const isNavigationMounted = !!navigationState?.key;
     if (!_hasHydrated || !isNavigationMounted) return;
 
     const performNavigation = async () => {
       const isLoggedIn = !!token && token.length > 10;
+      
+      // Check if current path is in the Auth group
       const inAuthGroup = segments.some(s => ['login', 'sign_up', 'forgot_password'].includes(s));
       
       const userRole = (role || '').toLowerCase();
@@ -46,22 +47,18 @@ export default function RootLayout() {
 
       try {
         if (!isLoggedIn) {
+          // If not logged in and not already on an auth screen, go to login
           if (!inAuthGroup) {
             router.replace('/login');
           }
         } else {
-          // --- FIXED LOGIC HERE ---
-          // If they are already in the tabs, STOP forcing a redirect. 
-          // This allows them to switch between Home, Insights, and Profile.
           const alreadyInTabs = segments[0] === '(tabs)';
 
           if (actsAsManagement) {
-            // Only redirect to manager dashboard if they are coming from OUTSIDE the tabs (like Login)
             if (!alreadyInTabs) {
               router.replace('/(tabs)/managerDashboard'); 
             }
           } else {
-            // For Sales Staff
             if (!alreadyInTabs) {
               router.replace('/(tabs)');
             }
@@ -77,10 +74,10 @@ export default function RootLayout() {
 
     const timeout = setTimeout(performNavigation, 300); 
     return () => clearTimeout(timeout);
-  }, [_hasHydrated, navigationState?.key, token, role]);
+  }, [_hasHydrated, navigationState?.key, token, role, segments]);
 
   // STABILITY GUARD: Force state re-evaluation on logout
-  const isLoggingOut = !token && !segments.includes('login');
+  const isLoggingOut = !token && !segments.includes('login') && !segments.includes('sign_up');
   
   if (!isReady || !navigationState?.key || isLoggingOut) {
     return (
@@ -93,18 +90,34 @@ export default function RootLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-      {/* The order of these screens matters. 
-        When 'token' is null, the (tabs) group should ideally not be accessible.
-      */}
+      {/* 1. Main App Group */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      
+      {/* 2. Authentication Screens (Must be declared here) */}
       <Stack.Screen 
         name="login" 
         options={{ 
           presentation: 'fullScreenModal', 
           animation: 'slide_from_bottom',
-          gestureEnabled: false // Prevent swiping back to the app while logged out
+          gestureEnabled: false 
         }} 
       />
+      <Stack.Screen 
+        name="sign_up" 
+        options={{ 
+          headerShown: false,
+          animation: 'slide_from_right'
+        }} 
+      />
+      <Stack.Screen 
+        name="forgot_password" 
+        options={{ 
+          headerShown: false,
+          animation: 'slide_from_right'
+        }} 
+      />
+
+      {/* 3. Operational Screens */}
       <Stack.Screen name="loanDetails" options={{ headerShown: false }} />
     </Stack>
   );

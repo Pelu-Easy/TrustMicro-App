@@ -39,12 +39,17 @@ interface ValidationErrors {
   confirmPassword?: string;
 }
 
+// --- STABLE SUB-COMPONENT ---
+const ErrorMsg = ({ message }: { message?: string }) => (
+  message ? <Text style={styles.errorText}>{message}</Text> : null
+);
+
 export default function SignUpScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
   
-  // Visibility States for Passwords
+  // Visibility States
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -61,27 +66,13 @@ export default function SignUpScreen() {
 
   const [errors, setErrors] = useState<ValidationErrors>({});
 
-  // Departments
   const departments = ["IT", "Finance", "Marketing", "Risk", "Hr", "Operation", "Credit", "Corporate Services"];
   
-  // Units (Sales included)
   const units = [
-    "Credit Officer", 
-    "Supervisor", 
-    "Head of Credit", 
-    "CCO", 
-    "MD", 
-    "Head of Control",
-    "Finance", 
-    "Sales",
-    "Cashier", 
-    "Internal Control", 
-    "IT Support", 
-    "Admin Officer", 
-    "Customer Experience"
+    "Credit Officer", "Supervisor", "Head of Credit", "CCO", "MD", "Head of Control",
+    "Finance", "Sales", "Cashier", "Internal Control", "IT Support", "Admin Officer", "Customer Experience"
   ];
 
-  // Logic Update: Sales is now checked via the Unit field
   const isMarketingOrSales = formData.department === "Marketing" || formData.unit === "Sales";
   
   const needsSupervisor = formData.unit === "Credit Officer" || 
@@ -95,15 +86,15 @@ export default function SignUpScreen() {
     const fetchSupervisors = async () => {
       try {
         const response = await api.get('/manager/supervisors');
-        if (response.data) {
-          setSupervisors(response.data);
-        }
-      } catch (error) { 
-        console.log("Supervisor load failed:", error); 
-      }
+        if (response.data) setSupervisors(response.data);
+      } catch (error) { console.log("Supervisor load failed"); }
     };
     fetchSupervisors();
   }, []);
+
+//   useEffect(() => {
+//   setSupervisors([{ id: '1', full_name: 'pelumi israel', email: 'peluisrael2014@gmail.com', role: 'Manager', branch: 'Main' }]);
+// }, []);
 
   const updateField = (field: string, value: any) => {
     if (errors[field as keyof ValidationErrors]) {
@@ -111,21 +102,9 @@ export default function SignUpScreen() {
     }
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
-      
-      // Auto-set Loan Officer status for Credit and Sales/Marketing
-      if (field === 'unit' && (value === "Credit Officer" || value === "Sales")) {
-        newData.isLoanOfficer = true;
-      }
-      
-      if (field === 'department' && value === "Marketing") {
-        newData.isLoanOfficer = true;
-      }
-
-      // Reset Loan Officer if moving to a purely administrative role
-      if (field === 'unit' && value !== "Credit Officer" && value !== "Sales" && prev.department !== "Marketing") {
-        newData.isLoanOfficer = false;
-      }
-
+      if (field === 'unit' && (value === "Credit Officer" || value === "Sales")) newData.isLoanOfficer = true;
+      if (field === 'department' && value === "Marketing") newData.isLoanOfficer = true;
+      if (field === 'unit' && value !== "Credit Officer" && value !== "Sales" && prev.department !== "Marketing") newData.isLoanOfficer = false;
       return newData;
     });
   };
@@ -139,13 +118,7 @@ export default function SignUpScreen() {
     if (formData.phone.trim().length !== 11) currentErrors.phone = "Phone must be 11 digits";
     if (!formData.department) currentErrors.department = "Please select a department";
     if (!formData.unit) currentErrors.unit = "Please select a Unit/Role";
-    
-    if (needsSupervisor && !formData.isSupervisor) {
-        if (!formData.supervisor) {
-            currentErrors.supervisor = "Please select a supervisor";
-        }
-    }
-    
+    if (needsSupervisor && !formData.isSupervisor && !formData.supervisor) currentErrors.supervisor = "Please select a supervisor";
     if (formData.password.length < 6) currentErrors.password = "Password must be at least 6 characters";
     if (formData.password !== formData.confirmPassword) currentErrors.confirmPassword = "Passwords do not match";
 
@@ -153,9 +126,8 @@ export default function SignUpScreen() {
     return Object.keys(currentErrors).length === 0;
   };
 
- const handleSignUp = async () => {
+  const handleSignUp = async () => {
     if (!validateForm()) return;
-
     setIsLoading(true);
     try {
       const payload = {
@@ -173,131 +145,75 @@ export default function SignUpScreen() {
         is_active: true 
       };
 
-      console.log("📤 Sending Signup Payload:", payload);
-
       const response = await api.post('/auth/signup', payload);
-
       setIsLoading(false);
-      Alert.alert(
-        "Success", 
-        response.data.message || "Account created successfully!", 
-        [{ text: "Login", onPress: () => router.replace('/login') }]
-      );
+      Alert.alert("Success", "Account created successfully!", [{ text: "Login", onPress: () => router.replace('/login') }]);
     } catch (error: any) {
       setIsLoading(false);
-      console.error("❌ Frontend Signup Error:", error.response?.data || error.message);
-      const serverError = error.response?.data?.details || error.response?.data?.error || "Registration failed.";
-      Alert.alert("Registration Issue", serverError);
+      Alert.alert("Registration Issue", error.response?.data?.error || "Registration failed.");
     }
   };
-
-  const ErrorMsg = ({ name }: { name: keyof ValidationErrors }) => (
-    errors[name] ? <Text style={styles.errorText}>{errors[name]}</Text> : null
-  );
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#003366" />
           </TouchableOpacity>
-
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Register as a TrustMicro Staff Officer</Text>
 
           <View style={styles.form}>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput 
-              style={[styles.input, errors.fullName && styles.inputError]} 
-              placeholder="John Doe" 
-              value={formData.fullName} 
-              onChangeText={(v) => updateField('fullName', v)} 
-            />
-            <ErrorMsg name="fullName" />
+            <TextInput style={[styles.input, errors.fullName && styles.inputError]} placeholder="John Doe" value={formData.fullName} onChangeText={(v) => updateField('fullName', v)} />
+            <ErrorMsg message={errors.fullName} />
 
             <Text style={styles.label}>Email Address</Text>
-            <TextInput 
-              style={[styles.input, errors.email && styles.inputError]} 
-              placeholder="staff@trustmicro.com" 
-              keyboardType="email-address" 
-              autoCapitalize="none" 
-              value={formData.email} 
-              onChangeText={(v) => updateField('email', v)} 
-            />
-            <ErrorMsg name="email" />
+            <TextInput style={[styles.input, errors.email && styles.inputError]} placeholder="staff@trustmicro.com" keyboardType="email-address" autoCapitalize="none" value={formData.email} onChangeText={(v) => updateField('email', v)} />
+            <ErrorMsg message={errors.email} />
 
             <View style={styles.row}>
                 <View style={{flex: 1, marginRight: 10}}>
                     <Text style={styles.label}>Phone</Text>
-                    <TextInput 
-                      style={[styles.input, errors.phone && styles.inputError]} 
-                      placeholder="08012345678" 
-                      keyboardType="phone-pad" 
-                      maxLength={11} 
-                      value={formData.phone} 
-                      onChangeText={(v) => updateField('phone', v.replace(/[^0-9]/g, ''))} 
-                    />
+                    <TextInput style={[styles.input, errors.phone && styles.inputError]} placeholder="08012345678" keyboardType="phone-pad" maxLength={11} value={formData.phone} onChangeText={(v) => updateField('phone', v.replace(/[^0-9]/g, ''))} />
                 </View>
                 <View style={{flex: 1}}>
                     <Text style={styles.label}>Branch</Text>
                     <TextInput style={styles.input} placeholder="Branch" value={formData.branch} onChangeText={(v) => updateField('branch', v)} />
                 </View>
             </View>
-            <ErrorMsg name="phone" />
+            <ErrorMsg message={errors.phone} />
 
             <Text style={styles.label}>Department</Text>
-            <TouchableOpacity 
-              style={[styles.pickerTrigger, errors.department && styles.inputError]} 
-              onPress={() => setShowDeptModal(true)}
-            >
-              <Text style={[styles.triggerText, !formData.department && { color: '#94A3B8' }]}>
-                {formData.department || "Select Department"}
-              </Text>
+            <TouchableOpacity style={[styles.pickerTrigger, errors.department && styles.inputError]} onPress={() => setShowDeptModal(true)}>
+              <Text style={[styles.triggerText, !formData.department && { color: '#94A3B8' }]}>{formData.department || "Select Department"}</Text>
               <Ionicons name="chevron-down" size={18} color="#003366" />
             </TouchableOpacity>
-            <ErrorMsg name="department" />
+            <ErrorMsg message={errors.department} />
 
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text style={styles.label}>Unit / Role</Text>
                 <TouchableOpacity style={[styles.pickerTrigger, errors.unit && styles.inputError]} onPress={() => setShowUnitModal(true)}>
-                  <Text style={[styles.triggerText, !formData.unit && { color: '#94A3B8' }]} numberOfLines={1}>
-                    {formData.unit || "Select..."}
-                  </Text>
+                  <Text style={[styles.triggerText, !formData.unit && { color: '#94A3B8' }]} numberOfLines={1}>{formData.unit || "Select..."}</Text>
                 </TouchableOpacity>
-                <ErrorMsg name="unit" />
+                <ErrorMsg message={errors.unit} />
               </View>
               
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Supervisor</Text>
-                <TouchableOpacity 
-                    disabled={!needsSupervisor || formData.isSupervisor}
-                    style={[
-                        styles.pickerTrigger, 
-                        errors.supervisor && styles.inputError,
-                        (!needsSupervisor || formData.isSupervisor) && { backgroundColor: '#F1F5F9' }
-                    ]} 
-                    onPress={() => setShowSupModal(true)}
-                >
-                  <Text style={[styles.triggerText, (!formData.supervisor || !needsSupervisor) && { color: '#94A3B8' }]} numberOfLines={1}>
-                    {formData.isSupervisor ? "N/A" : (formData.supervisor || "Select...")}
-                  </Text>
+                <TouchableOpacity disabled={!needsSupervisor || formData.isSupervisor} style={[styles.pickerTrigger, errors.supervisor && styles.inputError, (!needsSupervisor || formData.isSupervisor) && { backgroundColor: '#F1F5F9' }]} onPress={() => setShowSupModal(true)}>
+                  <Text style={[styles.triggerText, (!formData.supervisor || !needsSupervisor) && { color: '#94A3B8' }]} numberOfLines={1}>{formData.isSupervisor ? "N/A" : (formData.supervisor || "Select...")}</Text>
                 </TouchableOpacity>
-                <ErrorMsg name="supervisor" />
+                <ErrorMsg message={errors.supervisor} />
               </View>
             </View>
 
             <View style={styles.checkboxContainer}>
               <View style={[styles.checkboxRow, !isMarketingOrSales && formData.unit !== "Credit Officer" && { opacity: 0.4 }]}>
-                <Checkbox 
-                    value={formData.isLoanOfficer} 
-                    onValueChange={(v) => updateField('isLoanOfficer', v)} 
-                    color="#003366" 
-                    disabled={!isMarketingOrSales && formData.unit !== "Credit Officer"} 
-                />
-                <Text style={[styles.checkboxLabel, !isMarketingOrSales && formData.unit !== "Credit Officer" && { color: '#94A3B8' }]}>Is Loan Officer?</Text>
+                <Checkbox value={formData.isLoanOfficer} onValueChange={(v) => updateField('isLoanOfficer', v)} color="#003366" disabled={!isMarketingOrSales && formData.unit !== "Credit Officer"} />
+                <Text style={styles.checkboxLabel}>Is Loan Officer?</Text>
               </View>
               <View style={styles.checkboxRow}>
                 <Checkbox value={formData.isSupervisor} onValueChange={(v) => updateField('isSupervisor', v)} color="#003366" />
@@ -307,83 +223,26 @@ export default function SignUpScreen() {
 
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
-              <TextInput 
-                style={[styles.input, { flex: 1, paddingRight: 50 }, errors.password && styles.inputError]} 
-                placeholder="••••••••" 
-                secureTextEntry={!showPassword} 
-                value={formData.password} 
-                onChangeText={(v) => updateField('password', v)} 
-              />
-              <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? "eye-off" : "eye"} size={22} color="#64748B" />
-              </TouchableOpacity>
+              <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.password && styles.inputError]} placeholder="••••••••" secureTextEntry={!showPassword} value={formData.password} onChangeText={(v) => updateField('password', v)} />
+              <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}><Ionicons name={showPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
             </View>
-            <ErrorMsg name="password" />
+            <ErrorMsg message={errors.password} />
 
             <Text style={styles.label}>Confirm Password</Text>
             <View style={styles.passwordContainer}>
-              <TextInput 
-                style={[styles.input, { flex: 1, paddingRight: 50 }, errors.confirmPassword && styles.inputError]} 
-                placeholder="••••••••" 
-                secureTextEntry={!showConfirmPassword} 
-                value={formData.confirmPassword} 
-                onChangeText={(v) => updateField('confirmPassword', v)} 
-              />
-              <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                <Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={22} color="#64748B" />
-              </TouchableOpacity>
+              <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.confirmPassword && styles.inputError]} placeholder="••••••••" secureTextEntry={!showConfirmPassword} value={formData.confirmPassword} onChangeText={(v) => updateField('confirmPassword', v)} />
+              <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}><Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
             </View>
-            <ErrorMsg name="confirmPassword" />
+            <ErrorMsg message={errors.confirmPassword} />
 
             <TouchableOpacity style={styles.btn} onPress={handleSignUp} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Register Account</Text>}
             </TouchableOpacity>
           </View>
 
-          {/* MODALS */}
-          <Modal visible={showDeptModal} transparent animationType="fade">
-            <View style={styles.modalOverlay}><View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Department</Text>
-                <FlatList data={departments} keyExtractor={(item) => item} renderItem={({ item }) => (
-                    <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('department', item); setShowDeptModal(false); }}>
-                      <Text style={[styles.modalItemText, formData.department === item && styles.selectedText]}>{item}</Text>
-                    </TouchableOpacity>
-                )} />
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setShowDeptModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity>
-            </View></View>
-          </Modal>
-
-          <Modal visible={showSupModal} transparent animationType="fade">
-            <View style={styles.modalOverlay}><View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Supervisor</Text>
-                {supervisors.length === 0 ? (
-                  <Text style={{ textAlign: 'center', marginVertical: 20, color: '#64748B' }}>No supervisors available.</Text>
-                ) : (
-                  <FlatList data={supervisors} keyExtractor={(item) => item.email || item.id} renderItem={({ item }) => (
-                      <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}>
-                        <View>
-                          <Text style={[styles.modalItemText, formData.supervisor === item.full_name && styles.selectedText]}>{item.full_name}</Text>
-                          <Text style={{fontSize: 12, color: '#94A3B8'}}>{item.role} - {item.branch}</Text>
-                        </View>
-                      </TouchableOpacity>
-                  )} />
-                )}
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity>
-            </View></View>
-          </Modal>
-
-          <Modal visible={showUnitModal} transparent animationType="fade">
-            <View style={styles.modalOverlay}><View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Unit / Role</Text>
-                <FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (
-                    <TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(false); }}>
-                      <Text style={[styles.modalItemText, formData.unit === item && styles.selectedText]}>{item}</Text>
-                    </TouchableOpacity>
-                )} />
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setShowUnitModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity>
-            </View></View>
-          </Modal>
-
+          <Modal visible={showDeptModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Department</Text><FlatList data={departments} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('department', item); setShowDeptModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowDeptModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+          <Modal visible={showSupModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Supervisor</Text><FlatList data={supervisors} keyExtractor={(item) => item.id} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}><View><Text style={styles.modalItemText}>{item.full_name}</Text><Text style={{fontSize: 12, color: '#94A3B8'}}>{item.role}</Text></View></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+          <Modal visible={showUnitModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Unit</Text><FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowUnitModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -410,7 +269,6 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#011F3D', textAlign: 'center' },
   modalItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   modalItemText: { fontSize: 16, color: '#475569' },
-  selectedText: { color: '#003366', fontWeight: 'bold' },
   closeBtn: { marginTop: 15, padding: 10, alignItems: 'center' },
   closeBtnText: { color: '#EF4444', fontWeight: '700' },
   btn: { backgroundColor: '#003366', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 10, marginBottom: 40 },

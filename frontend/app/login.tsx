@@ -259,7 +259,7 @@ export default function LoginScreen() {
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
-              ) : (
+              ) : (  
                 <Text style={styles.signInText}>{isLockedOut ? "Account Locked" : "Sign In"}</Text>
               )}
             </TouchableOpacity>
