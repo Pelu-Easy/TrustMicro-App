@@ -121,8 +121,9 @@ export default function LoginScreen() {
         }
       }));
 
+      // Redirect based on role
       if (isUserSupervisor) {
-        router.replace('/');
+        router.replace('/(tabs)/managerDashboard');
       } else {
         router.replace('/(tabs)');
       }
@@ -131,16 +132,13 @@ export default function LoginScreen() {
       const status = error.response?.status;
       const errorCode = error.response?.data?.code;
 
-      // 1. Handle Account Not Found
       if (status === 404 || errorCode === "USER_NOT_FOUND") {
         setErrors({ general: "Account not found. Please check your email or sign up." });
       } 
-      // 2. Handle Explicit Backend Deactivation (The 403 issue)
       else if (status === 403) {
         setIsLockedOut(true);
         setErrors({ general: error.response?.data?.error || "Account Deactivated. Contact Admin." });
       } 
-      // 3. Local Strike Tracking for Invalid Passwords
       else {
         const nextAttemptCount = failedAttempts + 1;
         setFailedAttempts(nextAttemptCount);
@@ -149,7 +147,6 @@ export default function LoginScreen() {
           setIsLockedOut(true);
           setErrors({ general: "Account Deactivated: Too many failed attempts." });
 
-          // Sync lockout with backend
           api.post('/auth/deactivate', { 
             email: trimmedEmail.toLowerCase()
           }).catch(err => console.error("Deactivation sync failed", err));
@@ -165,7 +162,6 @@ export default function LoginScreen() {
         }
       }
     } finally {
-      // THE FIX: This runs NO MATTER WHAT. It stops the freeze.
       setIsLoading(false);
     }
   };
@@ -245,7 +241,7 @@ export default function LoginScreen() {
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
             <TouchableOpacity 
-              onPress={() => !isLoading && router.push('/forgot_password' as any)} 
+              onPress={() => !isLoading && router.push('/forgot_password')} 
               style={{ alignSelf: 'flex-end', marginBottom: 25 }}
               disabled={isLoading}
             >
@@ -272,7 +268,15 @@ export default function LoginScreen() {
 
             <View style={styles.signupRow}>
               <Text style={styles.noAccountText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => !isLoading && router.push('/sign_up')} disabled={isLoading}>
+              <TouchableOpacity 
+                onPress={() => {
+                   if(!isLoading) {
+                     console.log("Navigating to sign_up...");
+                     router.push('/sign_up');
+                   }
+                }} 
+                disabled={isLoading}
+              >
                 <Text style={styles.signUpLinkText}>Sign Up here</Text>
               </TouchableOpacity>
             </View>
