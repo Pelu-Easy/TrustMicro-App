@@ -103,7 +103,7 @@ router.post('/signup', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // --- UPDATED QUERY: Added is_supervisor ($11) and shifted is_active to $12 ---
+        // --- FIXED QUERY: Ensuring department ($7) is strictly handled ---
         const query = `
             INSERT INTO staff_users (
                 full_name, email, phone_no, password, branch, role, 
@@ -119,11 +119,11 @@ router.post('/signup', async (req, res) => {
             hashedPassword, 
             branch, 
             role || 'Officer', 
-            department, 
+            department || 'General', // Fallback to 'General' if department is missing
             unit, 
             supervisor_name, 
             is_loan_officer === true || is_loan_officer === 1, 
-            is_supervisor === true || is_supervisor === 1, // Capture supervisor status
+            is_supervisor === true || is_supervisor === 1,
             true // is_active
         ];
 
