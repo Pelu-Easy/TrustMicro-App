@@ -130,6 +130,7 @@ export default function Dashboard() {
   }, [_hasHydrated, token, email, fetchLoans]);
 
   useEffect(() => {
+    // Only register notification listeners if NOT in Expo Go
     if (!isExpoGo) {
       const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
         fetchDashboardData(true);
@@ -144,7 +145,7 @@ export default function Dashboard() {
     }
   }, [fetchDashboardData, router]);
 
-  useFocusEffect(
+useFocusEffect(
     useCallback(() => {
       if (token && token.length > 10 && email && _hasHydrated) {
         fetchDashboardData();
@@ -295,10 +296,10 @@ export default function Dashboard() {
                   <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
                   <View style={styles.miniTrackerContainer}>
-                    <View style={styles.trackerLabelRow}>
+                    <div style={styles.trackerLabelRow}>
                         <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                         <Text style={styles.trackerPercent}>{track.percent}%</Text>
-                    </View>
+                    </div>
                     <View style={styles.miniProgressBarBg}>
                       <View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} />
                     </View>

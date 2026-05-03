@@ -92,10 +92,6 @@ export default function SignUpScreen() {
     fetchSupervisors();
   }, []);
 
-//   useEffect(() => {
-//   setSupervisors([{ id: '1', full_name: 'pelumi israel', email: 'peluisrael2014@gmail.com', role: 'Manager', branch: 'Main' }]);
-// }, []);
-
   const updateField = (field: string, value: any) => {
     if (errors[field as keyof ValidationErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -136,7 +132,7 @@ export default function SignUpScreen() {
         phone_no: formData.phone.trim(),
         branch: formData.branch.trim() || 'Main Headquarters',
         password: formData.password,
-        department: formData.department,
+        department: formData.department, // Explicitly sending department
         unit: formData.unit,
         supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), 
         role: formData.isSupervisor ? 'Manager' : formData.unit,
