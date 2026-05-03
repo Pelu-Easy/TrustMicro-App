@@ -14,10 +14,10 @@ import { useLoanStore } from '../../store/loanStore';
 import useUserData from '../../store/userSignUp';
 
 // Import our new modular components
-import { Declaration } from '../../components/loan-form/DeclarationSection'; // Ensure you created this from Stage 9
+import { Declaration } from '../../components/loan-form/DeclarationSection';
 import { BRAND } from '../../components/loan-form/FormShared';
 import { PersonalInfo, ResidentialInfo } from '../../components/loan-form/IdentitySection';
-import { NextOfKinInfo } from '../../components/loan-form/NextOfKinSection'; // Ensure you created this from Stage 4
+import { NextOfKinInfo } from '../../components/loan-form/NextOfKinSection';
 import { DocumentUploads } from '../../components/loan-form/UploadSection';
 import { BankInfo, EmploymentInfo } from '../../components/loan-form/WorkFinancialSection';
 
@@ -33,7 +33,7 @@ export default function LoanForm() {
 
   // If no draft exists, create one immediately on mount
   useEffect(() => {
-    if (!draft) {
+    if (!draft && email) {
       const newId = Date.now().toString();
       addLoan({
         id: newId,
@@ -42,7 +42,7 @@ export default function LoanForm() {
         createdByEmail: email,
       } as any, email);
     }
-  }, [draft]);
+  }, [draft, email]);
 
   const handleSubmit = async () => {
     if (!draft) return;
@@ -68,11 +68,23 @@ export default function LoanForm() {
           onPress: async () => {
             setIsSubmitting(true);
             try {
-              // Change status to Pending to trigger the backend sync logic in your store
-              await updateLoan(draft.id, { ...draft, status: 'Pending' });
-              Alert.alert("Success", "Loan submitted successfully to Credit Unit.");
-              router.replace('/(tabs)'); // Go back to dashboard
+              // We explicitly attach the email again here to ensure it's captured
+              // and we wait for the store to finish the API call.
+              await updateLoan(draft.id, { 
+                ...draft, 
+                status: 'Pending',
+                createdByEmail: email // Ensuring the staff email is definitely included
+              });
+
+              // FIX: Navigation only happens AFTER the user clicks OK on the Alert
+              Alert.alert(
+                "Success", 
+                "Loan submitted successfully to Credit Unit.",
+                [{ text: "OK", onPress: () => router.replace('/(tabs)') }]
+              );
+              
             } catch (error) {
+              console.error("Submission Error:", error);
               Alert.alert("Error", "Could not submit loan. It remains in your Drafts.");
             } finally {
               setIsSubmitting(false);
