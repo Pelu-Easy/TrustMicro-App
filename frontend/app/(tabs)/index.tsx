@@ -1,7 +1,6 @@
 import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -25,19 +24,6 @@ import useUserData from '../../store/userSignUp';
 const { width } = Dimensions.get('window');
 
 const isExpoGo = Constants.appOwnership === 'expo';
-
-// Only set the handler if NOT in Expo Go to prevent SDK 53/54 crashes
-if (!isExpoGo) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,   
-      shouldShowList: true,   
-    }),
-  });
-}
 
 interface StatCardProps {
   title: string;
@@ -132,20 +118,36 @@ export default function Dashboard() {
   useEffect(() => {
     // Only register notification listeners if NOT in Expo Go
     if (!isExpoGo) {
-      const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
-        fetchDashboardData(true);
-      });
-      const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
-        router.push('/notifications');
-      });
-      return () => {
-        foregroundSubscription.remove();
-        responseSubscription.remove();
-      };
+      try {
+        const Notifications = require('expo-notifications');
+        
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,   
+            shouldShowList: true,   
+          }),
+        });
+
+        const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
+          fetchDashboardData(true);
+        });
+        const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+          router.push('/notifications');
+        });
+        return () => {
+          foregroundSubscription.remove();
+          responseSubscription.remove();
+        };
+      } catch (error) {
+        console.warn("Notification module failed to load:", error);
+      }
     }
   }, [fetchDashboardData, router]);
 
-useFocusEffect(
+  useFocusEffect(
     useCallback(() => {
       if (token && token.length > 10 && email && _hasHydrated) {
         fetchDashboardData();
@@ -296,10 +298,10 @@ useFocusEffect(
                   <Text style={styles.customerName}>{loan.customerName || "Unnamed Draft"}</Text>
                   <Text style={styles.loanDate}>{loan.submittedDate || 'Recently'}</Text>
                   <View style={styles.miniTrackerContainer}>
-                    <div style={styles.trackerLabelRow}>
+                    <View style={styles.trackerLabelRow}>
                         <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                         <Text style={styles.trackerPercent}>{track.percent}%</Text>
-                    </div>
+                    </View>
                     <View style={styles.miniProgressBarBg}>
                       <View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} />
                     </View>

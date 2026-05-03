@@ -23,7 +23,7 @@ interface UserState {
   // --- WORKFLOW SPECIFIC ROLES ---
   isCreditOfficer: boolean;
   isHeadOfCredit: boolean;
-  isHeadOfControl: boolean; // ADDED: New workflow role
+  isHeadOfControl: boolean; 
   isCCO: boolean;
   isMD: boolean;
   isFinance: boolean;
@@ -56,7 +56,7 @@ const initialState = {
   isSupervisor: false,
   isCreditOfficer: false,
   isHeadOfCredit: false,
-  isHeadOfControl: false, // ADDED
+  isHeadOfControl: false, 
   isCCO: false,
   isMD: false,
   isFinance: false,
@@ -81,6 +81,11 @@ const useUserData = create<UserState>()(
         // Create the potential new state
         let newState = { ...state, ...data };
 
+        // Ensure we explicitly capture department if it's in the data
+        if (data.department) {
+            newState.department = data.department;
+        }
+
         // If the update contains a new role string, recalculate boolean flags
         if (data.role) {
           const roleUpper = data.role.toUpperCase().replace(/\s+/g, '_');
@@ -88,7 +93,7 @@ const useUserData = create<UserState>()(
           // Map the backend role string to the frontend boolean flags
           newState.isHeadOfCredit = roleUpper === 'HEAD_OF_CREDIT';
           newState.isCreditOfficer = roleUpper === 'CREDIT_OFFICER';
-          newState.isHeadOfControl = roleUpper === 'HEAD_OF_CONTROL'; // ADDED
+          newState.isHeadOfControl = roleUpper === 'HEAD_OF_CONTROL'; 
           newState.isCCO = roleUpper === 'CCO';
           newState.isMD = roleUpper === 'MD';
           newState.isFinance = roleUpper === 'FINANCE';
@@ -97,13 +102,14 @@ const useUserData = create<UserState>()(
           const managementRoles = [
             'HEAD_OF_CREDIT', 
             'CREDIT_OFFICER', 
-            'HEAD_OF_CONTROL', // ADDED
+            'HEAD_OF_CONTROL', 
             'CCO', 
             'MD', 
             'SUPERVISOR',
             'BRANCH_SUPERVISOR',
             'MANAGER',
-            'ADMIN'
+            'ADMIN',
+            'FINANCE'
           ];
           
           if (managementRoles.includes(roleUpper)) {
@@ -119,14 +125,11 @@ const useUserData = create<UserState>()(
       }),
 
       clearUserData: () => {
-        // Reset in-memory state but keep hydration flag true to avoid loading loops
         set({ ...initialState, _hasHydrated: true });
-        // Use Zustand persist API to clear storage
         useUserData.persist.clearStorage();
       },
 
       logout: () => {
-        // Point to unified clear function
         useUserData.getState().clearUserData();
       },
     }),
