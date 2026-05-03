@@ -1,5 +1,6 @@
 import api from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,15 +24,20 @@ import useUserData from '../../store/userSignUp';
 
 const { width } = Dimensions.get('window');
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,   
-    shouldShowList: true,   
-  }),
-});
+const isExpoGo = Constants.appOwnership === 'expo';
+
+// Only set the handler if NOT in Expo Go to prevent SDK 53/54 crashes
+if (!isExpoGo) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,   
+      shouldShowList: true,   
+    }),
+  });
+}
 
 interface StatCardProps {
   title: string;
@@ -124,16 +130,18 @@ export default function Dashboard() {
   }, [_hasHydrated, token, email, fetchLoans]);
 
   useEffect(() => {
-    const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
-      fetchDashboardData(true);
-    });
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/notifications');
-    });
-    return () => {
-      foregroundSubscription.remove();
-      responseSubscription.remove();
-    };
+    if (!isExpoGo) {
+      const foregroundSubscription = Notifications.addNotificationReceivedListener(() => {
+        fetchDashboardData(true);
+      });
+      const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+        router.push('/notifications');
+      });
+      return () => {
+        foregroundSubscription.remove();
+        responseSubscription.remove();
+      };
+    }
   }, [fetchDashboardData, router]);
 
   useFocusEffect(
@@ -146,7 +154,6 @@ export default function Dashboard() {
 
   const processedLoans = useMemo(() => {
     if (!loans) return [];
-    // Ensure we sort so that newest applications appear at the top
     return [...loans]
       .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
       .sort((a, b) => new Date(b.submittedDate || 0).getTime() - new Date(a.submittedDate || 0).getTime())
@@ -281,7 +288,6 @@ export default function Dashboard() {
                     { text: "Fix & Resubmit", onPress: () => router.push({ pathname: '/loanForm', params: { draftId: loan.id } }) }
                   ]);
                 } else {
-                  // Pass ONLY the id to avoid boolean/object navigation errors
                   router.push({ pathname: '/loanDetails', params: { id: loan.id } });
                 }
               }}>
@@ -293,7 +299,9 @@ export default function Dashboard() {
                         <Text style={[styles.trackerLabel, { color: track.color }]}>{track.label}</Text>
                         <Text style={styles.trackerPercent}>{track.percent}%</Text>
                     </View>
-                    <View style={styles.miniProgressBarBg}><View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} /></View>
+                    <View style={styles.miniProgressBarBg}>
+                      <View style={[styles.miniProgressBarFill, { width: `${track.percent}%`, backgroundColor: track.color }]} />
+                    </View>
                   </View>
                 </View>
                 <View style={styles.loanStatusArea}>
