@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "backgroundColor": "#ffffff",
     "icon": "./assets/images/icon.png",
-    "scheme": "trustmicro",
+    "scheme": "trustmicro-bank",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
@@ -31,7 +31,8 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

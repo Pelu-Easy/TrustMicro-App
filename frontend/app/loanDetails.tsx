@@ -211,7 +211,7 @@ export default function LoanDetails() {
             <Text style={styles.label}>CUSTOMER NAME</Text>
             <Text style={styles.value}>{loan?.customerName}</Text>
             <View style={styles.divider} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <div style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View>
                     <Text style={styles.label}>LOAN AMOUNT</Text>
                     <Text style={styles.amountText}>₦{Number(loan?.loanAmount || loan?.amount || 0).toLocaleString()}</Text>
@@ -220,7 +220,7 @@ export default function LoanDetails() {
                     <Text style={styles.label}>LOAN TYPE</Text>
                     <Text style={styles.value}>{loan?.loanType}</Text>
                 </View>
-            </View>
+            </div>
             <View style={styles.divider} />
             <Text style={styles.label}>BVN / NIN</Text>
             <Text style={styles.value}>{loan?.bvn} / {loan?.nin || 'N/A'}</Text>

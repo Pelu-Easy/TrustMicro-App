@@ -90,6 +90,12 @@ export interface Loan {
   passportImageUrl?: string;
   hasAcceptedTerms?: boolean;
 
+  // ADDED THESE TO FIX TYPESCRIPT ERRORS
+  ninImageUrl?: string | null;
+  statementUrl?: string | null;
+  workIdUrl?: string | null;
+  supervisor_name?: string;
+
   // Snake case aliases for safety during transition
   state_of_origin?: string;
   residential_lga?: string;
@@ -124,6 +130,7 @@ interface LoanState {
   clearAllData: () => void;
   _hasHydrated: boolean; 
   setHasHydrated: (state: boolean) => void;
+  getFilteredLoans: () => Loan[]; // Added helper for UI visibility
 }
 
 export const useLoanStore = create<LoanState>()(
@@ -139,12 +146,27 @@ export const useLoanStore = create<LoanState>()(
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       setLoans: (newLoans) => set({ loans: newLoans }),
 
+      getFilteredLoans: () => {
+        const state = get();
+        const userData = useUserData.getState() as any;
+        const role = userData.role?.toUpperCase();
+        const userEmail = userData.email?.toLowerCase().trim();
+
+        // If the user is a Manager or Head of Marketing, they see all loans
+        if (role === 'MANAGER' || role === 'SUPERVISOR' || role === 'HEAD_MARKETING') {
+          return state.loans;
+        }
+
+        // Default: Sales Officers only see loans they created
+        return state.loans.filter(loan => 
+          loan.createdByEmail?.toLowerCase().trim() === userEmail
+        );
+      },
+
       fetchLoans: async (email, token) => {
         if (!email || !token) return;
 
         try {
-          // Optimization: If user is management, the backend should ideally return all relevant loans
-          // for their branch/role even if email is passed. 
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           const serverLoans = response.data;
           
@@ -170,7 +192,6 @@ export const useLoanStore = create<LoanState>()(
               get().clearAllData();
               useUserData.getState().logout();
             } else if (error.response.status === 403) {
-              // This confirms the Manager is reaching the server but is blocked by permission logic
               console.warn(`Forbidden (403). Backend check required for: ${email}`);
             }
           }
@@ -215,7 +236,16 @@ export const useLoanStore = create<LoanState>()(
           if (!token) return;
 
           try {
-            await api.post('/loans', ownedLoan);
+            // Mapping frontend logic to backend expectations
+            const payload = {
+              ...ownedLoan,
+              ninImageUrl: ownedLoan.ninImageUrl || ownedLoan.ninImageURL,
+              statementUrl: ownedLoan.statementUrl || ownedLoan.statementURL || ownedLoan.bankStatement,
+              signatureUrl: ownedLoan.signatureUrl || ownedLoan.signature,
+              passportImageUrl: ownedLoan.passportImageUrl || ownedLoan.passportPhoto,
+              workIdUrl: ownedLoan.workIdUrl || ownedLoan.workId
+            };
+            await api.post('/loans', payload);
             console.log("Loan successfully synced with email:", activeEmail);
           } catch (error: any) {
             console.log("Cloud Sync Failed:", error.response?.data?.error || error.message);
@@ -234,9 +264,21 @@ export const useLoanStore = create<LoanState>()(
           const userData = useUserData.getState();
           try {
             console.log(`Syncing loan ${id} to database with status: ${updatedLoan.status}`);
-            const response = await api.post('/loans', updatedLoan);
+            
+            const payload = {
+              ...updatedLoan,
+              createdByEmail: updatedLoan.createdByEmail || userData.email,
+              ninImageUrl: updatedLoan.ninImageUrl || updatedLoan.ninImageURL,
+              statementUrl: updatedLoan.statementUrl || updatedLoan.statementURL || updatedLoan.bankStatement,
+              signatureUrl: updatedLoan.signatureUrl || updatedLoan.signature,
+              passportImageUrl: updatedLoan.passportImageUrl || updatedLoan.passportPhoto,
+              workIdUrl: updatedLoan.workIdUrl || updatedLoan.workId,
+              supervisorName: (updatedLoan as any).supervisorName || updatedLoan.supervisor_name
+            };
+
+            const response = await api.post('/loans', payload);
             if (response.status === 200 || response.status === 201) {
-              console.log("Loan successfully saved to MongoDB/Backend.");
+              console.log("Loan successfully saved to Backend.");
             }
           } catch (error: any) {
             console.error("Critical Sync Failure during updateLoan:", error.response?.data || error.message);
