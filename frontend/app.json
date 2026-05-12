@@ -9,8 +9,11 @@
     "icon": "./assets/images/icon.png",
     "scheme": "trustmicro-bank",
     "userInterfaceStyle": "automatic",
-    "sdkVersion": "53.0.0",
-    "platforms": ["android", "ios"],
+    "sdkVersion": "54.0.0",
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "android": {
       "package": "com.peluisrael.trustmicro",
       "googleServicesFile": "./google-services.json",
@@ -40,8 +43,12 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": { "origin": false },
-      "eas": { "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9" }
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9"
+      }
     }
   }
 }
