@@ -29,7 +29,7 @@
     "expo-linking": "~7.1.7",
     "expo-notifications": "~0.31.5",
     "expo-print": "~14.1.4",
-    "expo-router": "~5.1.11",
+    "expo-router": "~5.1.0",
     "expo-sharing": "~13.1.5",
     "expo-splash-screen": "~0.30.10",
     "expo-status-bar": "~2.2.3",
@@ -49,7 +49,7 @@
     "@types/react": "~18.3.1",
     "babel-preset-expo": "~13.0.0",
     "nodemon": "^3.1.14",
-    "typescript": "~5.8.3"
+    "typescript": "^5.3.3"
   },
   "private": true
 }

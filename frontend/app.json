@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "TrustMicro-Bank",
+    "name": "TrustMicro Bank",
     "slug": "trustmicro-bank",
     "version": "1.0.0",
     "owner": "peluisrael",
@@ -9,9 +9,8 @@
     "icon": "./assets/images/icon.png",
     "scheme": "trustmicro-bank",
     "userInterfaceStyle": "automatic",
-    "ios": {
-      "supportsTablet": true
-    },
+    "sdkVersion": "53.0.0",
+    "platforms": ["android", "ios"],
     "android": {
       "package": "com.peluisrael.trustmicro",
       "googleServicesFile": "./google-services.json",
@@ -27,7 +26,10 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "kotlinVersion": "1.9.24",
+            "newArchEnabled": false,
+            "javaVersion": 17
           }
         }
       ],
@@ -38,12 +40,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {
-        "origin": false
-      },
-      "eas": {
-        "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9"
-      }
+      "router": { "origin": false },
+      "eas": { "projectId": "cc3eb8c4-3d3b-49db-a30e-64481b4934c9" }
     }
   }
 }
