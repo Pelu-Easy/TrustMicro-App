@@ -206,7 +206,7 @@ const handleLogin = async (req, res) => {
             full_name: user.full_name,
             is_supervisor: user.is_supervisor, 
             branch: user.branch,
-            department: user.department // ADDED: department to JWT
+            department: user.department 
         }, JWT_SECRET, { expiresIn: '24h' });
 
         console.log(`✅ User Logged In: ${user.email} - Token Issued`);
@@ -220,7 +220,7 @@ const handleLogin = async (req, res) => {
                 role: user.role, 
                 unit: user.unit, 
                 branch: user.branch,
-                department: user.department // ADDED: department to response
+                department: user.department 
             } 
         });
     } catch (e) { 
@@ -231,38 +231,61 @@ const handleLogin = async (req, res) => {
 };
 
 const handleSignup = async (req, res) => {
-    // UPDATED: Added department to destructuring
-    const { full_name, email, phone_no, branch, password, role, supervisor_name, unit, department, is_loan_officer, is_supervisor } = req.body;
+    // UPDATED: Destructuring with fallback safety aliases
+    const { 
+        full_name, fullName, // catch either format
+        email, 
+        phone_no, phone, // catch either format
+        branch, 
+        password, 
+        role, 
+        supervisor_name, supervisor, // catch either format
+        unit, 
+        department, 
+        is_loan_officer, 
+        is_supervisor 
+    } = req.body;
+
     try {
-        if (!email || !password || !full_name) return res.status(400).json({ error: "Missing required fields" });
+        const finalFullName = full_name || fullName;
+        const finalEmail = email?.trim().toLowerCase();
+        
+        if (!finalEmail || !password || !finalFullName) {
+            return res.status(400).json({ error: "Missing required fields: Email, Password, or Full Name" });
+        }
+
         const hash = await bcrypt.hash(password, 10);
         
         const finalUnit = unit || 'Operations';
         const finalRole = role || 'Officer';
-        const finalDept = department || 'General'; // Added default
+        const finalDept = department || 'General';
+        const finalPhone = phone_no || phone || null;
+        const finalSupervisor = supervisor_name || supervisor || 'N/A';
 
-        // UPDATED: Added department to columns and values placeholders ($13)
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password, role, branch, supervisor_name, is_active, failed_attempts, unit, is_loan_officer, is_supervisor, department) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
         
         const values = [
-            full_name, 
-            email.trim().toLowerCase(), 
-            phone_no || null, 
+            finalFullName, 
+            finalEmail, 
+            finalPhone, 
             hash, 
             finalRole, 
-            branch || 'Main', 
-            supervisor_name || null, 
+            branch || 'Main Headquarters', 
+            finalSupervisor, 
             true, 
             0, 
             finalUnit, 
             is_loan_officer === true || is_loan_officer === 1, 
             is_supervisor === true || is_supervisor === 1,
-            finalDept // ADDED: value for department column
+            finalDept 
         ];
 
         await db.query(query, values);
         res.status(201).json({ message: "Staff created successfully" });
-    } catch (e) { res.status(500).json({ error: "Signup failed", details: e.message }); }
+    } catch (e) { 
+        console.error("Signup DB Error:", e.message);
+        res.status(500).json({ error: "Signup failed", details: e.message }); 
+    }
 };
 
 app.post('/auth/login', handleLogin);
