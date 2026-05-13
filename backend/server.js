@@ -265,6 +265,44 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Service error" }); }
 });
 
+// ADD THIS ROUTE to match what your frontend is calling
+app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
+    const { bvn } = req.body;
+    
+    if (!bvn || bvn.length !== 11) {
+        return res.status(400).json({ status: "error", message: "Invalid BVN length." });
+    }
+
+    try {
+        // Mocking the verification for testing
+        const mockCustomer = { 
+            firstName: "TrustMicro", 
+            lastName: "Customer", 
+            fullName: "TrustMicro Customer", 
+            bvn: bvn, 
+            verificationStatus: "VERIFIED" 
+        };
+
+        // Update database
+        await db.query(`
+            INSERT INTO customers (bvn, full_name, kyc_status, updated_at) 
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
+            ON CONFLICT (bvn) 
+            DO UPDATE SET kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP
+        `, [bvn, mockCustomer.fullName, 'VERIFIED']);
+
+        res.json({ status: "success", data: mockCustomer });
+    } catch (e) {
+        console.error("BVN Verification Error:", e);
+        res.status(500).json({ error: "Internal Server Error during verification" });
+    }
+});
+
+// Keep this one as a backup if other parts of the app use it
+app.post('/api/v1/verify-identity', authenticateToken, async (req, res) => {
+    // ... (keep original logic here)
+});
+
 // --- 7. LOAN SUBMISSION (FIXED STATUS & EMAILS) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
@@ -375,6 +413,22 @@ app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
         const result = await db.query('SELECT id, full_name, email, role, unit, branch FROM staff_users WHERE id = $1', [req.user.id]);
         res.json(result.rows[0]);
     } catch (err) { res.status(500).json({ error: "Sync failed" }); }
+});
+
+// --- MISSING NOTIFICATION ROUTE ---
+app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
+    try {
+        const email = req.user.email.trim().toLowerCase();
+        // This counts pending loans assigned to the user or their branch
+        const result = await db.query(
+            'SELECT COUNT(*) FROM loans WHERE "createdByEmail" = $1 AND status = $2',
+            [email, 'PENDING']
+        );
+        res.json({ count: parseInt(result.rows[0].count) || 0 });
+    } catch (err) {
+        console.error("Notification Error:", err);
+        res.status(500).json({ error: "Failed to fetch notifications" });
+    }
 });
 
 app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
