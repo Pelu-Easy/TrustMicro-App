@@ -19,7 +19,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
     console.error("❌ [CRITICAL ERROR] JWT_SECRET is missing from .env!");
-    console.error("Check that your .env file exists and contains: JWT_SECRET=your_secret_here");
     process.exit(1); 
 }
 
@@ -43,10 +42,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'] 
 }));
 app.use(express.json());
-
-// Import and use external loan routes
-const loanRoutes = require('./routes/loanRoutes');
-app.use('/api/v1/loans', loanRoutes);
 
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
@@ -84,7 +79,7 @@ const LOAN_LIMITS = {
 };
 
 const STATUS_AUTHORITY_MAP = {
-    'Pending': ['head of marketing', 'supervisor', 'manager'],
+    'PENDING': ['head of marketing', 'supervisor', 'manager'],
     'PENDING_CREDIT': ['credit officer', 'credit staff', 'head of credit'],
     'PENDING_HEAD_CREDIT': ['head of credit'],
     'PENDING_CONTROL': ['head of control'],
@@ -118,13 +113,11 @@ const authenticateToken = (req, res, next) => {
     const token = authHeader && (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader);
     
     if (!token) {
-        console.error(`❌ Auth Error: No token found in request to ${req.url}`);
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
-            console.error(`❌ JWT Verify Error on ${req.url}: ${err.message}`);
             const isExpired = err.name === 'TokenExpiredError';
             return res.status(403).json({ 
                 error: isExpired ? "Session expired" : "Invalid session",
@@ -161,7 +154,6 @@ const isManagement = (req, res, next) => {
     if (hasManagementAccess) {
         next();
     } else {
-        console.warn(`Management Access Denied for: ${req.user.email} (Role: ${role}, Unit: ${unit})`);
         res.status(403).json({ error: "Management privileges required" });
     }
 };
@@ -209,8 +201,6 @@ const handleLogin = async (req, res) => {
             department: user.department 
         }, JWT_SECRET, { expiresIn: '24h' });
 
-        console.log(`✅ User Logged In: ${user.email} - Token Issued`);
-
         res.json({ 
             token, 
             user: { 
@@ -225,72 +215,43 @@ const handleLogin = async (req, res) => {
         });
     } catch (e) { 
         await client.query('ROLLBACK');
-        console.error("Login Error:", e);
         res.status(500).json({ error: "Server Error" }); 
     } finally { client.release(); }
 };
 
 const handleSignup = async (req, res) => {
-    // UPDATED: Destructuring with fallback safety aliases
     const { 
-        full_name, fullName, // catch either format
-        email, 
-        phone_no, phone, // catch either format
-        branch, 
-        password, 
-        role, 
-        supervisor_name, supervisor, // catch either format
-        unit, 
-        department, 
-        is_loan_officer, 
-        is_supervisor 
+        full_name, fullName, email, phone_no, phone, branch, password, 
+        role, supervisor_name, supervisor, unit, department, 
+        is_loan_officer, is_supervisor 
     } = req.body;
 
     try {
         const finalFullName = full_name || fullName;
         const finalEmail = email?.trim().toLowerCase();
-        
         if (!finalEmail || !password || !finalFullName) {
-            return res.status(400).json({ error: "Missing required fields: Email, Password, or Full Name" });
+            return res.status(400).json({ error: "Missing required fields" });
         }
 
         const hash = await bcrypt.hash(password, 10);
-        
-        const finalUnit = unit || 'Operations';
-        const finalRole = role || 'Officer';
-        const finalDept = department || 'General';
-        const finalPhone = phone_no || phone || null;
-        const finalSupervisor = supervisor_name || supervisor || 'N/A';
-
         const query = `INSERT INTO staff_users (full_name, email, phone_no, password, role, branch, supervisor_name, is_active, failed_attempts, unit, is_loan_officer, is_supervisor, department) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
         
         const values = [
-            finalFullName, 
-            finalEmail, 
-            finalPhone, 
-            hash, 
-            finalRole, 
-            branch || 'Main Headquarters', 
-            finalSupervisor, 
-            true, 
-            0, 
-            finalUnit, 
+            finalFullName, finalEmail, phone_no || phone || null, hash, 
+            role || 'Officer', branch || 'Main Headquarters', 
+            supervisor_name || supervisor || 'N/A', true, 0, unit || 'Operations', 
             is_loan_officer === true || is_loan_officer === 1, 
-            is_supervisor === true || is_supervisor === 1,
-            finalDept 
+            is_supervisor === true || is_supervisor === 1, department || 'General'
         ];
 
         await db.query(query, values);
         res.status(201).json({ message: "Staff created successfully" });
     } catch (e) { 
-        console.error("Signup DB Error:", e.message);
         res.status(500).json({ error: "Signup failed", details: e.message }); 
     }
 };
 
-app.post('/auth/login', handleLogin);
 app.post('/api/v1/auth/login', handleLogin);
-app.post('/auth/signup', handleSignup);
 app.post('/api/v1/auth/signup', handleSignup);
 
 // --- 6. IDENTITY & CUSTOMER LOGIC ---
@@ -299,283 +260,12 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     if (!bvn || bvn.length !== 11) return res.status(400).json({ status: "error", message: "Invalid BVN." });
     try {
         const mockCustomer = { firstName: "TrustMicro", lastName: "Customer", fullName: "TrustMicro Customer", bvn: bvn, verificationStatus: "VERIFIED" };
-        const upsertQuery = `INSERT INTO customers (bvn, full_name, kyc_status, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (bvn) DO UPDATE SET full_name = EXCLUDED.full_name, kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP RETURNING *;`;
-        const dbResult = await db.query(upsertQuery, [mockCustomer.bvn, mockCustomer.fullName, mockCustomer.verificationStatus]);
-        res.json({ status: "success", data: { ...mockCustomer, internalId: dbResult.rows[0].id } });
-    } catch (e) { res.status(500).json({ error: "Database/KYC service error" }); }
+        await db.query(`INSERT INTO customers (bvn, full_name, kyc_status, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (bvn) DO UPDATE SET kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP`, [bvn, mockCustomer.fullName, 'VERIFIED']);
+        res.json({ status: "success", data: mockCustomer });
+    } catch (e) { res.status(500).json({ error: "Service error" }); }
 });
 
-app.post('/api/v1/manager/verify-bvn', async (req, res) => {
-    const { bvn } = req.body;
-    const isMockMode = process.env.USE_MOCK_DATA === 'true';
-    if (!bvn) return res.status(400).json({ error: "BVN is required" });
-
-    try {
-        const result = await db.query('SELECT * FROM customers WHERE bvn = $1', [bvn]);
-        if (result.rows.length > 0) {
-            const customer = result.rows[0];
-            const nameParts = (customer.full_name || "").split(" ");
-            return res.json({ 
-                status: "success", 
-                data: { 
-                    firstName: nameParts[0] || "",
-                    lastName: nameParts[nameParts.length - 1] || "",
-                    middleName: nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "",
-                    fullName: customer.full_name, 
-                    bvn: customer.bvn, 
-                    phoneNumber: customer.phone || "",
-                    dateOfBirth: customer.date_of_birth || customer.dob || "",
-                    gender: customer.gender || "",
-                    verificationStatus: "VERIFIED" 
-                } 
-            });
-        }
-
-        if (isMockMode) {
-            let foundMock = null;
-            const mockDataPath = path.join(__dirname, 'mock_identity.json');
-            
-            if (fs.existsSync(mockDataPath)) {
-                const mockData = JSON.parse(fs.readFileSync(mockDataPath, 'utf8'));
-                foundMock = mockData.find(item => item.bvn === bvn);
-            }
-
-            const finalCustomerData = foundMock ? {
-                firstName: foundMock.firstName || (foundMock.fullName ? foundMock.fullName.split(" ")[0] : "Verified"),
-                lastName: foundMock.lastName || (foundMock.fullName ? foundMock.fullName.split(" ").pop() : "Customer"),
-                fullName: foundMock.fullName || `${foundMock.firstName} ${foundMock.lastName}`,
-                bvn: foundMock.bvn,
-                phoneNumber: foundMock.phoneNumber || foundMock.phone || "08000000000",
-                dateOfBirth: foundMock.dateOfBirth || foundMock.dob || "1990-01-01",
-                gender: foundMock.gender || "",
-                verificationStatus: "VERIFIED"
-            } : {
-                firstName: "Verified",
-                lastName: "Customer",
-                fullName: "Verified Test Customer",
-                bvn: bvn,
-                phoneNumber: "08012345678",
-                dateOfBirth: "1995-05-20",
-                gender: "",
-                verificationStatus: "VERIFIED"
-            };
-
-            try {
-                await db.query(
-                    `INSERT INTO customers (bvn, full_name, phone, date_of_birth, kyc_status, gender) 
-                     VALUES ($1, $2, $3, $4, 'VERIFIED', $5) 
-                     ON CONFLICT (bvn) DO NOTHING`,
-                    [finalCustomerData.bvn, finalCustomerData.fullName, finalCustomerData.phoneNumber, finalCustomerData.dateOfBirth, finalCustomerData.gender]
-                );
-            } catch (dbErr) {
-                console.error("Database save failed:", dbErr.message);
-            }
-
-            return res.json({ status: "success", data: finalCustomerData });
-        } else {
-            return res.status(501).json({ error: "Real-world BVN API integration is not active." });
-        }
-    } catch (e) { 
-        res.status(500).json({ error: "Service Unavailable", details: e.message }); 
-    }
-});
-
-app.get('/api/v1/manager/customers', authenticateToken, isManagement, async (req, res) => {
-    try {
-        const result = await db.query('SELECT * FROM customers ORDER BY created_at DESC');
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch customers" }); }
-});
-
-app.get('/api/v1/manager/customer-loans/:bvn', authenticateToken, isManagement, async (req, res) => {
-    try {
-        const result = await db.query('SELECT * FROM loans WHERE bvn = $1 ORDER BY "submittedDate" DESC', [req.params.bvn]);
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch loan history" }); }
-});
-
-// --- 7. NOTIFICATIONS ---
-app.post('/api/v1/user/update-push-token', authenticateToken, async (req, res) => {
-    try {
-        await db.query('UPDATE staff_users SET push_token = $1 WHERE id = $2', [req.body.pushToken, req.user.id]);
-        res.json({ message: "Push token updated" });
-    } catch (err) { res.status(500).json({ error: "Failed token update" }); }
-});
-
-app.get('/api/v1/notifications', authenticateToken, async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM notification_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20", [req.user.id]);
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to load notifications" }); }
-});
-
-app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
-    try {
-        const result = await db.query("SELECT COUNT(*) FROM notification_history WHERE user_id = $1 AND is_read = false", [req.user.id]);
-        res.json({ count: parseInt(result.rows[0].count) });
-    } catch (err) { res.json({ count: 0 }); }
-});
-
-app.patch('/api/v1/notifications/mark-read', authenticateToken, async (req, res) => {
-    try {
-        await db.query("UPDATE notification_history SET is_read = true WHERE user_id = $1 AND is_read = false", [req.user.id]);
-        res.json({ message: "Notifications marked as read" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update notifications" });
-    }
-});
-
-// --- 8. MANAGER WORKFLOW ROUTES ---
-
-app.get('/api/v1/manager/loan-details/:id', authenticateToken, isManagement, async (req, res) => {
-    try {
-        const query = `
-            SELECT l.*, 
-            s.full_name as "staffName", 
-            s.branch as "branchName" 
-            FROM loans l 
-            LEFT JOIN staff_users s ON l."createdByEmail" = s.email
-            WHERE l.id = $1`;
-        
-        const result = await db.query(query, [req.params.id]);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Loan details not found" });
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch loan details" });
-    }
-});
-
-app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, async (req, res) => {
-    const { status, rejection_reason } = req.body; 
-    const userRole = (req.user.role || "").toLowerCase().trim();
-    
-    try {
-        const loanCheck = await db.query('SELECT status, "customerName", "createdByEmail", "assignedCreditStaffId" FROM loans WHERE id = $1', [req.params.id]);
-        if (loanCheck.rowCount === 0) return res.status(404).json({ error: "Loan not found" });
-        
-        const currentStatus = loanCheck.rows[0].status;
-        const authorizedRoles = STATUS_AUTHORITY_MAP[currentStatus] || [];
-
-        if (status !== 'Rejected' && !authorizedRoles.includes(userRole) && !['admin', 'super admin', 'manager'].includes(userRole)) {
-            return res.status(403).json({ error: `Not authorized for '${currentStatus}' stage.` });
-        }
-
-        let assignedStaffId = loanCheck.rows[0].assignedCreditStaffId;
-
-        if (status === 'PENDING_CREDIT') {
-            const staffFinderQuery = `
-                SELECT u.id, u.push_token, COUNT(l.id) as active_count
-                FROM staff_users u
-                LEFT JOIN loans l ON u.id = l."assignedCreditStaffId" AND l.status = 'PENDING_CREDIT'
-                WHERE (LOWER(u.role) = 'credit staff' OR LOWER(u.role) = 'credit officer')
-                AND u.is_active = true
-                GROUP BY u.id, u.push_token
-                ORDER BY active_count ASC
-                LIMIT 1
-            `;
-            const staffResult = await db.query(staffFinderQuery);
-            if (staffResult.rows.length > 0) {
-                assignedStaffId = staffResult.rows[0].id;
-                const title = "New Loan Assigned 📝";
-                const body = `You have been assigned the loan for ${loanCheck.rows[0].customerName}.`;
-                await db.query("INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)", [assignedStaffId, title, body]);
-                if (staffResult.rows[0].push_token) sendPushNotification(staffResult.rows[0].push_token, title, body, { loanId: req.params.id, type: 'ASSIGNMENT' });
-            }
-        }
-
-        const result = await db.query(
-            'UPDATE loans SET status = $1, rejection_reason = $2, "assignedCreditStaffId" = $3 WHERE id = $4 RETURNING *', 
-            [status, rejection_reason || null, assignedStaffId, req.params.id]
-        );
-        
-        const updatedLoan = result.rows[0];
-        const creatorRes = await db.query("SELECT id, push_token FROM staff_users WHERE email = $1", [updatedLoan.createdByEmail]);
-        if (creatorRes.rows[0]) {
-            const staff = creatorRes.rows[0];
-            const title = `Loan Update: ${status.replace(/_/g, ' ')}`;
-            const body = `The loan for ${updatedLoan.customerName} has moved to ${status.replace(/_/g, ' ')}.`;
-            if (staff.push_token) sendPushNotification(staff.push_token, title, body, { loanId: updatedLoan.id, type: 'STATUS_UPDATE' });
-        }
-        res.json({ message: "Status updated", loan: updatedLoan });
-    } catch (err) { 
-        res.status(500).json({ error: "Update failed" }); 
-    }
-});
-
-app.get('/api/v1/manager/all-loans', authenticateToken, isManagement, async (req, res) => {
-    const userRole = (req.user.role || "").toLowerCase().trim();
-    const userUnit = (req.user.unit || "").toLowerCase().trim();
-    const userId = req.user.id;
-    const userBranch = req.user.branch;
-
-    try {
-        const hqRoles = ['super admin', 'admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing', 'sales', 'marketing', 'manager'];
-        const isHQAccess = hqRoles.includes(userRole) || hqRoles.includes(userUnit);
-
-        let query = `
-            SELECT l.*, 
-            s.full_name as "staffName", 
-            s.branch as "branchName" 
-            FROM loans l 
-            LEFT JOIN staff_users s ON l."createdByEmail" = s.email`;
-        
-        let params = [];
-        if (userRole === 'credit staff' || userRole === 'credit officer') {
-            query += ` WHERE l."assignedCreditStaffId" = $1`;
-            params = [userId];
-        } else if (!isHQAccess) {
-            query += ` WHERE s.branch = $1`;
-            params = [userBranch];
-        }
-        
-        query += ` ORDER BY l."submittedDate" DESC`;
-        const result = await db.query(query, params);
-        res.json(result.rows);
-    } catch (err) { 
-        res.status(500).json({ error: "Failed to fetch loans" }); 
-    }
-});
-
-app.get('/api/v1/manager/approved-loans', authenticateToken, isManagement, async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT l.*, s.full_name as "staffName" 
-            FROM loans l 
-            LEFT JOIN staff_users s ON l."createdByEmail" = s.email 
-            WHERE l.status = 'Approved' 
-            ORDER BY l."submittedDate" DESC
-        `);
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch approved loans" }); }
-});
-
-app.get('/api/v1/manager/staff-list', authenticateToken, isManagement, async (req, res) => {
-    try {
-        const result = await db.query('SELECT id, full_name, email, role, unit, branch, is_active, department FROM staff_users ORDER BY full_name ASC');
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to fetch staff" }); }
-});
-
-app.get('/api/v1/manager/supervisors', async (req, res) => {
-    try {
-        const query = `
-            SELECT id, full_name, email, role, branch 
-            FROM staff_users 
-            WHERE is_active = true 
-            AND (
-                is_supervisor = true 
-                OR role ILIKE '%Manager%' 
-                OR role ILIKE '%Admin%' 
-                OR role ILIKE '%Supervisor%' 
-                OR unit IN ('Head of Credit', 'CCO', 'MD', 'CFO', 'Supervisor', 'Operations', 'Sales', 'Marketing')
-            ) 
-            ORDER BY full_name ASC`;
-        const result = await db.query(query);
-        res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Failed to load supervisors" }); }
-});
-
-// --- 9. LOAN SUBMISSION ---
+// --- 7. LOAN SUBMISSION (FIXED STATUS & EMAILS) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
@@ -585,16 +275,6 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
     
     try {
-        await db.query(`
-            INSERT INTO customers (bvn, full_name, phone, kyc_status, gender)
-            VALUES ($1, $2, $3, 'VERIFIED', $4)
-            ON CONFLICT (bvn) DO UPDATE SET 
-                full_name = EXCLUDED.full_name, 
-                phone = EXCLUDED.phone,
-                gender = EXCLUDED.gender`, 
-            [loan.bvn, loan.customerName, loan.phone, loan.gender]
-        ).catch(e => console.log("Customer upsert skipped:", e.message));
-
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
         const supervisorNameFromStaff = staffRes.rows[0]?.supervisor_name;
         
@@ -615,75 +295,60 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
                 $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45
             )`;
         
+        // Use Uppercase status by default
         const values = [
-            `LOAN-${Date.now()}`, 
-            loan.customerName, 
-            loan.bvn, 
-            loan.nin, 
-            loan.phone, 
-            requestedAmount, 
-            requestedAmount, 
-            'Pending', 
-            tokenEmail, 
-            new Date().toISOString().split('T')[0], 
-            loan.bankName, 
-            loan.accountNumber, 
-            loan.employerName || 'N/A', 
-            loan.ninImageUrl, 
-            loan.idImageUrl, 
-            loan.passportImageUrl, 
-            loan.utilityBillUrl, 
-            loan.workIdUrl, 
-            loan.statementUrl, 
-            loan.signatureUrl, 
-            loan.monthlyIncome, 
-            loan.loanType, 
-            loan.repaymentCycle, 
-            loan.gender, 
+            `LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, 
+            requestedAmount, requestedAmount, 'PENDING', tokenEmail, 
+            new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, 
+            loan.employerName || 'N/A', loan.ninImageUrl, loan.idImageUrl, 
+            loan.passportImageUrl, loan.utilityBillUrl, loan.workIdUrl, 
+            loan.statementUrl, loan.signatureUrl, loan.monthlyIncome, 
+            loan.loanType, loan.repaymentCycle, loan.gender, 
             (loan.supervisorName || supervisorNameFromStaff), 
-            loan.stateOfOrigin, loan.lga, loan.permanentState, loan.residentialLga, loan.fullAddress,
-            loan.nearestLandmark, loan.residentialStatus, loan.dateMovedIn, loan.employerState,
-            loan.employerLga, loan.employerAddress, loan.employmentType, loan.salaryRange,
-            loan.annualIncome, loan.nextOfKinName, loan.nextOfKinRelationship, loan.nextOfKinPhone,
-            loan.nextOfKinAddress, loan.nok1State, loan.nok1Lga
+            loan.stateOfOrigin, loan.lga, loan.permanentState, loan.residentialLga, 
+            loan.fullAddress, loan.nearestLandmark, loan.residentialStatus, 
+            loan.dateMovedIn, loan.employerState, loan.employerLga, 
+            loan.employerAddress, loan.employmentType, loan.salaryRange, 
+            loan.annualIncome, loan.nextOfKinName, loan.nextOfKinRelationship, 
+            loan.nextOfKinPhone, loan.nextOfKinAddress, loan.nok1State, loan.nok1Lga
         ];
 
         await db.query(query, values);
-
-        const targetSup = loan.supervisorName || supervisorNameFromStaff;
-        if (targetSup) {
-            const supRes = await db.query("SELECT id, push_token FROM staff_users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM($1))", [targetSup]);
-            if (supRes.rows[0]) {
-                const staff = supRes.rows[0];
-                await db.query("INSERT INTO notification_history (user_id, title, body) VALUES ($1, $2, $3)", [staff.id, "New Loan!", `Review needed for ${loan.customerName}`]);
-                if (staff.push_token) sendPushNotification(staff.push_token, "New Loan Application!", `Review needed for ${loan.customerName}`);
-            }
-        }
         res.status(201).json({ message: "Loan Submitted Successfully" });
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- 8. LOAN RETRIEVAL (FIXED FILTERING LOGIC) ---
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     const role = (req.user.role || "").toLowerCase().trim();
     const email = req.user.email.trim().toLowerCase();
     const branch = req.user.branch;
 
     try {
-        let query = 'SELECT * FROM loans';
+        let query = `
+            SELECT l.*, s.full_name as "staffName", s.branch as "branchName" 
+            FROM loans l
+            LEFT JOIN staff_users s ON LOWER(TRIM(l."createdByEmail")) = LOWER(TRIM(s.email))
+        `;
         let params = [];
 
-        const managementRoles = ['manager', 'supervisor', 'admin', 'head of credit'];
-        if (!managementRoles.includes(role)) {
-            query += ' WHERE "createdByEmail" = $1';
-            params = [email];
+        const hqRoles = ['admin', 'super admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
+        
+        if (hqRoles.includes(role)) {
+            // HQ can see everything
+            query += ' ORDER BY l."submittedDate" DESC';
         } else if (role === 'manager' || role === 'supervisor') {
-            query += ` WHERE "createdByEmail" IN (SELECT email FROM staff_users WHERE branch = $1)`;
+            // Managers see their branch PLUS any "system" records assigned to their branch logic
+            query += ` WHERE s.branch = $1 OR LOWER(TRIM(l."createdByEmail")) = 'system@trustmicro.com'`;
             params = [branch];
+            query += ' ORDER BY l."submittedDate" DESC';
+        } else {
+            // Field officers only see their own
+            query += ' WHERE LOWER(TRIM(l."createdByEmail")) = $1';
+            params = [email];
+            query += ' ORDER BY l."submittedDate" DESC';
         }
 
-        query += ' ORDER BY "submittedDate" DESC';
         const result = await db.query(query, params);
         res.json(result.rows);
     } catch (err) { 
@@ -691,9 +356,23 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     }
 });
 
+// --- 9. MANAGER UPDATE STATUS ---
+app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, async (req, res) => {
+    const { status, rejection_reason } = req.body; 
+    const normalizedStatus = status.toUpperCase();
+    
+    try {
+        await db.query(
+            'UPDATE loans SET status = $1, rejection_reason = $2 WHERE id = $3', 
+            [normalizedStatus, rejection_reason || null, req.params.id]
+        );
+        res.json({ message: "Status updated" });
+    } catch (err) { res.status(500).json({ error: "Update failed" }); }
+});
+
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query('SELECT id, full_name, email, role, unit, branch, department FROM staff_users WHERE id = $1', [req.user.id]);
+        const result = await db.query('SELECT id, full_name, email, role, unit, branch FROM staff_users WHERE id = $1', [req.user.id]);
         res.json(result.rows[0]);
     } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });
@@ -703,7 +382,6 @@ app.get('/', (req, res) => res.send("🚀 TrustMicro API Live"));
 const CURRENT_IP = getLocalIp();
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 API LIVE on http://${CURRENT_IP}:${PORT}`);
-    console.log(`🔒 Security: JWT_SECRET is active.`);
 });
 
 module.exports = { db };
