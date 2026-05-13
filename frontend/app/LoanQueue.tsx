@@ -21,7 +21,7 @@ interface Loan {
   status: string;
   risk_score: 'LOW' | 'MEDIUM' | 'HIGH';
   assigned_to: string;
-  workload_count: number; // Used for "Least Busy" logic
+  workload_count: number; 
   created_at: string;
 }
 
@@ -37,9 +37,19 @@ export default function LoanQueue() {
     if (!refreshing) setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await api.get('/manager/loan-queue', {
+      // Retrieve user info to check role
+      const userJson = await AsyncStorage.getItem('user');
+      const user = userJson ? JSON.parse(userJson) : null;
+
+      // We append a query param ?personal=true if the user is not a supervisor
+      // This tells your backend: "Only give me loans I created"
+      const isSupervisor = user?.role === 'Manager' || user?.is_supervisor === 1;
+      const endpoint = isSupervisor ? '/manager/loan-queue' : '/manager/loan-queue?personal=true';
+
+      const response = await api.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
       setLoans(response.data);
     } catch (err) {
       setError("Failed to sync queue. Check your connection.");

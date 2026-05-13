@@ -179,7 +179,7 @@ export default function LoanDetails() {
           <View style={[styles.riskBadge, { backgroundColor: riskData.level === 'High' ? '#FEE2E2' : riskData.level === 'Medium' ? '#FEF3C7' : '#DCFCE7' }]}>
               <Ionicons name={riskData.level === 'High' ? "warning" : "shield-checkmark"} size={20} color={riskData.level === 'High' ? BRAND.danger : riskData.level === 'Medium' ? '#B45309' : BRAND.success} />
               <Text style={[styles.riskText, { color: riskData.level === 'High' ? BRAND.danger : riskData.level === 'Medium' ? '#B45309' : BRAND.success }]}>
-                  Risk Level: {riskData.level} ({riskData.score}/100) — {riskData.activeCount} Active Loans
+                Risk Level: {riskData.level} ({riskData.score}/100) — {riskData.activeCount} Active Loans
               </Text>
           </View>
 
@@ -211,7 +211,8 @@ export default function LoanDetails() {
             <Text style={styles.label}>CUSTOMER NAME</Text>
             <Text style={styles.value}>{loan?.customerName}</Text>
             <View style={styles.divider} />
-            <div style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            {/* --- DIV REPLACED WITH VIEW --- */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View>
                     <Text style={styles.label}>LOAN AMOUNT</Text>
                     <Text style={styles.amountText}>₦{Number(loan?.loanAmount || loan?.amount || 0).toLocaleString()}</Text>
@@ -220,7 +221,7 @@ export default function LoanDetails() {
                     <Text style={styles.label}>LOAN TYPE</Text>
                     <Text style={styles.value}>{loan?.loanType}</Text>
                 </View>
-            </div>
+            </View>
             <View style={styles.divider} />
             <Text style={styles.label}>BVN / NIN</Text>
             <Text style={styles.value}>{loan?.bvn} / {loan?.nin || 'N/A'}</Text>

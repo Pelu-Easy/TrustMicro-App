@@ -116,7 +116,6 @@ export default function Dashboard() {
   }, [_hasHydrated, token, email, fetchLoans]);
 
   useEffect(() => {
-    // Only register notification listeners if NOT in Expo Go
     if (!isExpoGo) {
       try {
         const Notifications = require('expo-notifications');
@@ -126,8 +125,6 @@ export default function Dashboard() {
             shouldShowAlert: true,
             shouldPlaySound: true,
             shouldSetBadge: true,
-            shouldShowBanner: true,   
-            shouldShowList: true,   
           }),
         });
 
@@ -155,20 +152,28 @@ export default function Dashboard() {
     }, [token, email, _hasHydrated, fetchDashboardData])
   );
 
+  // Helper to check ownership dynamically 
+  const isLoanOwner = (loan: any) => {
+    return (loan.staffEmail === email || loan.createdBy === email || loan.userEmail === email);
+  };
+
   const processedLoans = useMemo(() => {
     if (!loans) return [];
     return [...loans]
-      .filter(l => isWorkflowUser ? isMyTask(l.status) : true)
+      .filter(l => {
+        if (isWorkflowUser && isMyTask(l.status)) return true;
+        return isLoanOwner(l);
+      })
       .sort((a, b) => new Date(b.submittedDate || 0).getTime() - new Date(a.submittedDate || 0).getTime())
       .slice(0, 15);
-  }, [loans, isWorkflowUser, isMyTask]);
+  }, [loans, isWorkflowUser, isMyTask, email]);
 
   const totalDisbursed = useMemo(() => {
     if (!loans) return 0;
     return loans
-      .filter(l => l.status?.toUpperCase() === 'DISBURSED')
+      .filter(l => l.status?.toUpperCase() === 'DISBURSED' && isLoanOwner(l))
       .reduce((sum, l) => sum + Number(l.loanAmount || 0), 0);
-  }, [loans]);
+  }, [loans, email]);
 
   const disbursementProgress = useMemo(() => {
     return Math.min(totalDisbursed / (disbursementTarget || 1000000), 1);
@@ -265,8 +270,8 @@ export default function Dashboard() {
 
         <Text style={styles.sectionTitle}>{isManagement ? "Portfolio Overview" : "My Statistics"}</Text>
         <View style={styles.statsRow}>
-            <StatCard title="Total Loans" value={loans.length.toString()} icon="document-text-outline" color="#003366" />
-            <StatCard title="Disbursed" value={loans.filter(l => l.status?.toUpperCase() === 'DISBURSED').length.toString()} icon="cash-outline" color="#10B981" />
+            <StatCard title="Total Loans" value={processedLoans.length.toString()} icon="document-text-outline" color="#003366" />
+            <StatCard title="Disbursed" value={loans.filter(l => l.status?.toUpperCase() === 'DISBURSED' && isLoanOwner(l)).length.toString()} icon="cash-outline" color="#10B981" />
         </View>
 
         <View style={styles.sectionHeader}>

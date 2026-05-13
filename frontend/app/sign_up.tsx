@@ -126,21 +126,19 @@ export default function SignUpScreen() {
     if (!validateForm()) return;
     setIsLoading(true);
     try {
-      // ENHANCED PAYLOAD: We send both common naming conventions to ensure the database catches the data
       const payload = {
         full_name: formData.fullName.trim(),
-        fullname: formData.fullName.trim(), // Backup for single-word column names
+        fullname: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone_no: formData.phone.trim(),
-        phone: formData.phone.trim(), // Backup for 'phone' column
+        phone: formData.phone.trim(),
         branch: formData.branch.trim() || 'Main Headquarters',
         password: formData.password,
         department: formData.department,
         unit: formData.unit,
         supervisor_name: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'),
-        supervisor: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'), // Backup for 'supervisor' column
+        supervisor: formData.isSupervisor ? 'N/A' : (formData.supervisor || 'N/A'),
         role: formData.isSupervisor ? 'Manager' : formData.unit,
-        // Convert Booleans to Integers (1/0) as many SQL databases prefer this
         is_loan_officer: formData.isLoanOfficer ? 1 : 0,
         is_supervisor: (formData.isSupervisor || formData.unit === "Head of Control" || formData.unit === "MD" || formData.unit === "CCO") ? 1 : 0,
         is_active: 1 
@@ -223,17 +221,19 @@ export default function SignUpScreen() {
             </View>
 
             <Text style={styles.label}>Password</Text>
-            <div style={styles.passwordContainer}>
+            {/* --- DIV REPLACED WITH VIEW --- */}
+            <View style={styles.passwordContainer}>
               <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.password && styles.inputError]} placeholder="••••••••" secureTextEntry={!showPassword} value={formData.password} onChangeText={(v) => updateField('password', v)} />
               <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}><Ionicons name={showPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
-            </div>
+            </View>
             <ErrorMsg message={errors.password} />
 
             <Text style={styles.label}>Confirm Password</Text>
-            <div style={styles.passwordContainer}>
+            {/* --- DIV REPLACED WITH VIEW --- */}
+            <View style={styles.passwordContainer}>
               <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.confirmPassword && styles.inputError]} placeholder="••••••••" secureTextEntry={!showConfirmPassword} value={formData.confirmPassword} onChangeText={(v) => updateField('confirmPassword', v)} />
               <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}><Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
-            </div>
+            </View>
             <ErrorMsg message={errors.confirmPassword} />
 
             <TouchableOpacity style={styles.btn} onPress={handleSignUp} disabled={isLoading}>
@@ -241,9 +241,10 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Modals remain unchanged as they were already using View */}
           <Modal visible={showDeptModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Department</Text><FlatList data={departments} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('department', item); setShowDeptModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowDeptModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
           <Modal visible={showSupModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Supervisor</Text><FlatList data={supervisors} keyExtractor={(item) => item.id} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}><View><Text style={styles.modalItemText}>{item.full_name}</Text><Text style={{fontSize: 12, color: '#94A3B8'}}>{item.role}</Text></View></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
-          <Modal visible={showUnitModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Unit</Text><FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(true); setShowUnitModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowUnitModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+          <Modal visible={showUnitModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Unit</Text><FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowUnitModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
