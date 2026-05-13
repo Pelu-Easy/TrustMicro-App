@@ -130,7 +130,7 @@ interface LoanState {
   clearAllData: () => void;
   _hasHydrated: boolean; 
   setHasHydrated: (state: boolean) => void;
-  getFilteredLoans: () => Loan[]; // Added helper for UI visibility
+  getFilteredLoans: () => Loan[]; 
 }
 
 export const useLoanStore = create<LoanState>()(
@@ -152,12 +152,10 @@ export const useLoanStore = create<LoanState>()(
         const role = userData.role?.toUpperCase();
         const userEmail = userData.email?.toLowerCase().trim();
 
-        // If the user is a Manager or Head of Marketing, they see all loans
         if (role === 'MANAGER' || role === 'SUPERVISOR' || role === 'HEAD_MARKETING') {
           return state.loans;
         }
 
-        // Default: Sales Officers only see loans they created
         return state.loans.filter(loan => 
           loan.createdByEmail?.toLowerCase().trim() === userEmail
         );
@@ -170,14 +168,14 @@ export const useLoanStore = create<LoanState>()(
           const response = await api.get(`/loans?email=${email.toLowerCase().trim()}`);
           const serverLoans = response.data;
           
-          const localDrafts = get().loans.filter(l => l.status === 'Draft');
+          const localDrafts = get().loans.filter(l => (l.status as string) === 'Draft');
           const loanMap = new Map();
           
           localDrafts.forEach(loan => loanMap.set(loan.id, loan));
           
           serverLoans.forEach((sLoan: Loan) => {
             const existing = loanMap.get(sLoan.id);
-            if (!existing || existing.status !== 'Draft') {
+            if (!existing || (existing.status as string) !== 'Draft') {
               loanMap.set(sLoan.id, sLoan);
             }
           });
@@ -203,9 +201,14 @@ export const useLoanStore = create<LoanState>()(
         const userData = useUserData.getState() as any; 
         
         const activeEmail = (currentUserEmail || userData.email || "").toLowerCase().trim();
-        const validCustomerName = (loan.customerName && loan.customerName !== "undefined")
+        
+        // INTEGRATED UPDATE: Improved naming logic to prevent "undefined" strings in DB
+        const validCustomerName = (loan.customerName && !loan.customerName.includes("undefined"))
           ? loan.customerName 
-          : `${loan.firstName || ''} ${loan.lastName || ''}`.trim();
+          : [loan.firstName, loan.middleName, loan.lastName]
+              .filter(name => name && name !== "undefined" && name.trim() !== "")
+              .join(" ") 
+              || "New Customer";
 
         const activeStaffName = userData.funame || 
                                 userData.fullName || 
@@ -215,7 +218,7 @@ export const useLoanStore = create<LoanState>()(
         const ownedLoan: Loan = { 
           ...loan, 
           createdByEmail: activeEmail,
-          customerName: validCustomerName || "New Customer",
+          customerName: validCustomerName,
           staffName: activeStaffName,
           branchName: userData.branch || 'Main Branch'
         };
@@ -231,14 +234,14 @@ export const useLoanStore = create<LoanState>()(
             }
         });
 
-        if (ownedLoan.status !== 'Draft') {
+        if ((ownedLoan.status as string) !== 'Draft') {
           const token = userData.token;
           if (!token) return;
 
           try {
-            // Mapping frontend logic to backend expectations
             const payload = {
               ...ownedLoan,
+              status: ownedLoan.status.toUpperCase(), // Ensure backend sees PENDING
               ninImageUrl: ownedLoan.ninImageUrl || ownedLoan.ninImageURL,
               statementUrl: ownedLoan.statementUrl || ownedLoan.statementURL || ownedLoan.bankStatement,
               signatureUrl: ownedLoan.signatureUrl || ownedLoan.signature,
@@ -260,13 +263,14 @@ export const useLoanStore = create<LoanState>()(
           ),
         }));
 
-        if (updatedLoan.status !== 'Draft') {
+        if ((updatedLoan.status as string) !== 'Draft') {
           const userData = useUserData.getState();
           try {
-            console.log(`Syncing loan ${id} to database with status: ${updatedLoan.status}`);
+            const normalizedStatus = updatedLoan.status.toUpperCase();
             
             const payload = {
               ...updatedLoan,
+              status: normalizedStatus,
               createdByEmail: updatedLoan.createdByEmail || userData.email,
               ninImageUrl: updatedLoan.ninImageUrl || updatedLoan.ninImageURL,
               statementUrl: updatedLoan.statementUrl || updatedLoan.statementURL || updatedLoan.bankStatement,
@@ -276,12 +280,15 @@ export const useLoanStore = create<LoanState>()(
               supervisorName: (updatedLoan as any).supervisorName || updatedLoan.supervisor_name
             };
 
+            console.log(`Attempting cloud sync for loan ${id} with status: ${normalizedStatus}`);
             const response = await api.post('/loans', payload);
+            
             if (response.status === 200 || response.status === 201) {
-              console.log("Loan successfully saved to Backend.");
+              console.log("Cloud Sync Success: Loan saved to Supabase.");
             }
           } catch (error: any) {
-            console.error("Critical Sync Failure during updateLoan:", error.response?.data || error.message);
+            console.error("Cloud Sync Error:", error.response?.data || error.message);
+            throw error;
           }
         }
       },
