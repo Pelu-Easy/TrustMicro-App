@@ -38,6 +38,22 @@ export const BankInfo = () => {
       <Text style={sharedStyles.sectionTitle}>Disbursement Bank</Text>
       <FormInput label="Bank Name" value={data.bankName || ""} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, bankName: v })} />
       <FormInput label="Account Number" value={data.accountNumber || ""} keyboardType="numeric" maxLength={10} onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, accountNumber: v })} />
+      
+      {/* ADDED LOAN TYPE PICKER TO FULFILL SERVER VALIDATION REQUIREMENTS */}
+      <Text style={sharedStyles.label}>Loan Type</Text>
+      <View style={sharedStyles.pickerContainer}>
+        <Picker 
+          selectedValue={data.loanType || ""} 
+          onValueChange={v => draft?.id && updateLoan(draft.id, { ...data, loanType: v })}
+        >
+          <Picker.Item label="Select Loan Type" value="" />
+          <Picker.Item label="SME / Business Loan" value="Business Loan" />
+          <Picker.Item label="Micro Loan" value="Micro Loan" />
+          <Picker.Item label="Personal Loan" value="Personal Loan" />
+          <Picker.Item label="Salary Advance" value="Salary Advance" />
+        </Picker>
+      </View>
+
       <FormInput label="Loan Amount (₦)" value={data.loanAmount || ""} keyboardType="numeric" onChangeText={(v:any) => draft?.id && updateLoan(draft.id, { ...data, loanAmount: v })} />
     </View>
   );

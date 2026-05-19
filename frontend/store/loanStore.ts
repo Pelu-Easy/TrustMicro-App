@@ -39,7 +39,7 @@ export interface Loan {
   bvnHardCopy: string | null;
   employmentLetter: string | null;
   passportPhoto: string | null;
-  tenure: string;           
+  tenure: string;          
   interestRate: string;   
   monthlyRepayment?: string;
   totalRepayment?: string;
@@ -133,6 +133,29 @@ interface LoanState {
   getFilteredLoans: () => Loan[]; 
 }
 
+const sanitizeLoanUris = (loan: Loan): Loan => {
+  const isValidUri = (uri: any) => 
+    typeof uri === 'string' && (uri.startsWith('http') || uri.startsWith('file') || uri.startsWith('content'));
+
+  return {
+    ...loan,
+    idCard: isValidUri(loan.idCard) ? loan.idCard : null,
+    signature: isValidUri(loan.signature) ? loan.signature : undefined,
+    passportPhoto: isValidUri(loan.passportPhoto) ? loan.passportPhoto : null,
+    bankStatement: isValidUri(loan.bankStatement) ? loan.bankStatement : undefined,
+    ninHardCopy: isValidUri(loan.ninHardCopy) ? loan.ninHardCopy : null,
+    bvnHardCopy: isValidUri(loan.bvnHardCopy) ? loan.bvnHardCopy : null,
+    employmentLetter: isValidUri(loan.employmentLetter) ? loan.employmentLetter : null,
+    workId: isValidUri(loan.workId) ? loan.workId : undefined,
+    idImageUrl: isValidUri(loan.idImageUrl) ? loan.idImageUrl : undefined,
+    utilityBillUrl: isValidUri(loan.utilityBillUrl) ? loan.utilityBillUrl : undefined,
+    signatureUrl: isValidUri(loan.signatureUrl) ? loan.signatureUrl : undefined,
+    passportImageUrl: isValidUri(loan.passportImageUrl) ? loan.passportImageUrl : undefined,
+    ninImageURL: isValidUri(loan.ninImageURL) ? loan.ninImageURL : null,
+    statementURL: isValidUri(loan.statementURL) ? loan.statementURL : null,
+  };
+};
+
 export const useLoanStore = create<LoanState>()(
   persist(
     (set, get) => ({
@@ -202,7 +225,6 @@ export const useLoanStore = create<LoanState>()(
         
         const activeEmail = (currentUserEmail || userData.email || "").toLowerCase().trim();
         
-        // INTEGRATED UPDATE: Improved naming logic to prevent "undefined" strings in DB
         const validCustomerName = (loan.customerName && !loan.customerName.includes("undefined"))
           ? loan.customerName 
           : [loan.firstName, loan.middleName, loan.lastName]
@@ -215,13 +237,13 @@ export const useLoanStore = create<LoanState>()(
                                 (userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : '') || 
                                 'Field Officer';
 
-        const ownedLoan: Loan = { 
+        const ownedLoan: Loan = sanitizeLoanUris({ 
           ...loan, 
           createdByEmail: activeEmail,
           customerName: validCustomerName,
           staffName: activeStaffName,
           branchName: userData.branch || 'Main Branch'
-        };
+        });
         
         set((state) => {
             const loanIndex = state.loans.findIndex((l) => l.id === loan.id);
@@ -241,7 +263,7 @@ export const useLoanStore = create<LoanState>()(
           try {
             const payload = {
               ...ownedLoan,
-              status: ownedLoan.status.toUpperCase(), // Ensure backend sees PENDING
+              status: ownedLoan.status.toUpperCase(), 
               ninImageUrl: ownedLoan.ninImageUrl || ownedLoan.ninImageURL,
               statementUrl: ownedLoan.statementUrl || ownedLoan.statementURL || ownedLoan.bankStatement,
               signatureUrl: ownedLoan.signatureUrl || ownedLoan.signature,
@@ -257,27 +279,29 @@ export const useLoanStore = create<LoanState>()(
       },
 
       updateLoan: async (id, updatedLoan) => {
+        const sanitizedLoan = sanitizeLoanUris(updatedLoan);
+
         set((state) => ({
           loans: state.loans.map((loan) =>
-            loan.id === id ? updatedLoan : loan
+            loan.id === id ? sanitizedLoan : loan
           ),
         }));
 
-        if ((updatedLoan.status as string) !== 'Draft') {
+        if ((sanitizedLoan.status as string) !== 'Draft') {
           const userData = useUserData.getState();
           try {
-            const normalizedStatus = updatedLoan.status.toUpperCase();
+            const normalizedStatus = sanitizedLoan.status.toUpperCase();
             
             const payload = {
-              ...updatedLoan,
+              ...sanitizedLoan,
               status: normalizedStatus,
-              createdByEmail: updatedLoan.createdByEmail || userData.email,
-              ninImageUrl: updatedLoan.ninImageUrl || updatedLoan.ninImageURL,
-              statementUrl: updatedLoan.statementUrl || updatedLoan.statementURL || updatedLoan.bankStatement,
-              signatureUrl: updatedLoan.signatureUrl || updatedLoan.signature,
-              passportImageUrl: updatedLoan.passportImageUrl || updatedLoan.passportPhoto,
-              workIdUrl: updatedLoan.workIdUrl || updatedLoan.workId,
-              supervisorName: (updatedLoan as any).supervisorName || updatedLoan.supervisor_name
+              createdByEmail: sanitizedLoan.createdByEmail || userData.email,
+              ninImageUrl: sanitizedLoan.ninImageUrl || sanitizedLoan.ninImageURL,
+              statementUrl: sanitizedLoan.statementUrl || sanitizedLoan.statementURL || sanitizedLoan.bankStatement,
+              signatureUrl: sanitizedLoan.signatureUrl || sanitizedLoan.signature,
+              passportImageUrl: sanitizedLoan.passportImageUrl || sanitizedLoan.passportPhoto,
+              workIdUrl: sanitizedLoan.workIdUrl || sanitizedLoan.workId,
+              supervisorName: (sanitizedLoan as any).supervisorName || sanitizedLoan.supervisor_name
             };
 
             console.log(`Attempting cloud sync for loan ${id} with status: ${normalizedStatus}`);
@@ -312,32 +336,20 @@ export const useLoanStore = create<LoanState>()(
       name: 'trustmicro-loan-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        loans: state.loans.map(loan => {
-          const isValidUri = (uri: any) => 
-            typeof uri === 'string' && (uri.startsWith('http') || uri.startsWith('file') || uri.startsWith('content'));
-
-          return {
-            ...loan,
-            idCard: isValidUri(loan.idCard) ? loan.idCard : null,
-            signature: isValidUri(loan.signature) ? loan.signature : null,
-            passportPhoto: isValidUri(loan.passportPhoto) ? loan.passportPhoto : null,
-            bankStatement: isValidUri(loan.bankStatement) ? loan.bankStatement : null,
-            ninHardCopy: isValidUri(loan.ninHardCopy) ? loan.ninHardCopy : null,
-            bvnHardCopy: isValidUri(loan.bvnHardCopy) ? loan.bvnHardCopy : null,
-            employmentLetter: isValidUri(loan.employmentLetter) ? loan.employmentLetter : null,
-            workId: isValidUri(loan.workId) ? loan.workId : null,
-            idImageUrl: isValidUri(loan.idImageUrl) ? loan.idImageUrl : null,
-            utilityBillUrl: isValidUri(loan.utilityBillUrl) ? loan.utilityBillUrl : null,
-            signatureUrl: isValidUri(loan.signatureUrl) ? loan.signatureUrl : null,
-            passportImageUrl: isValidUri(loan.passportImageUrl) ? loan.passportImageUrl : null,
-            ninImageURL: isValidUri(loan.ninImageURL) ? loan.ninImageURL : null,
-            statementURL: isValidUri(loan.statementURL) ? loan.statementURL : null,
-          };
-        }),
+        loans: state.loans,
         staffProfile: state.staffProfile,
       }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+      // Self-healing recovery listener handling bad storage items perfectly
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error("Storage rehydration failed due to historical file corruption. Resetting local cache...", error);
+          AsyncStorage.removeItem('trustmicro-loan-storage').catch(() => {});
+          setTimeout(() => {
+            useLoanStore.setState({ loans: [], _hasHydrated: true });
+          }, 50);
+        } else if (state) {
+          state.setHasHydrated(true);
+        }
       },
     }
   )

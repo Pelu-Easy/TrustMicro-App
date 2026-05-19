@@ -56,9 +56,9 @@ export default function LoanForm() {
       return;
     }
 
-    // Basic Validation
-    if (!draft.bvn || !draft.nin || !draft.bankName || !draft.loanAmount) {
-      Alert.alert("Missing Information", "Please ensure BVN, NIN, Bank details, and Loan Amount are filled.");
+    // Basic Validation - FIXED: Included explicit check for loanType string presence
+    if (!draft.bvn || !draft.nin || !draft.bankName || !draft.loanAmount || !draft.loanType) {
+      Alert.alert("Missing Information", "Please ensure BVN, NIN, Loan Type, Bank details, and Loan Amount are filled.");
       return;
     }
 
