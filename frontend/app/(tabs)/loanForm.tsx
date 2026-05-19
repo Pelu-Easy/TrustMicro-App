@@ -82,9 +82,13 @@ export default function LoanForm() {
     setConfirmVisible(false);
     setIsSubmitting(true);
     try {
+      // Clean the frontend draft payload by stripping out supervisor_name 
+      // to resolve the database column relation mismatch error cleanly.
+      const { supervisor_name, ...databaseReadyDraft } = draft as any;
+
       // Standardized status to uppercase 'PENDING' to align perfectly with backend logic
       await updateLoan(draft.id, { 
-        ...draft, 
+        ...databaseReadyDraft, 
         status: 'PENDING' as any,
         createdByEmail: email
       });
