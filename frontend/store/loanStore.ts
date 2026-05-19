@@ -113,6 +113,11 @@ export interface Loan {
   next_of_kin_address?: string;
   nok1_state?: string;
   nok1_lga?: string;
+  loan_type?: string;
+  loan_amount?: string;
+  monthly_income?: string;
+  approved_business_location?: string;
+  date_of_employment?: string;
 }
 
 interface LoanState {
@@ -268,7 +273,27 @@ export const useLoanStore = create<LoanState>()(
               statementUrl: ownedLoan.statementUrl || ownedLoan.statementURL || ownedLoan.bankStatement,
               signatureUrl: ownedLoan.signatureUrl || ownedLoan.signature,
               passportImageUrl: ownedLoan.passportImageUrl || ownedLoan.passportPhoto,
-              workIdUrl: ownedLoan.workIdUrl || ownedLoan.workId
+              workIdUrl: ownedLoan.workIdUrl || ownedLoan.workId,
+
+              // Universal Alignment Map
+              loanType: ownedLoan.loanType,
+              loan_type: ownedLoan.loanType,
+              loanAmount: ownedLoan.loanAmount,
+              loan_amount: ownedLoan.loanAmount,
+              amount: ownedLoan.loanAmount,
+              bankName: ownedLoan.bankName,
+              bank_name: ownedLoan.bankName,
+              accountNumber: ownedLoan.accountNumber,
+              account_number: ownedLoan.accountNumber,
+              monthlyIncome: ownedLoan.monthlyIncome || ownedLoan.monthIncome,
+              monthly_income: ownedLoan.monthlyIncome || ownedLoan.monthIncome,
+              monthIncome: ownedLoan.monthIncome || ownedLoan.monthlyIncome,
+              approvedBusinessLocation: ownedLoan.approvedBusinessLocation,
+              approved_business_location: ownedLoan.approvedBusinessLocation,
+              employerState: ownedLoan.employerState,
+              employer_state: ownedLoan.employerState,
+              dateOfEmployment: ownedLoan.dateOfEmployment,
+              date_of_employment: ownedLoan.dateOfEmployment
             };
             await api.post('/loans', payload);
             console.log("Loan successfully synced with email:", activeEmail);
@@ -292,6 +317,7 @@ export const useLoanStore = create<LoanState>()(
           try {
             const normalizedStatus = sanitizedLoan.status.toUpperCase();
             
+            // Build absolute resilient database payload filling all structural iterations
             const payload = {
               ...sanitizedLoan,
               status: normalizedStatus,
@@ -301,7 +327,34 @@ export const useLoanStore = create<LoanState>()(
               signatureUrl: sanitizedLoan.signatureUrl || sanitizedLoan.signature,
               passportImageUrl: sanitizedLoan.passportImageUrl || sanitizedLoan.passportPhoto,
               workIdUrl: sanitizedLoan.workIdUrl || sanitizedLoan.workId,
-              supervisorName: (sanitizedLoan as any).supervisorName || sanitizedLoan.supervisor_name
+              supervisorName: (sanitizedLoan as any).supervisorName || sanitizedLoan.supervisor_name,
+
+              // Universal Alignment Map (Prevents submission schema drops completely)
+              loanType: sanitizedLoan.loanType,
+              loan_type: sanitizedLoan.loanType,
+              
+              loanAmount: sanitizedLoan.loanAmount,
+              loan_amount: sanitizedLoan.loanAmount,
+              amount: sanitizedLoan.loanAmount,
+
+              bankName: sanitizedLoan.bankName,
+              bank_name: sanitizedLoan.bankName,
+
+              accountNumber: sanitizedLoan.accountNumber,
+              account_number: sanitizedLoan.accountNumber,
+
+              monthlyIncome: sanitizedLoan.monthlyIncome || sanitizedLoan.monthIncome,
+              monthly_income: sanitizedLoan.monthlyIncome || sanitizedLoan.monthIncome,
+              monthIncome: sanitizedLoan.monthIncome || sanitizedLoan.monthlyIncome,
+
+              approvedBusinessLocation: sanitizedLoan.approvedBusinessLocation,
+              approved_business_location: sanitizedLoan.approvedBusinessLocation,
+              
+              employerState: sanitizedLoan.employerState,
+              employer_state: sanitizedLoan.employerState,
+              
+              dateOfEmployment: sanitizedLoan.dateOfEmployment,
+              date_of_employment: sanitizedLoan.dateOfEmployment
             };
 
             console.log(`Attempting cloud sync for loan ${id} with status: ${normalizedStatus}`);
@@ -339,7 +392,6 @@ export const useLoanStore = create<LoanState>()(
         loans: state.loans,
         staffProfile: state.staffProfile,
       }),
-      // Self-healing recovery listener handling bad storage items perfectly
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.error("Storage rehydration failed due to historical file corruption. Resetting local cache...", error);

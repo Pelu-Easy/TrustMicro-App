@@ -10,7 +10,9 @@ import {
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Modal,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { useLoanStore } from '../../store/loanStore';
 import useUserData from '../../store/userSignUp';
@@ -29,6 +31,7 @@ export default function LoanForm() {
   const { email } = useUserData();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false); // Controls the stylized modal popup visibility
   const creationAttempted = useRef(false);
 
   // Use type casting (as string) to bypass the TypeScript overlap error 
@@ -50,7 +53,8 @@ export default function LoanForm() {
     }
   }, [draft, email, addLoan]);
 
-  const handleSubmit = async () => {
+  // Performs structural data validation checks before launching confirm menu
+  const handleSubmit = () => {
     if (!draft) {
       Alert.alert("Error", "No active draft found to submit.");
       return;
@@ -67,39 +71,36 @@ export default function LoanForm() {
       return;
     }
 
-    Alert.alert(
-      "Confirm Submission",
-      "Are you sure you want to submit this loan to Credit Department for review?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Submit", 
-          onPress: async () => {
-            setIsSubmitting(true);
-            try {
-              // Standardized status to uppercase 'PENDING' to align perfectly with backend logic
-              await updateLoan(draft.id, { 
-                ...draft, 
-                status: 'PENDING' as any,
-                createdByEmail: email
-              });
+    // Fire custom menu open statement rather than basic gray Alert window
+    setConfirmVisible(true);
+  };
 
-              Alert.alert(
-                "Success", 
-                "Loan submitted successfully to Credit Unit.",
-                [{ text: "OK", onPress: () => router.replace('/(tabs)') }]
-              );
-              
-            } catch (error) {
-              console.error("Submission Error:", error);
-              Alert.alert("Error", "Could not submit loan. It remains in your Drafts.");
-            } finally {
-              setIsSubmitting(false);
-            }
-          }
-        }
-      ]
-    );
+  // Triggers the data payload sync transmission directly to backend 
+  const executeFinalSubmission = async () => {
+    if (!draft) return; // Type guard: Narrows 'draft' down to 'Loan' completely for TypeScript
+
+    setConfirmVisible(false);
+    setIsSubmitting(true);
+    try {
+      // Standardized status to uppercase 'PENDING' to align perfectly with backend logic
+      await updateLoan(draft.id, { 
+        ...draft, 
+        status: 'PENDING' as any,
+        createdByEmail: email
+      });
+
+      Alert.alert(
+        "Success", 
+        "Loan submitted successfully to Credit Unit.",
+        [{ text: "OK", onPress: () => router.replace('/(tabs)') }]
+      );
+      
+    } catch (error) {
+      console.error("Submission Error:", error);
+      Alert.alert("Error", "Could not submit loan. It remains in your Drafts.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -143,6 +144,49 @@ export default function LoanForm() {
           <View style={{ height: 40 }} /> 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* STYLIZED CONFIRM SUBMISSION BOTTOM-SHEET POPUP MENU */}
+      <Modal
+        visible={confirmVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setConfirmVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContentCard}>
+                <View style={styles.dragIndicator} />
+                
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Confirm Submission</Text>
+                  <Text style={styles.modalDescription}>
+                    Are you sure you want to submit this loan to the Credit Department for processing review? This operation cannot be reversed.
+                  </Text>
+                </View>
+
+                <View style={styles.modalActionsRow}>
+                  <TouchableOpacity 
+                    style={styles.cancelActionBtn}
+                    activeOpacity={0.7}
+                    onPress={() => setConfirmVisible(false)}
+                  >
+                    <Text style={styles.cancelActionBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.confirmActionBtn}
+                    activeOpacity={0.8}
+                    onPress={executeFinalSubmission}
+                  >
+                    <Text style={styles.confirmActionBtnText}>Confirm Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -190,6 +234,88 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: '#FFF',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  // --- ADDED DIALOG MENU COMPONENT LAYER STYLES ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContentCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 44 : 28,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 24,
+  },
+  dragIndicator: {
+    width: 38,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 8,
+    paddingHorizontal: 8,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelActionBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cancelActionBtnText: {
+    color: '#475569',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  confirmActionBtn: {
+    flex: 1,
+    backgroundColor: BRAND.primary,
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  confirmActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '700',
   },
 });
