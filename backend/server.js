@@ -254,42 +254,54 @@ const handleSignup = async (req, res) => {
 app.post('/api/v1/auth/login', handleLogin);
 app.post('/api/v1/auth/signup', handleSignup);
 
-// --- 6. IDENTITY & CUSTOMER LOGIC ---
-app.post('/api/v1/verify-identity', async (req, res) => {
-    const { bvn } = req.body;
-    if (!bvn || bvn.length !== 11) return res.status(400).json({ status: "error", message: "Invalid BVN." });
-    try {
-        const mockCustomer = { firstName: "TrustMicro", lastName: "Customer", fullName: "TrustMicro Customer", bvn: bvn, verificationStatus: "VERIFIED" };
-        await db.query(`INSERT INTO customers (bvn, full_name, kyc_status, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (bvn) DO UPDATE SET kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP`, [bvn, mockCustomer.fullName, 'VERIFIED']);
-        res.json({ status: "success", data: mockCustomer });
-    } catch (e) { res.status(500).json({ error: "Service error" }); }
-});
+// --- 6. IDENTITY & CUSTOMER LOGIC (DYNAMIC MOCK LOOKUP) ---
 
-// ADD THIS ROUTE to match what your frontend is calling
 app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
     const { bvn } = req.body;
     
     if (!bvn || bvn.length !== 11) {
-        return res.status(400).json({ status: "error", message: "Invalid BVN length." });
+        return res.status(400).json({ status: "error", message: "Invalid BVN length. Must be 11 digits." });
     }
 
     try {
-        // Mocking the verification for testing
+        const mockFilePath = path.join(__dirname, 'mock_identity.json');
+        
+        if (!fs.existsSync(mockFilePath)) {
+            console.error("❌ [File Error] mock_identity.json not found at:", mockFilePath);
+            return res.status(500).json({ status: "error", message: "Server mock identity store missing." });
+        }
+
+        // Read and parse mock identities dynamically
+        const rawData = fs.readFileSync(mockFilePath, 'utf8');
+        const identities = JSON.parse(rawData);
+        
+        // Find user by matching BVN string
+        const matchedUser = identities.find(user => user.bvn === bvn.trim());
+
+        if (!matchedUser) {
+            return res.status(404).json({ status: "error", message: "BVN verification failed. Record not found." });
+        }
+
+        // Split full name cleanly into firstName and lastName for the frontend UI
+        const nameParts = matchedUser.fullName.trim().split(/\s+/);
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+
         const mockCustomer = { 
-            firstName: "TrustMicro", 
-            lastName: "Customer", 
-            fullName: "TrustMicro Customer", 
-            bvn: bvn, 
+            firstName: firstName, 
+            lastName: lastName, 
+            fullName: matchedUser.fullName, 
+            bvn: matchedUser.bvn, 
             verificationStatus: "VERIFIED" 
         };
 
-        // Update database
+        // Sync valid record into Supabase customer register
         await db.query(`
             INSERT INTO customers (bvn, full_name, kyc_status, updated_at) 
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
             ON CONFLICT (bvn) 
             DO UPDATE SET kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP
-        `, [bvn, mockCustomer.fullName, 'VERIFIED']);
+        `, [matchedUser.bvn, matchedUser.fullName, 'VERIFIED']);
 
         res.json({ status: "success", data: mockCustomer });
     } catch (e) {
@@ -298,19 +310,67 @@ app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
     }
 });
 
-// Keep this one as a backup if other parts of the app use it
-app.post('/api/v1/verify-identity', authenticateToken, async (req, res) => {
-    // ... (keep original logic here)
+app.post('/api/v1/verify-identity', async (req, res) => {
+    const { bvn } = req.body;
+    if (!bvn || bvn.length !== 11) return res.status(400).json({ status: "error", message: "Invalid BVN." });
+    
+    try {
+        const mockFilePath = path.join(__dirname, 'mock_identity.json');
+        const rawData = fs.readFileSync(mockFilePath, 'utf8');
+        const identities = JSON.parse(rawData);
+        
+        const matchedUser = identities.find(user => user.bvn === bvn.trim());
+
+        if (!matchedUser) {
+            return res.status(404).json({ status: "error", message: "Identity validation failed. Record not found." });
+        }
+
+        const nameParts = matchedUser.fullName.trim().split(/\s+/);
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+
+        const mockCustomer = { 
+            firstName: firstName, 
+            lastName: lastName, 
+            fullName: matchedUser.fullName, 
+            bvn: matchedUser.bvn, 
+            verificationStatus: "VERIFIED" 
+        };
+
+        await db.query(`
+            INSERT INTO customers (bvn, full_name, kyc_status, updated_at) 
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
+            ON CONFLICT (bvn) 
+            DO UPDATE SET kyc_status = EXCLUDED.kyc_status, updated_at = CURRENT_TIMESTAMP
+        `, [matchedUser.bvn, matchedUser.fullName, 'VERIFIED']);
+        
+        res.json({ status: "success", data: mockCustomer });
+    } catch (e) { 
+        res.status(500).json({ error: "Service error" }); 
+    }
 });
 
 // --- 7. LOAN SUBMISSION (FIXED STATUS & EMAILS) ---
+// --- 7. LOAN SUBMISSION (DEFENSIVE FIX FOR LOAN TYPE) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
-    const requestedAmount = parseFloat(loan.loanAmount || 0);
-    const limit = LOAN_LIMITS[loan.loanType] || 250000;
+    
+    // Defensive check: Catch variations in frontend naming conventions
+    const componentsLoanType = loan.loanType || loan.loan_type || loan.category || loan.type;
+    const requestedAmount = parseFloat(loan.loanAmount || loan.amount || 0);
 
-    if (requestedAmount > limit) return res.status(400).json({ error: `Limit exceeded for ${loan.loanType}` });
+    if (!componentsLoanType) {
+        return res.status(400).json({ error: "Missing required field: loanType" });
+    }
+
+    const limit = LOAN_LIMITS[componentsLoanType] || 250000;
+
+    if (requestedAmount > limit) {
+        return res.status(400).json({ 
+            error: `Limit exceeded for ${componentsLoanType}. Maximum allowed is ₦${limit.toLocaleString()}` 
+        });
+    }
     
     try {
         const staffRes = await db.query("SELECT supervisor_name FROM staff_users WHERE email = $1", [tokenEmail]);
@@ -333,15 +393,14 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
                 $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45
             )`;
         
-        // Use Uppercase status by default
         const values = [
-            `LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, 
+            loan.id || `LOAN-${Date.now()}`, loan.customerName, loan.bvn, loan.nin, loan.phone, 
             requestedAmount, requestedAmount, 'PENDING', tokenEmail, 
             new Date().toISOString().split('T')[0], loan.bankName, loan.accountNumber, 
             loan.employerName || 'N/A', loan.ninImageUrl, loan.idImageUrl, 
             loan.passportImageUrl, loan.utilityBillUrl, loan.workIdUrl, 
             loan.statementUrl, loan.signatureUrl, loan.monthlyIncome, 
-            loan.loanType, loan.repaymentCycle, loan.gender, 
+            componentsLoanType, loan.repaymentCycle, loan.gender, 
             (loan.supervisorName || supervisorNameFromStaff), 
             loan.stateOfOrigin, loan.lga, loan.permanentState, loan.residentialLga, 
             loan.fullAddress, loan.nearestLandmark, loan.residentialStatus, 
