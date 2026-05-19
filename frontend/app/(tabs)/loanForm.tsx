@@ -8,7 +8,9 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { useLoanStore } from '../../store/loanStore';
 import useUserData from '../../store/userSignUp';
@@ -75,10 +77,10 @@ export default function LoanForm() {
           onPress: async () => {
             setIsSubmitting(true);
             try {
-              // Status is updated to 'Pending' which IS in your type definition
+              // Standardized status to uppercase 'PENDING' to align perfectly with backend logic
               await updateLoan(draft.id, { 
                 ...draft, 
-                status: 'Pending',
+                status: 'PENDING' as any,
                 createdByEmail: email
               });
 
@@ -102,37 +104,45 @@ export default function LoanForm() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>New Loan Onboarding</Text>
-        <Text style={styles.headerSubtitle}>Sales Staff Entry</Text>
-      </View>
-
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <PersonalInfo />
-        <ResidentialInfo />
-        <EmploymentInfo />
-        <NextOfKinInfo />
-        <BankInfo />
-        <DocumentUploads />
-        <Declaration />
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>New Loan Onboarding</Text>
+          <Text style={styles.headerSubtitle}>Sales Staff Entry</Text>
+        </View>
 
-        <TouchableOpacity 
-          style={[styles.submitBtn, isSubmitting && styles.disabledBtn]} 
-          onPress={handleSubmit}
-          disabled={isSubmitting}
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          removeClippedSubviews={Platform.OS === 'android'}
         >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.submitBtnText}>Submit Application</Text>
-          )}
-        </TouchableOpacity>
-        
-        <View style={{ height: 40 }} /> 
-      </ScrollView>
+          <PersonalInfo />
+          <ResidentialInfo />
+          <EmploymentInfo />
+          <NextOfKinInfo />
+          <BankInfo />
+          <DocumentUploads />
+          <Declaration />
+
+          <TouchableOpacity 
+            style={[styles.submitBtn, isSubmitting && styles.disabledBtn]} 
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.submitBtnText}>Submit Application</Text>
+            )}
+          </TouchableOpacity>
+          
+          <View style={{ height: 40 }} /> 
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
