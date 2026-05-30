@@ -4,7 +4,7 @@ import useUserData from '../store/userSignUp';
 
 // API Configuration - Set to local IP for development
 // IMPORTANT: Ensure this matches the "Network" IP shown in your terminal when starting the backend
-export const API_URL = 'http://192.168.100.163:5000/api/v1';
+export const API_URL = 'http://192.168.43.173:5000/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -47,6 +47,10 @@ api.interceptors.response.use(
     // --- CRITICAL: If this is a login/signup attempt, bypass interceptor logic ---
     // This ensures the catch block in login.tsx gets the error immediately.
     if (isAuthRequest) {
+      // Extract the real server error message if available before rejecting
+      if (error.response?.data) {
+        error.message = error.response.data.error || error.response.data.message || error.message;
+      }
       return Promise.reject(error);
     }
 
@@ -94,6 +98,7 @@ api.interceptors.response.use(
 );
 
 export default api;
+
 
 // import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 // import { Alert } from 'react-native';
