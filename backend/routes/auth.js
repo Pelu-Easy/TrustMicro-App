@@ -1,0 +1,142 @@
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// Import the PG database connection from your main server file
+const { db } = require('../server'); 
+const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key';
+
+// --- CHECK PHONE UNIQUE ROUTE ---
+router.get('/check-phone/:phone', async (req, res) => {
+    try {
+        const phone = req.params.phone ? req.params.phone.trim() : null;
+        
+        if (!phone) {
+            return res.status(400).json({ error: "Phone number is required" });
+        }
+
+        const query = "SELECT id, full_name, is_active FROM staff_users WHERE phone_no = $1";
+        const result = await db.query(query, [phone]);
+
+        if (result.rows.length > 0) {
+            return res.status(200).json({ 
+                exists: true, 
+                isActive: result.rows[0].is_active,
+                name: result.rows[0].full_name 
+            });
+        }
+        
+        res.status(200).json({ exists: false });
+    } catch (error) {
+        console.error("Phone Check Error:", error);
+        res.status(500).json({ error: "Database error checking phone number" });
+    }
+});
+
+// --- STAFF LOGIN ROUTE ---
+router.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        const query = "SELECT * FROM staff_users WHERE email = $1";
+        const result = await db.query(query, [email.trim().toLowerCase()]);
+        const user = result.rows[0];
+
+        if (!user) return res.status(401).json({ error: "Invalid email or password" });
+        if (!user.is_active) return res.status(403).json({ error: "Account is deactivated. Contact Admin." });
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
+
+        const token = jwt.sign(
+            { 
+                id: user.id, 
+                email: user.email, 
+                role: user.role,
+                branch: user.branch
+            }, 
+            JWT_SECRET, 
+            { expiresIn: '24h' }
+        );
+
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                fullName: user.full_name,
+                email: user.email,
+                role: user.role,
+                branch: user.branch
+            }
+        });
+    } catch (error) {
+        console.error("Login Error:", error);
+        res.status(500).json({ error: "Server error during login" });
+    }
+});
+
+// --- STAFF SIGN UP ROUTE ---
+router.post('/signup', async (req, res) => {
+    const { 
+        full_name, email, phone_no, branch, password,
+        department, unit, supervisor_name, is_loan_officer, is_supervisor, role 
+    } = req.body;
+
+    try {
+        const sanitizedEmail = email.trim().toLowerCase();
+        const sanitizedPhone = phone_no.trim();
+
+        const checkQuery = "SELECT id, email, phone_no FROM staff_users WHERE email = $1 OR phone_no = $2";
+        const checkResult = await db.query(checkQuery, [sanitizedEmail, sanitizedPhone]);
+
+        if (checkResult.rows.length > 0) {
+            const existingUser = checkResult.rows[0];
+            if (existingUser.email === sanitizedEmail) {
+                return res.status(400).json({ error: "This email address is already registered." });
+            }
+            if (existingUser.phone_no === sanitizedPhone) {
+                return res.status(400).json({ error: "This phone number is already registered." });
+            }
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // --- FIXED QUERY: Ensuring department ($7) is strictly handled ---
+        const query = `
+            INSERT INTO staff_users (
+                full_name, email, phone_no, password, branch, role, 
+                department, unit, supervisor_name, is_loan_officer, is_supervisor, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id
+        `;
+
+        const params = [
+            full_name, 
+            sanitizedEmail, 
+            sanitizedPhone, 
+            hashedPassword, 
+            branch, 
+            role || 'Officer', 
+            department || 'General', // Fallback to 'General' if department is missing
+            unit, 
+            supervisor_name, 
+            is_loan_officer === true || is_loan_officer === 1, 
+            is_supervisor === true || is_supervisor === 1,
+            true // is_active
+        ];
+
+        const result = await db.query(query, params);
+        res.status(201).json({ id: result.rows[0].id, message: "Account created successfully" });
+
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(400).json({ error: "An account with these details already exists." });
+        }
+        console.error("❌ SIGNUP ERROR:", error.message);
+        res.status(500).json({ error: "Server error during registration." });
+    }
+});
+
+module.exports = router;
