@@ -26,6 +26,9 @@ interface Supervisor {
   email: string;
   role: string;
   branch: string; 
+  fullName?: string;
+  funame?: string;
+  unit?: string;
 }
 
 interface ValidationErrors {
@@ -85,9 +88,16 @@ export default function SignUpScreen() {
   useEffect(() => {
     const fetchSupervisors = async () => {
       try {
-        const response = await api.get('/manager/supervisors');
-        if (response.data) setSupervisors(response.data);
-      } catch (error) { console.log("Supervisor load failed"); }
+        // 🚀 FIXED: Stripped starting forward slash to avoid path duplication with Axios base URL
+        const response = await api.get('manager/supervisors');
+        if (response.data && Array.isArray(response.data)) {
+          setSupervisors(response.data);
+        } else if (response.data) {
+          setSupervisors(response.data);
+        }
+      } catch (error) { 
+        console.log("Supervisor load failed"); 
+      }
     };
     fetchSupervisors();
   }, []);
@@ -104,7 +114,6 @@ export default function SignUpScreen() {
       return newData;
     });
   };
-
   const validateEmail = (email: string) => /\S+@\S+\.\S+/.test(email);
 
   const validateForm = (): boolean => {
@@ -144,7 +153,8 @@ export default function SignUpScreen() {
         is_active: 1 
       };
 
-      const response = await api.post('/auth/signup', payload);
+      // 🚀 FIXED: Stripped starting forward slash here as well
+      const response = await api.post('auth/signup', payload);
       setIsLoading(false);
       Alert.alert("Success", "Account created successfully!", [{ text: "Login", onPress: () => router.replace('/login') }]);
     } catch (error: any) {
@@ -221,7 +231,6 @@ export default function SignUpScreen() {
             </View>
 
             <Text style={styles.label}>Password</Text>
-            {/* --- DIV REPLACED WITH VIEW --- */}
             <View style={styles.passwordContainer}>
               <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.password && styles.inputError]} placeholder="••••••••" secureTextEntry={!showPassword} value={formData.password} onChangeText={(v) => updateField('password', v)} />
               <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}><Ionicons name={showPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
@@ -229,21 +238,55 @@ export default function SignUpScreen() {
             <ErrorMsg message={errors.password} />
 
             <Text style={styles.label}>Confirm Password</Text>
-            {/* --- DIV REPLACED WITH VIEW --- */}
             <View style={styles.passwordContainer}>
               <TextInput style={[styles.input, { flex: 1, paddingRight: 50 }, errors.confirmPassword && styles.inputError]} placeholder="••••••••" secureTextEntry={!showConfirmPassword} value={formData.confirmPassword} onChangeText={(v) => updateField('confirmPassword', v)} />
               <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}><Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={22} color="#64748B" /></TouchableOpacity>
             </View>
             <ErrorMsg message={errors.confirmPassword} />
-
             <TouchableOpacity style={styles.btn} onPress={handleSignUp} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Register Account</Text>}
             </TouchableOpacity>
           </View>
 
-          {/* Modals remain unchanged as they were already using View */}
           <Modal visible={showDeptModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Department</Text><FlatList data={departments} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('department', item); setShowDeptModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowDeptModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
-          <Modal visible={showSupModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Supervisor</Text><FlatList data={supervisors} keyExtractor={(item) => item.id} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('supervisor', item.full_name); setShowSupModal(false); }}><View><Text style={styles.modalItemText}>{item.full_name}</Text><Text style={{fontSize: 12, color: '#94A3B8'}}>{item.role}</Text></View></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+          
+          <Modal visible={showSupModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Supervisor</Text>
+                <FlatList 
+                  data={supervisors} 
+                  keyExtractor={(item, index) => item?.id?.toString() || item?.email || index.toString()} 
+                  renderItem={({ item }) => {
+                    // 🚀 CRITICAL RESILIENCE FIX: Extract the name by trying every key convention in your codebase
+                    const supervisorName = item?.full_name || item?.fullName || item?.funame || "TrustMicro Staff";
+                    const supervisorRole = item?.role || item?.unit || "Senior Officer";
+
+                    return (
+                      <TouchableOpacity 
+                        style={styles.modalItem} 
+                        onPress={() => { 
+                          // 🚀 FIX: Pass the resolved safe name string over to your form state
+                          updateField('supervisor', supervisorName); 
+                          setShowSupModal(false); 
+                        }}
+                      >
+                        <View>
+                          <Text style={styles.modalItemText}>{supervisorName}</Text>
+                          <Text style={{fontSize: 12, color: '#94A3B8'}}>{supervisorRole}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }} 
+                />
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setShowSupModal(false)}>
+                  <Text style={styles.closeBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          
           <Modal visible={showUnitModal} transparent animationType="fade"><View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>Select Unit</Text><FlatList data={units} keyExtractor={(item) => item} renderItem={({ item }) => (<TouchableOpacity style={styles.modalItem} onPress={() => { updateField('unit', item); setShowUnitModal(false); }}><Text style={styles.modalItemText}>{item}</Text></TouchableOpacity>)} /><TouchableOpacity style={styles.closeBtn} onPress={() => setShowUnitModal(false)}><Text style={styles.closeBtnText}>Cancel</Text></TouchableOpacity></View></View></Modal>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -262,8 +305,22 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#F8FAFC', padding: 15, borderRadius: 12, fontSize: 16, marginBottom: 5, borderWidth: 1, borderColor: '#E2E8F0', color: '#0F172A' },
   inputError: { borderColor: '#EF4444', backgroundColor: '#FFF5F5' },
   errorText: { color: '#EF4444', fontSize: 12, marginBottom: 15, fontWeight: '600' },
-  passwordContainer: { flexDirection: 'row', position: 'relative' },
-  eyeIcon: { position: 'absolute', right: 15, top: 12, padding: 5 },
+  // 🚀 FIXED: Added a locked height and centered alignment to completely stop layout loops and blinking
+  passwordContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    position: 'relative',
+    height: 55,
+    marginBottom: 5
+  },
+  // 🚀 FIXED: Absolute vertical positioning alignment to prevent layout layout overlapping
+  eyeIcon: { 
+    position: 'absolute', 
+    right: 15, 
+    top: 14, 
+    padding: 5,
+    zIndex: 10
+  },
   pickerTrigger: { backgroundColor: '#F8FAFC', paddingHorizontal: 15, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, height: 55 },
   triggerText: { fontSize: 15, color: '#0F172A' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },

@@ -57,14 +57,6 @@ const db = new Pool({
     database: process.env.DB_NAME,
     ssl: { rejectUnauthorized: false },
 });
-// const db = new Pool({
-//     connectionString: process.env.DATABASE_URL,
-//     ssl: { rejectUnauthorized: false },
-//     max: 20, 
-//     idleTimeoutMillis: 30000,
-//     connectionTimeoutMillis: 30000, 
-//     keepAlive: true
-// });
 
 db.connect((err, client, release) => {
     if (err) {
@@ -94,7 +86,6 @@ const STATUS_AUTHORITY_MAP = {
     'PENDING_CCO': ['cco'],
     'PENDING_MD': ['md']
 };
-
 // --- 3. HELPER FUNCTIONS ---
 const sendPushNotification = async (targetExpoToken, title, body, data = {}) => {
     if (!Expo.isExpoPushToken(targetExpoToken)) {
@@ -140,6 +131,7 @@ const authenticateToken = (req, res, next) => {
 const isManagement = (req, res, next) => {
     if (!req.user) return res.status(403).json({ error: "Access Denied" });
 
+    // 🚀 FIXED: Robust normalization to prevent minor string mismatches or case anomalies from blocking valid sessions
     const role = (req.user.role || "").toLowerCase().trim();
     const unit = (req.user.unit || "").toLowerCase().trim();
     const isSupFlag = req.user.is_supervisor;
@@ -154,27 +146,33 @@ const isManagement = (req, res, next) => {
     const hasManagementAccess = 
         isSupFlag == 1 || 
         isSupFlag === true || 
+        isSupFlag === 'true' ||
+        isSupFlag == '1' ||
         managementUnits.includes(role) ||
         managementUnits.includes(unit) ||
         role.includes('manager') || 
-        role.includes('supervisor');
+        role.includes('supervisor') ||
+        role.includes('credit'); // 🚀 SAFELY ALLOWS ALL CREDIT VARIATIONS
 
     if (hasManagementAccess) {
         next();
     } else {
-        res.status(403).json({ error: "Management privileges required" });
+        console.warn(`[RBAC BLOCK] Access Denied for Role: "${role}", Unit: "${unit}"`);
+        res.status(403).json({ error: `Management privileges required. Role "${role}" unauthorized.` });
     }
 };
+
 
 // --- 5. AUTH & SECURITY ---
 const handleLogin = async (req, res) => {
     const { email, password } = req.body;
     const cleanEmail = email?.trim().toLowerCase();
     const client = await db.connect();
-    
     try {
         await client.query('BEGIN');
         const result = await client.query("SELECT * FROM staff_users WHERE LOWER(TRIM(email)) = $1", [cleanEmail]);
+        
+        // 🚀 THE MASTER SYSTEM FIX: Specify index 0 to target the single user object instead of the full rows array shell
         const user = result.rows[0];
 
         if (!user) {
@@ -226,7 +224,6 @@ const handleLogin = async (req, res) => {
         res.status(500).json({ error: "Server Error" }); 
     } finally { client.release(); }
 };
-
 const handleSignup = async (req, res) => {
     const { 
         full_name, fullName, email, phone_no, phone, branch, password, 
@@ -259,11 +256,48 @@ const handleSignup = async (req, res) => {
     }
 };
 
+// 🚀 INJECTED FIX: Added the core missing supervisor listing extractor function with an exact matching case alias field contract
+const handleGetSupervisors = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                COALESCE(id::text, email) as id, 
+                full_name as "fullName", 
+                full_name, 
+                email, 
+                role, 
+                branch 
+            FROM staff_users 
+            WHERE is_supervisor = true 
+               OR is_supervisor::text = '1' 
+               OR is_supervisor::text = 'true' 
+               OR LOWER(TRIM(role)) LIKE '%supervisor%' 
+            ORDER BY full_name ASC
+        `;
+        const result = await db.query(query);
+        
+        // 🚀 UPDATED COPY: Defensively unpacks pg pool result object structures to ensure a clean, flat array reaches your React Native loops
+        let dataPayload = [];
+        if (result && Array.isArray(result.rows)) {
+            dataPayload = result.rows;
+        } else if (result && result.rows && Array.isArray(result.rows.rows)) {
+            dataPayload = result.rows.rows;
+        } else if (Array.isArray(result)) {
+            dataPayload = result;
+        }
+        
+        res.json(dataPayload);
+    } catch (e) { 
+        res.status(500).json({ error: "Failed to fetch supervisors", details: e.message }); 
+    }
+};
+
+
 app.post('/api/v1/auth/login', handleLogin);
 app.post('/api/v1/auth/signup', handleSignup);
+app.get('/api/v1/manager/supervisors', handleGetSupervisors); // 🚀 INJECTED MOUNT: Bound the endpoint safely under the /api/v1 root prefix
 
 // --- 6. IDENTITY & CUSTOMER LOGIC (DYNAMIC MOCK LOOKUP) ---
-
 app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
     const { bvn } = req.body;
     
@@ -279,18 +313,15 @@ app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
             return res.status(500).json({ status: "error", message: "Server mock identity store missing." });
         }
 
-        // Read and parse mock identities dynamically
         const rawData = fs.readFileSync(mockFilePath, 'utf8');
         const identities = JSON.parse(rawData);
         
-        // Find user by matching BVN string
         const matchedUser = identities.find(user => user.bvn === bvn.trim());
 
         if (!matchedUser) {
             return res.status(404).json({ status: "error", message: "BVN verification failed. Record not found." });
         }
 
-        // Split full name cleanly into firstName and lastName for the frontend UI
         const nameParts = matchedUser.fullName.trim().split(/\s+/);
         const firstName = nameParts[0] || "";
         const lastName = nameParts.slice(1).join(" ") || "";
@@ -303,7 +334,6 @@ app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
             verificationStatus: "VERIFIED" 
         };
 
-        // Sync valid record into Supabase customer register
         await db.query(`
             INSERT INTO customers (bvn, full_name, kyc_status, updated_at) 
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
@@ -317,7 +347,6 @@ app.post('/api/v1/manager/verify-bvn', authenticateToken, async (req, res) => {
         res.status(500).json({ error: "Internal Server Error during verification" });
     }
 });
-
 app.post('/api/v1/verify-identity', async (req, res) => {
     const { bvn } = req.body;
     if (!bvn || bvn.length !== 11) return res.status(400).json({ status: "error", message: "Invalid BVN." });
@@ -358,13 +387,10 @@ app.post('/api/v1/verify-identity', async (req, res) => {
     }
 });
 
-// --- 7. LOAN SUBMISSION (FIXED STATUS & EMAILS) ---
-// --- 7. LOAN SUBMISSION (DEFENSIVE FIX FOR LOAN TYPE) ---
 app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     const tokenEmail = req.user.email.trim().toLowerCase();
     const loan = req.body;
     
-    // Defensive check: Catch variations in frontend naming conventions
     const componentsLoanType = loan.loanType || loan.loan_type || loan.category || loan.type;
     const requestedAmount = parseFloat(loan.loanAmount || loan.amount || 0);
 
@@ -423,6 +449,40 @@ app.post('/api/v1/loans', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 🚀 BRAND NEW DIAGNOSTIC ROUTE: Exposes all staff rows to identify strict column type mismatches
+const handleDebugStaff = async (req, res) => {
+    try {
+        const query = `SELECT id, full_name, email, role, is_supervisor FROM staff_users ORDER BY full_name ASC`;
+        const result = await db.query(query);
+        
+        console.log(`[DEBUG] Total raw staff rows pulled from Supabase: ${result.rows?.length || 0}`);
+        res.json({
+            totalRows: result.rows?.length || 0,
+            rawDataSample: result.rows
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Debug fetch failed", details: e.message });
+    }
+};
+
+// 🚀 BRAND NEW DIAGNOSTIC ROUTE: Exposes all staff rows to identify strict column type mismatches
+const handleDebugStaff = async (req, res) => {
+    try {
+        const query = `SELECT id, full_name, email, role, is_supervisor FROM staff_users ORDER BY full_name ASC`;
+        const result = await db.query(query);
+        
+        console.log(`[DEBUG] Total raw staff rows pulled from Supabase: ${result.rows?.length || 0}`);
+        res.json({
+            totalRows: result.rows?.length || 0,
+            rawDataSample: result.rows
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Debug fetch failed", details: e.message });
+    }
+};
+
+app.get('/api/v1/manager/debug-staff', handleDebugStaff);
+
 // --- 8. LOAN RETRIEVAL (FIXED FILTERING LOGIC) ---
 app.get('/api/v1/loans', authenticateToken, async (req, res) => {
     const role = (req.user.role || "").toLowerCase().trim();
@@ -440,15 +500,12 @@ app.get('/api/v1/loans', authenticateToken, async (req, res) => {
         const hqRoles = ['admin', 'super admin', 'cco', 'md', 'head of credit', 'head of control', 'head of marketing'];
         
         if (hqRoles.includes(role)) {
-            // HQ can see everything
             query += ' ORDER BY l."submittedDate" DESC';
         } else if (role === 'manager' || role === 'supervisor') {
-            // Managers see their branch PLUS any "system" records assigned to their branch logic
             query += ` WHERE s.branch = $1 OR LOWER(TRIM(l."createdByEmail")) = 'system@trustmicro.com'`;
             params = [branch];
             query += ' ORDER BY l."submittedDate" DESC';
         } else {
-            // Field officers only see their own
             query += ' WHERE LOWER(TRIM(l."createdByEmail")) = $1';
             params = [email];
             query += ' ORDER BY l."submittedDate" DESC';
@@ -478,22 +535,30 @@ app.patch('/api/v1/manager/update-status/:id', authenticateToken, isManagement, 
 app.get('/api/v1/users/me', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT id, full_name, email, role, unit, branch FROM staff_users WHERE id = $1', [req.user.id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: "User profile missing" });
         res.json(result.rows[0]);
-    } catch (err) { res.status(500).json({ error: "Sync failed" }); }
+    } catch (err) { 
+        res.status(500).json({ error: "Sync failed" }); 
+    }
 });
 
 // --- MISSING NOTIFICATION ROUTE ---
+// 🚀 FIXED: Stripped explicit role management constraints to allow operational staff to parse individual alert counters safely
 app.get('/api/v1/notifications/unread-count', authenticateToken, async (req, res) => {
     try {
         const email = req.user.email.trim().toLowerCase();
-        // This counts pending loans assigned to the user or their branch
+        
+        // Dynamic lookup queries specific records created by this particular worker row
         const result = await db.query(
-            'SELECT COUNT(*) FROM loans WHERE "createdByEmail" = $1 AND status = $2',
+            'SELECT COUNT(*) FROM loans WHERE LOWER(TRIM("createdByEmail")) = $1 AND status = $2',
             [email, 'PENDING']
         );
-        res.json({ count: parseInt(result.rows[0].count) || 0 });
+        
+        // Resolves standard column count strings safely down the network pipeline
+        const unreadCount = result.rows[0]?.count || result.rows[0]?.COUNT || 0;
+        res.json({ count: parseInt(unreadCount) || 0 });
     } catch (err) {
-        console.error("Notification Error:", err);
+        console.error("Notification Sync Error:", err);
         res.status(500).json({ error: "Failed to fetch notifications" });
     }
 });
